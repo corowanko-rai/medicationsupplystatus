@@ -1,0 +1,77 @@
+name: 医薬品供給状況の自動更新
+
+on:
+  schedule:
+    # UTC 22:00 = JST 翌07:00（毎日）
+    - cron: '0 22 * * *'
+  workflow_dispatch:        # 手動実行も可能
+    inputs:
+      force:
+        description: '変更がなくても強制再生成'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 依存パッケージのインストール
+        run: pip install pandas openpyxl
+
+      - name: 更新チェックと生成
+        id: run
+        run: |
+          set +e
+          python fetch_update.py ${{ inputs.force && '--force' || '' }}
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          if [ $code -eq 1 ]; then
+            echo "::error::更新処理に失敗しました"
+            exit 1
+          fi
+          if [ $code -eq 10 ]; then
+            echo "::notice::変更なし。サイトは更新しません。"
+          fi
+
+      - name: 公開用ディレクトリを準備
+        if: steps.run.outputs.code == '0'
+        run: |
+          mkdir -p public
+          cp 医薬品供給状況_検索.html public/index.html
+
+      - name: 状態ファイルをコミット
+        if: steps.run.outputs.code == '0'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
+          git push
+
+      - uses: actions/configure-pages@v5
+        if: steps.run.outputs.code == '0'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.run.outputs.code == '0'
+        with:
+          path: public
+
+      - uses: actions/deploy-pages@v4
+        if: steps.run.outputs.code == '0'
