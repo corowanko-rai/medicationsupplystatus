@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>導入ガイド｜医薬品供給状況 自動更新</title>
+<style>
+:root{
+  --bg:#f7f9fb;--surface:#ffffff;--surface2:#eef2f7;--line:#dde5ee;
+  --ink:#16202b;--ink2:#4d6070;--ink3:#7d8fa1;
+  --accent:#0a68b0;--ok:#0a6b40;--warn:#855400;--stop:#b52424;--pur:#5f34ab;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:15.5px;line-height:1.85;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  overscroll-behavior-y:none;word-break:break-word}
+header{position:sticky;top:0;z-index:60;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);box-shadow:0 1px 3px rgba(16,32,48,.05);padding:calc(env(safe-area-inset-top) + 12px) 14px 0}
+header h1{font-size:16.5px;margin:0 0 3px;font-weight:700}
+header p{font-size:11.5px;color:var(--ink3);margin:0 0 10px}
+.tabs{display:flex;gap:6px;padding-bottom:10px}
+.tab{flex:1;padding:9px 6px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink2);text-align:center}
+.tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+main{padding:16px 14px calc(env(safe-area-inset-bottom) + 90px);max-width:720px;margin:0 auto}
+section{display:none}section.on{display:block}
+h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--accent);line-height:1.5}
+h2:first-child{margin-top:4px}
+p{margin:0 0 13px}
+.lead{color:var(--ink2);font-size:14.5px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px;margin:0 0 13px;box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.note{border-left:4px solid var(--warn);background:#fdf6e8}
+.good{border-left:4px solid var(--ok);background:#eaf7f0}
+.bad{border-left:4px solid var(--stop);background:#fdeded}
+.card b{color:var(--ink)}
+.card p:last-child{margin-bottom:0}
+/* comparison */
+.cmp{display:grid;grid-template-columns:78px 1fr 1fr;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:12.5px;margin-bottom:14px}
+.cmp>div{background:var(--surface);padding:10px 8px}
+.cmp .hd{background:var(--surface2);font-weight:700;text-align:center;font-size:12px}
+.cmp .rh{background:var(--surface2);color:var(--ink3);font-size:11.5px;display:flex;align-items:center}
+.cmp .y{color:var(--ok);font-weight:700}
+.cmp .n{color:var(--stop);font-weight:700}
+/* steps */
+.step{background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.step.done{border-color:var(--ok);background:#fbfefc}
+.sh{display:flex;align-items:center;gap:11px;padding:14px;cursor:pointer;user-select:none}
+.num{flex:0 0 27px;height:27px;border-radius:50%;background:var(--surface2);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.step.done .num{background:var(--ok);color:#fff}
+.step.done .num::after{content:"✓"}
+.step.done .num span{display:none}
+.st{flex:1;font-size:14.5px;font-weight:700;line-height:1.5}
+.arw{color:var(--ink3);font-size:12px;transition:transform .2s}
+.step.open .arw{transform:rotate(90deg)}
+.sb{display:none;padding:0 14px 15px;border-top:1px solid var(--line);box-shadow:0 -1px 3px rgba(16,32,48,.05);margin-top:-1px;padding-top:14px}
+.step.open .sb{display:block}
+ol,ul{margin:0 0 12px;padding-left:20px}
+li{margin-bottom:8px}
+li::marker{color:var(--accent)}
+code{background:var(--surface2);padding:2px 6px;border-radius:5px;font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0a4f80;word-break:break-all}
+.cmd{position:relative;background:#1e2a36;border:1px solid #1e2a36;border-radius:10px;
+  padding:13px 46px 13px 13px;margin:0 0 12px;overflow-x:auto}
+.cmd code{background:none;padding:0;color:#e8f2fa;white-space:pre;display:block;font-size:13px}
+.cp{position:absolute;right:7px;top:7px;background:#33424f;border:1px solid #46586a;
+  color:#dce7f0;border-radius:7px;font-size:11px;padding:5px 9px;cursor:pointer}
+.cp.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+kbd{background:var(--surface2);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+  padding:1px 6px;font-size:12.5px}
+.ui{background:#e3eff9;color:#0a4f80;padding:1px 7px;border-radius:5px;
+  font-size:13.5px;font-weight:600;white-space:nowrap}
+.path{color:var(--ink2);font-size:13.5px}
+.path .ui{margin:0 1px}
+/* faq */
+details{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:9px}
+summary{padding:14px;cursor:pointer;font-weight:700;font-size:14.5px;list-style:none;
+  display:flex;gap:9px;align-items:flex-start;line-height:1.5}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"Q";color:var(--accent);font-weight:800;flex:0 0 auto}
+details[open] summary{border-bottom:1px solid var(--line)}
+.ab{padding:13px 14px;font-size:14px;color:var(--ink2)}
+.ab p:last-child{margin-bottom:0}
+/* table */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:13px;
+  border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:340px}
+th,td{padding:10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface2);font-size:12px;color:var(--ink2);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+/* progress */
+.prog{position:fixed;left:0;right:0;bottom:0;z-index:70;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(12px);border-top:1px solid var(--line);box-shadow:0 -1px 3px rgba(16,32,48,.05);
+  padding:11px 14px calc(env(safe-area-inset-bottom) + 11px);display:none;
+  align-items:center;gap:11px}
+.prog.on{display:flex}
+.bar{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--accent);border-radius:3px;transition:width .3s}
+.ptxt{font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rst{background:none;border:0;color:var(--ink3);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0}
+.done-msg{background:#eaf7f0;border:1px solid var(--ok);border-radius:14px;
+  padding:16px;margin-bottom:13px;display:none}
+.done-msg.on{display:block}
+.done-msg b{color:var(--ok)}
+hr{border:0;border-top:1px solid var(--line);box-shadow:0 -1px 3px rgba(16,32,48,.05);margin:28px 0}
+a{color:var(--accent);word-break:break-all}
+.tip{font-size:13px;color:var(--ink3);margin-top:9px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>導入ガイド</h1>
+  <p>医療用医薬品供給状況 自動更新システム</p>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-t="start" aria-selected="true">はじめに</button>
+    <button class="tab" role="tab" data-t="a" aria-selected="false">方法A</button>
+    <button class="tab" role="tab" data-t="b" aria-selected="false">方法B</button>
+    <button class="tab" role="tab" data-t="faq" aria-selected="false">Q&amp;A</button>
+  </div>
+</header>
+<main>
+
+<!-- ========== START ========== -->
+<section id="start" class="on">
+  <h2>この仕組みについて</h2>
+  <p class="lead">厚生労働省のページを毎日自動で確認し、Excelが更新されていればスマホ用の検索ページを作り直します。</p>
+
+  <div class="card note">
+    <p><b>まず、どちらの方法にするか選んでください。</b></p>
+    <p style="margin-bottom:0">方法は2つあります。<b>どちらか一方だけ</b>やれば動きます。</p>
+  </div>
+
+  <div class="cmp">
+    <div class="hd"></div><div class="hd">方法A<br>GitHub</div><div class="hd">方法B<br>自分のPC</div>
+    <div class="rh">費用</div><div>無料</div><div>無料</div>
+    <div class="rh">PCの電源</div><div class="y">切ってOK</div><div class="n">つけっぱなし</div>
+    <div class="rh">スマホで<br>見られるか</div><div class="y">どこからでも</div><div class="n">見られない</div>
+    <div class="rh">必要な<br>もの</div><div>メール<br>アドレスだけ</div><div>Pythonの<br>インストール</div>
+    <div class="rh">難易度</div><div>手順は多いが<br>画面に従うだけ</div><div>Pythonが<br>入れば簡単</div>
+  </div>
+
+  <div class="card good">
+    <p><b>迷ったら方法Aです。</b></p>
+    <p style="margin-bottom:0">スマホで見るのが目的なら、方法Bはあまり意味がありません。PCの中にファイルができるだけで、スマホからは見られないためです。</p>
+  </div>
+
+  <h2>同梱ファイルの説明</h2>
+  <p class="lead">通常、中身を編集する必要はありません。</p>
+  <div class="tw"><table>
+    <tr><th>ファイル</th><th>役割</th><th>触る必要</th></tr>
+    <tr><td><code>fetch_update.py</code></td><td>巡回して差分を判定する本体</td><td>なし</td></tr>
+    <tr><td><code>build_html.py</code></td><td>Excelを検索HTMLに変換</td><td>なし</td></tr>
+    <tr><td><code>template_head.html</code></td><td>見た目（デザイン）</td><td>変更時のみ</td></tr>
+    <tr><td><code>template_tail.html</code></td><td>検索の動作</td><td>変更時のみ</td></tr>
+    <tr><td><code>update.yml</code></td><td>毎日7時の自動実行設定</td><td>時刻変更時のみ</td></tr>
+    <tr><td><code>state.json</code></td><td>前回のファイル情報（自動生成）</td><td>なし</td></tr>
+  </table></div>
+
+  <div class="card">
+    <p><b>実行時刻を変えたい場合</b></p>
+    <p><code>.github/workflows/update.yml</code> の <code>- cron: '0 22 * * *'</code> を編集します。</p>
+    <p style="margin-bottom:0"><b>UTC表記</b>なので日本時間から9引いてください（例：日本時間12時 → <code>0 3 * * *</code>）。</p>
+  </div>
+
+  <div class="card bad">
+    <p><b>ご注意</b></p>
+    <p style="margin-bottom:0">本ツールは厚労省の公表データを整形して表示するものです。処方判断など正式な用途では、必ず厚労省の原本をご確認ください。</p>
+  </div>
+</section>
+
+<!-- ========== METHOD A ========== -->
+<section id="a">
+  <h2>方法A：GitHubで毎日自動更新</h2>
+  <p class="lead">GitHubという無料サービスに仕組みを置きます。GitHub側のコンピュータが毎朝7時に動くので、<b>あなたのPCは電源が切れていても更新されます。</b></p>
+
+  <div class="card good">
+    <p><b>できあがるもの</b></p>
+    <p><code>https://あなたの名前.github.io/リポジトリ名/</code> というURL</p>
+    <p style="margin-bottom:0">これをスマホのホーム画面に入れておけば、常に最新版が見られます。</p>
+  </div>
+
+  <div class="card">
+    <p><b>必要なもの</b></p>
+    <ul style="margin-bottom:0">
+      <li><b>メールアドレス</b>（GitHubの登録用）</li>
+      <li><b>パソコン</b>（設定作業のときだけ。以後は不要）</li>
+      <li>Pythonのインストールは<b>不要です</b></li>
+    </ul>
+  </div>
+
+  <div class="done-msg" id="doneA">
+    <p style="margin-bottom:0"><b>すべて完了しました。</b>以降は毎朝7時に自動で更新されます。何もする必要はありません。</p>
+  </div>
+
+  <h2>手順（全7ステップ）</h2>
+  <p class="tip">タップで開きます。番号を押すと完了マークが付きます。</p>
+
+  <div class="step" data-k="a1">
+    <div class="sh"><div class="num"><span>1</span></div><div class="st">GitHubにアカウントを作る</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p><a href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a> を開き、メールアドレスとパスワードを登録します。</p>
+      <p style="margin-bottom:0">無料プランで十分です。</p>
+    </div>
+  </div>
+
+  <div class="step" data-k="a2">
+    <div class="sh"><div class="num"><span>2</span></div><div class="st">置き場所（リポジトリ）を作る</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <ol>
+        <li>ログイン後、画面右上の <span class="ui">＋</span> → <span class="ui">New repository</span> をタップ</li>
+        <li><span class="ui">Repository name</span> に好きな名前を入力（例：<code>iyakuhin</code>）</li>
+        <li><span class="ui">Public</span> を選択</li>
+        <li>緑の <span class="ui">Create repository</span> ボタンをタップ</li>
+      </ol>
+      <div class="card bad" style="margin-bottom:0">
+        <p style="margin-bottom:0"><b>Publicを選んでください。</b>Privateだと無料でのページ公開ができません。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" data-k="a3">
+    <div class="sh"><div class="num"><span>3</span></div><div class="st">ファイルをアップロードする</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <ol>
+        <li>作成された画面の <span class="ui">uploading an existing file</span> をタップ<br>
+          <span class="tip">見当たらない場合は <span class="ui">Add file</span> → <span class="ui">Upload files</span></span></li>
+        <li>ZIPを解凍した<b>中身</b>を画面にドラッグ＆ドロップ<br>
+          <span class="tip">解凍してできたフォルダを開き、<b>中のファイル全部</b>を選んでドラッグしてください</span></li>
+        <li>下の緑の <span class="ui">Commit changes</span> ボタンをタップ</li>
+      </ol>
+      <div class="card note" style="margin-bottom:0">
+        <p><b><code>.github</code> フォルダも必ず含めてください。</b>これが自動実行の本体です。</p>
+        <p style="margin-bottom:0">見えない場合：<br>
+        Windows … <span class="ui">表示</span> → <span class="ui">隠しファイル</span> にチェック<br>
+        Mac … <kbd>command</kbd> + <kbd>shift</kbd> + <kbd>.</kbd>（ピリオド）</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" data-k="a4">
+    <div class="sh"><div class="num"><span>4</span></div><div class="st">自動実行の許可を出す</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p class="path"><span class="ui">Settings</span> → <span class="ui">Actions</span> → <span class="ui">General</span></p>
+      <ol>
+        <li>上部メニューの <span class="ui">Settings</span>（歯車）をタップ</li>
+        <li>左メニュー下方の <span class="ui">Actions</span> → <span class="ui">General</span></li>
+        <li>一番下までスクロールし、<span class="ui">Workflow permissions</span> で<br>
+          <span class="ui">Read and write permissions</span> を選択</li>
+        <li><span class="ui">Save</span> をタップ</li>
+      </ol>
+      <div class="card note" style="margin-bottom:0">
+        <p style="margin-bottom:0">ここを飛ばすと後で<b>エラーになります</b>。忘れやすい手順です。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" data-k="a5">
+    <div class="sh"><div class="num"><span>5</span></div><div class="st">ページ公開の設定をする</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p class="path"><span class="ui">Settings</span> → <span class="ui">Pages</span></p>
+      <ol style="margin-bottom:0">
+        <li><span class="ui">Settings</span> の左メニューから <span class="ui">Pages</span> をタップ</li>
+        <li><span class="ui">Source</span> のプルダウンを <span class="ui">GitHub Actions</span> に変更</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step" data-k="a6">
+    <div class="sh"><div class="num"><span>6</span></div><div class="st">初回だけ手動で動かす</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <ol>
+        <li>上部メニューの <span class="ui">Actions</span> をタップ</li>
+        <li>左の「医薬品供給状況の自動更新」をタップ</li>
+        <li>右側の <span class="ui">Run workflow</span> → もう一度 <span class="ui">Run workflow</span></li>
+        <li>1〜2分待つと緑のチェック ✅ が付きます</li>
+      </ol>
+      <p class="tip" style="margin-bottom:0">この初回実行をしないと、次のステップでURLが表示されません。</p>
+    </div>
+  </div>
+
+  <div class="step" data-k="a7">
+    <div class="sh"><div class="num"><span>7</span></div><div class="st">できたURLを確認する</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p class="path"><span class="ui">Settings</span> → <span class="ui">Pages</span></p>
+      <p>上部に <code>Your site is live at https://...</code> とURLが表示されます。</p>
+      <p style="margin-bottom:0">スマホでそのURLを開き、ホーム画面に追加してください。</p>
+    </div>
+  </div>
+
+  <h2>うまくいかないとき</h2>
+  <div class="tw"><table>
+    <tr><th>症状</th><th>対処</th></tr>
+    <tr><td>赤い ❌ が付く</td><td>❌をタップするとエラー内容が読めます。多くは<b>手順4の権限設定漏れ</b>です</td></tr>
+    <tr><td>URLが出ない</td><td>手順5をやり直し。手順6の実行が成功していないとURLは出ません</td></tr>
+    <tr><td><span class="ui">Run workflow</span> が無い</td><td><code>.github</code> フォルダが未アップロードです。手順3をやり直してください</td></tr>
+  </table></div>
+</section>
+
+<!-- ========== METHOD B ========== -->
+<section id="b">
+  <h2>方法B：自分のパソコンで動かす</h2>
+
+  <div class="card bad">
+    <p><b>スマホからは見られません。</b></p>
+    <p style="margin-bottom:0">PC内にHTMLファイルができるだけです。PCで使う場合や、動作確認をしたい場合向けです。</p>
+  </div>
+
+  <div class="card">
+    <p><b>必要なもの</b></p>
+    <ul style="margin-bottom:0">
+      <li><b>Python 3.8以上</b>（3.11以上を推奨）</li>
+      <li>インターネット接続</li>
+      <li>定期実行するなら、その時刻にPCがついていること</li>
+    </ul>
+  </div>
+
+  <div class="done-msg" id="doneB">
+    <p style="margin-bottom:0"><b>お疲れさまでした。</b>同じフォルダにHTMLができています。</p>
+  </div>
+
+  <h2>手順（全6ステップ）</h2>
+
+  <div class="step" data-k="b1">
+    <div class="sh"><div class="num"><span>1</span></div><div class="st">Pythonが入っているか確認</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p><b>Windows</b>：スタートメニューで「cmd」と検索し、コマンドプロンプトを開く<br>
+      <b>Mac</b>：「ターミナル」アプリを開く</p>
+      <p>次を入力しEnter：</p>
+      <div class="cmd"><button class="cp">コピー</button><code>python3 --version</code></div>
+      <p><code>Python 3.11.5</code> のようにバージョンが出ればOKです。</p>
+      <div class="card note" style="margin-bottom:0">
+        <p><b>出なかった場合</b>（<code>command not found</code>／「認識されていません」）</p>
+        <p><a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org/downloads</a> からインストールしてください。</p>
+        <p style="margin-bottom:0"><b>Windowsの注意：</b>インストーラ最初の画面で <span class="ui">Add Python to PATH</span> に<b>必ずチェック</b>を入れてください。忘れると上のコマンドが通りません。また <code>python3</code> ではなく <code>python</code> の場合があります。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" data-k="b2">
+    <div class="sh"><div class="num"><span>2</span></div><div class="st">必要なライブラリを入れる</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <div class="cmd"><button class="cp">コピー</button><code>pip install pandas openpyxl</code></div>
+      <p style="margin-bottom:0">Windowsで通らない場合：</p>
+      <div class="cmd" style="margin-top:9px;margin-bottom:0"><button class="cp">コピー</button><code>py -m pip install pandas openpyxl</code></div>
+    </div>
+  </div>
+
+  <div class="step" data-k="b3">
+    <div class="sh"><div class="num"><span>3</span></div><div class="st">フォルダへ移動する</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p>ZIPを解凍した場所へ移動します。<code>cd</code> の後ろは<b>ご自身のパス</b>に置き換えてください。</p>
+      <div class="cmd"><button class="cp">コピー</button><code>cd ~/Downloads/自動更新システム</code></div>
+      <p class="tip">↑ Macの例</p>
+      <div class="cmd"><button class="cp">コピー</button><code>cd C:\Users\yourname\Downloads\自動更新システム</code></div>
+      <p class="tip">↑ Windowsの例</p>
+      <div class="card good" style="margin-bottom:0">
+        <p style="margin-bottom:0"><b>簡単な方法：</b><code>cd </code> と入力した後（半角スペースまで入れる）、フォルダをターミナルの窓に<b>ドラッグ＆ドロップ</b>するとパスが自動入力されます。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" data-k="b4">
+    <div class="sh"><div class="num"><span>4</span></div><div class="st">まず確認だけしてみる</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <div class="cmd"><button class="cp">コピー</button><code>python3 fetch_update.py --check</code></div>
+      <div class="card good">
+        <p style="margin-bottom:0">これは<b>ダウンロードもファイル作成もしません</b>。厚労省ページを見に行けるかだけを確認する安全なコマンドです。</p>
+      </div>
+      <p>成功すると、こう表示されます：</p>
+      <div class="cmd"><code>[07:00:01] 厚労省ページを確認中…
+[07:00:02] 掲載中: 医療用医薬品供給状況
+           （令和８年７月22日現在）
+[07:00:02] --check のため、
+           ダウンロードは行いません。
+[07:00:02]   未実行の状態です。
+[07:00:02] リンク取得は正常です。</code></div>
+      <p style="margin-bottom:0"><code>ERROR:</code> で始まる行が出た場合は <b>Q&amp;A</b> タブを参照してください。</p>
+    </div>
+  </div>
+
+  <div class="step" data-k="b5">
+    <div class="sh"><div class="num"><span>5</span></div><div class="st">本番実行</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <div class="cmd"><button class="cp">コピー</button><code>python3 fetch_update.py</code></div>
+      <p>同じフォルダに <code>医薬品供給状況_検索.html</code> ができます。ダブルクリックすればブラウザで開きます。</p>
+      <p><b>コマンドの使い分け：</b></p>
+      <div class="tw" style="margin-bottom:0"><table>
+        <tr><th>コマンド</th><th>動作</th></tr>
+        <tr><td><code>fetch_update.py</code></td><td>更新があるときだけ作り直す（通常はこれ）</td></tr>
+        <tr><td><code>--check</code></td><td>確認のみ。ファイルは一切作らない</td></tr>
+        <tr><td><code>--force</code></td><td>更新がなくても強制的に作り直す</td></tr>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="step" data-k="b6">
+    <div class="sh"><div class="num"><span>6</span></div><div class="st">毎日自動で動かす（任意）</div><div class="arw">▶</div></div>
+    <div class="sb">
+      <p><b>Mac / Linux</b> — ターミナルで <code>crontab -e</code> と入力し、次の行を追加（毎朝7時）：</p>
+      <div class="cmd"><button class="cp">コピー</button><code>0 7 * * * cd /path/to/folder && /usr/bin/python3 fetch_update.py >> update.log 2>&1</code></div>
+      <p class="tip">パスはご自身のものに置き換えてください。</p>
+      <p><b>Windows</b> — 「タスク スケジューラ」を開き：</p>
+      <ol>
+        <li>「基本タスクの作成」→ 名前を入力 → 「毎日」→ 時刻を7:00に</li>
+        <li>「プログラムの開始」を選択</li>
+        <li>プログラム欄：<code>python</code></li>
+        <li>引数の追加欄：<code>fetch_update.py</code></li>
+        <li><b>開始（オプション）欄：解凍したフォルダのパス</b></li>
+      </ol>
+      <div class="card note" style="margin-bottom:0">
+        <p style="margin-bottom:0">手順5の<b>「開始（オプション）」が空だと失敗します。</b>忘れやすい箇所です。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== FAQ ========== -->
+<section id="faq">
+  <h2>よくある質問</h2>
+
+  <details><summary>更新が無い日はどうなりますか</summary>
+    <div class="ab"><p>何もせず終了します。ページは前回のままです。ログには「変更なし」と出ます。</p></div></details>
+
+  <details><summary>厚労省のサーバーに迷惑になりませんか</summary>
+    <div class="ab"><p>1日1回のアクセスなので問題ありません。ただし<b>実行間隔を1日1回より短くしないでください。</b></p></div></details>
+
+  <details><summary>元のExcelが更新される頻度は</summary>
+    <div class="ab"><p>不定期です。毎日チェックして、差分があったときだけ動く仕組みにしてあります。</p></div></details>
+
+  <details><summary>ファイル名が同じまま中身だけ変わった場合は</summary>
+    <div class="ab"><p>検出できます。ファイル名ではなく<b>中身のハッシュ値（SHA-256）</b>で比較しているためです。</p></div></details>
+
+  <details><summary>動かなくなりました</summary>
+    <div class="ab">
+      <p>厚労省側のページ構成やExcelの様式が変わった可能性があります。ログに出る内容で原因が分かります。</p>
+      <div class="tw" style="margin-bottom:0"><table>
+        <tr><th>ログ</th><th>意味</th><th>対処</th></tr>
+        <tr><td>Excelリンクが<br>見つかりません</td><td>リンクの形式が変わった</td><td><code>fetch_update.py</code> の <code>find_xlsx()</code> を修正</td></tr>
+        <tr><td>列数が想定と<br>異なります</td><td>Excelの様式が変わった</td><td><code>build_html.py</code> の列番号を確認</td></tr>
+        <tr><td>通信に失敗<br>しました</td><td>ネット接続または厚労省側の一時的障害</td><td>時間をおいて再実行</td></tr>
+      </table></div>
+    </div></details>
+
+  <details><summary>検索ページの絞り込みはどう使いますか</summary>
+    <div class="ab">
+      <p>チップは<b>「状況」</b>と<b>「剤形」</b>の2グループに分かれており、<b>複数選択できます</b>。</p>
+      <ul>
+        <li><b>同じグループ内</b>は「または」…「限定出荷」＋「供給停止」＝どちらかに該当</li>
+        <li><b>違うグループ同士</b>は「かつ」…「限定出荷」＋「内用薬」＝限定出荷の内用薬</li>
+      </ul>
+      <p>選択中の条件は検索窓の下に表示され、<b>×</b>で個別に、<b>すべて解除</b>で一括で外せます。もう一度チップを押しても解除できます。</p>
+      <p style="margin-bottom:0">薬効分類・製造販売業者の絞り込み、キーワード検索とも組み合わせられます。</p>
+    </div></details>
+
+  <details><summary>両方の方法を同時に使えますか</summary>
+    <div class="ab"><p>使えますが、意味はありません。どちらか一方で十分です。</p></div></details>
+
+  <details><summary>スマホだけで方法Aの設定はできますか</summary>
+    <div class="ab"><p>ファイルのアップロード（手順3）にPCがあった方が確実です。設定さえ終われば、以後の閲覧はスマホだけで完結します。</p></div></details>
+</section>
+
+</main>
+
+<div class="prog" id="prog">
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <span class="ptxt" id="ptxt">0 / 7</span>
+  <button class="rst" id="rst">リセット</button>
+</div>
+
+<script>
+/* ---- tabs ---- */
+const tabs=[...document.querySelectorAll('.tab')];
+const secs={start:document.getElementById('start'),a:document.getElementById('a'),
+            b:document.getElementById('b'),faq:document.getElementById('faq')};
+function show(t){
+  tabs.forEach(x=>x.setAttribute('aria-selected',x.dataset.t===t));
+  Object.entries(secs).forEach(([k,el])=>el.classList.toggle('on',k===t));
+  document.getElementById('prog').classList.toggle('on',t==='a'||t==='b');
+  cur=t; upd(); window.scrollTo({top:0});
+}
+tabs.forEach(t=>t.addEventListener('click',()=>show(t.dataset.t)));
+let cur='start';
+
+/* ---- accordion ---- */
+document.querySelectorAll('.step .sh').forEach(h=>{
+  h.addEventListener('click',e=>{
+    const step=h.parentElement;
+    if(e.target.closest('.num')){
+      step.classList.toggle('done'); save(); upd(); return;
+    }
+    step.classList.toggle('open');
+  });
+});
+
+/* ---- progress (in-memory only) ---- */
+const state={};
+function save(){
+  document.querySelectorAll('.step').forEach(s=>{state[s.dataset.k]=s.classList.contains('done')});
+}
+function upd(){
+  if(cur!=='a'&&cur!=='b') return;
+  const steps=[...secs[cur].querySelectorAll('.step')];
+  const done=steps.filter(s=>s.classList.contains('done')).length;
+  document.getElementById('ptxt').textContent=done+' / '+steps.length;
+  document.getElementById('fill').style.width=(done/steps.length*100)+'%';
+  const msg=document.getElementById(cur==='a'?'doneA':'doneB');
+  if(msg) msg.classList.toggle('on',done===steps.length);
+}
+document.getElementById('rst').addEventListener('click',()=>{
+  secs[cur].querySelectorAll('.step').forEach(s=>s.classList.remove('done'));
+  save(); upd();
+});
+
+/* ---- copy ---- */
+document.querySelectorAll('.cp').forEach(b=>{
+  b.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const txt=b.parentElement.querySelector('code').textContent;
+    try{await navigator.clipboard.writeText(txt);}
+    catch(_){
+      const ta=document.createElement('textarea');
+      ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');}catch(__){}
+      document.body.removeChild(ta);
+    }
+    const o=b.textContent;b.textContent='コピー済';b.classList.add('ok');
+    setTimeout(()=>{b.textContent=o;b.classList.remove('ok')},1400);
+  });
+});
+
+/* open first step of each method by default */
+document.querySelector('[data-k="a1"]').classList.add('open');
+document.querySelector('[data-k="b1"]').classList.add('open');
+upd();
+</script>
+</body>
+</html>

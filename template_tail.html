@@ -1,0 +1,202 @@
+;
+/* ---------- Decode ---------- */
+const D=DATA.d, R=DATA.r;
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15};
+const get=(r,f)=>r[F[f]];
+const dv=(r,f)=>D[f][r[F[f]]];
+
+document.getElementById('asof').textContent=DATA.date.replace(/-/g,'/')+' 現在 / '+DATA.n.toLocaleString()+'品目';
+if(DATA.gen){
+  const f=document.createElement('div');
+  f.style.cssText='padding:26px 16px calc(env(safe-area-inset-bottom) + 80px);font-size:11px;color:var(--ink3);text-align:center;line-height:1.9';
+  f.innerHTML='データ出典：厚生労働省「医療用医薬品供給状況報告」<br>'+
+    (DATA.srcurl?'<a href="'+DATA.srcurl+'" style="color:var(--accent)">元Excelファイル</a> / ':'')+
+    '<a href="https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/kouhatu-iyaku/04_00003.html" style="color:var(--accent)">公表ページ</a><br>'+
+    'このページの生成日時：'+DATA.gen;
+  document.body.appendChild(f);
+}
+
+/* Populate advanced selects, sorted by frequency */
+function fill(sel,key){
+  const c={}; R.forEach(r=>{const v=dv(r,key); if(v) c[v]=(c[v]||0)+1;});
+  Object.entries(c).sort((a,b)=>b[1]-a[1]).forEach(([v,n])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=`${v} (${n})`; sel.appendChild(o);
+  });
+}
+fill(document.getElementById('fcls'),'cls');
+fill(document.getElementById('fmk'),'m');
+
+/* ---------- Search normalization ---------- */
+/* Full-width -> half-width. NOTE: U+30FC (ー, katakana long vowel) must NOT be
+   folded into a hyphen -- it is part of the word (ニゾラール). Only true
+   hyphen/dash characters are folded. */
+const HALF=(s)=>s.replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+  .replace(/[．]/g,'.')
+  .replace(/[－‐‑‒–—―ｰ]/g,'-')
+  .replace(/　/g,' ');
+const KATA=(s)=>s.replace(/[\u3041-\u3096]/g,c=>String.fromCharCode(c.charCodeAt(0)+0x60));
+const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+const norm=(s)=>HALF(s).toLowerCase().trim();
+
+/* st/k are Sets: OR within a group, AND across groups */
+let state={q:'',st:new Set(),k:new Set(),cls:'',mk:''}, results=[], shown=0;
+const PAGE=40;
+
+function match(r,terms){
+  if(!terms.length) return true;
+  const h=get(r,'s');
+  const hk=KATA(h), hh=HIRA(h);
+  return terms.every(t=>h.includes(t)||hk.includes(KATA(t))||hh.includes(HIRA(t)));
+}
+
+function run(){
+  const terms=norm(state.q).split(/\s+/).filter(Boolean);
+  const S=state.st, K=state.k;
+  results=R.filter(r=>{
+    /* status group: OR. empty = no restriction */
+    if(S.size){
+      let hit=false;
+      if(S.has('limited')&&get(r,'sc')===1) hit=true;
+      if(!hit&&S.has('stopped')&&get(r,'sc')===2) hit=true;
+      if(!hit&&S.has('new')&&get(r,'new')) hit=true;
+      if(!hit) return false;
+    }
+    /* dosage form group: OR */
+    if(K.size&&!K.has(dv(r,'k'))) return false;
+    if(state.cls&&dv(r,'cls')!==state.cls) return false;
+    if(state.mk&&dv(r,'m')!==state.mk) return false;
+    return match(r,terms);
+  });
+  /* Problem items first — that's what people are searching for */
+  results.sort((a,b)=>(get(b,'sc')||0)-(get(a,'sc')||0)||get(a,'n').localeCompare(get(b,'n'),'ja'));
+  shown=0;
+  document.getElementById('list').innerHTML='';
+  const n=results.length;
+  document.getElementById('cnt').innerHTML=n?`<b>${n.toLocaleString()}</b> 件`:'該当なし';
+  document.getElementById('sortnote').textContent=n>1?'供給停止・限定出荷を先頭に表示':'';
+  if(!n){
+    document.getElementById('list').innerHTML=
+      '<div class="empty"><div class="big">🔎</div><b>該当する医薬品がありません</b>'+
+      'キーワードを短くするか、絞り込みを解除してください。</div>';
+    document.getElementById('more').textContent='';
+    return;
+  }
+  render();
+}
+
+const esc=(s)=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function hl(text,terms){
+  let out=esc(text);
+  if(!terms.length) return out;
+  terms.forEach(t=>{
+    if(t.length<1) return;
+    const re=new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+    out=out.replace(re,'<mark>$1</mark>');
+  });
+  return out;
+}
+
+function render(){
+  const terms=norm(state.q).split(/\s+/).filter(Boolean);
+  const frag=document.createDocumentFragment();
+  const end=Math.min(shown+PAGE,results.length);
+  for(let i=shown;i<end;i++){
+    const r=results[i], sc=get(r,'sc'), st=dv(r,'st');
+    const el=document.createElement('div');
+    el.className='card s'+sc;
+    const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
+    el.innerHTML=
+      `<div class="tags">
+        <span class="badge b${sc}">${esc(st)}</span>
+        ${get(r,'new')?'<span class="badge bnew">更新</span>':''}
+        <span class="kind">${esc(dv(r,'k'))}</span>
+      </div>
+      <div class="nm">${hl(get(r,'n'),terms)}</div>
+      <div class="sub">${hl(get(r,'sp'),terms)}<span class="sep">|</span>${hl(dv(r,'m'),terms)}</div>
+      <div class="det">
+        <dl style="margin:0">
+        <div class="row"><dt>成分名</dt><dd>${hl(get(r,'i'),terms)}</dd></div>
+        <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
+        <div class="row"><dt>出荷量</dt><dd>${esc(dv(r,'vol')||'—')}</dd></div>
+        ${rsn&&rsn!=='－'?`<div class="row"><dt>理由</dt><dd>${esc(rsn)}</dd></div>`:''}
+        ${out&&out!=='－'?`<div class="row"><dt>解除見込</dt><dd>${esc(out)}</dd></div>`:''}
+        ${note?`<div class="row"><dt>備考</dt><dd>${esc(note)}</dd></div>`:''}
+        <div class="row"><dt>YJコード</dt><dd style="font-variant-numeric:tabular-nums">${hl(get(r,'yj'),terms)}</dd></div>
+        ${upd?`<div class="row"><dt>状況更新</dt><dd>${esc(upd)}</dd></div>`:''}
+        </dl>
+      </div>`;
+    el.addEventListener('click',()=>el.classList.toggle('open'));
+    frag.appendChild(el);
+  }
+  document.getElementById('list').appendChild(frag);
+  shown=end;
+  document.getElementById('more').textContent=
+    shown<results.length?`スクロールでさらに表示（残り ${(results.length-shown).toLocaleString()} 件）`:
+    (results.length>PAGE?'— 全件表示しました —':'');
+}
+
+/* ---------- Events ---------- */
+let t;
+const qEl=document.getElementById('q');
+qEl.addEventListener('input',e=>{
+  state.q=e.target.value;
+  document.getElementById('clr').classList.toggle('on',!!state.q);
+  clearTimeout(t); t=setTimeout(run,180);
+});
+document.getElementById('clr').addEventListener('click',()=>{
+  state.q=''; qEl.value=''; document.getElementById('clr').classList.remove('on'); run(); qEl.focus();
+});
+document.getElementById('chips').addEventListener('click',e=>{
+  const b=e.target.closest('.chip'); if(!b) return;
+  const set=state[b.dataset.g], v=b.dataset.f;
+  if(set.has(v)) set.delete(v); else set.add(v);
+  syncChips(); run(); window.scrollTo({top:0});
+});
+function syncChips(){
+  document.querySelectorAll('.chip').forEach(c=>
+    c.setAttribute('aria-pressed', state[c.dataset.g].has(c.dataset.f)));
+  renderActive();
+}
+const LBL={limited:'限定出荷',stopped:'供給停止',new:'今回更新'};
+function renderActive(){
+  const box=document.getElementById('active');
+  const parts=[];
+  state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
+  state.k.forEach(v=>parts.push({g:'k',v,t:v}));
+  if(state.cls) parts.push({g:'cls',v:'',t:state.cls});
+  if(state.mk)  parts.push({g:'mk', v:'',t:state.mk});
+  if(!parts.length){ box.classList.remove('on'); box.innerHTML=''; return; }
+  box.classList.add('on');
+  box.innerHTML='<span class="lbl">絞り込み中</span>'+
+    parts.map(p=>`<span class="pill" data-g="${p.g}" data-v="${esc(p.v)}"><b>${esc(p.t)}</b><span class="x">×</span></span>`).join('')+
+    '<button class="clrall" id="clrall">すべて解除</button>';
+}
+document.getElementById('active').addEventListener('click',e=>{
+  if(e.target.id==='clrall'){
+    state.st.clear(); state.k.clear(); state.cls=''; state.mk='';
+    document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
+    syncChips(); run(); return;
+  }
+  const x=e.target.closest('.x'); if(!x) return;
+  const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
+  if(g==='st'||g==='k') state[g].delete(v);
+  else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
+  else if(g==='mk'){ state.mk=''; document.getElementById('fmk').value=''; }
+  syncChips(); run();
+});
+document.getElementById('advbtn').addEventListener('click',function(){
+  const a=document.getElementById('adv'); const on=a.classList.toggle('on');
+  this.textContent=(on?'▾':'▸')+' 薬効分類・製造販売業者でしぼり込む';
+});
+document.getElementById('fcls').addEventListener('change',e=>{state.cls=e.target.value;renderActive();run()});
+document.getElementById('fmk').addEventListener('change',e=>{state.mk=e.target.value;renderActive();run()});
+window.addEventListener('scroll',()=>{
+  if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500) render();
+  document.getElementById('top').classList.toggle('on',window.scrollY>900);
+},{passive:true});
+document.getElementById('top').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+
+run();
+</script>
+</body>
+</html>
