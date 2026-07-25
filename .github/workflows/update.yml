@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -55,14 +57,41 @@ jobs:
           mkdir -p public
           cp 医薬品供給状況_検索.html public/index.html
 
-      - name: 状態ファイルをコミット
+      - name: 状態ファイルとスナップショットをコミット
         if: steps.run.outputs.code == '0'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json
+          git add state.json snapshot.json
           git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
           git push
+
+      # GitHubは「リポジトリに60日間更新が無い」と定期実行を自動停止する。
+      # 厚労省の更新が長く途絶えても止まらないよう、
+      # 最終コミットから KEEPALIVE_DAYS 日以上経っていれば空コミットを打つ。
+      - name: 定期実行の自動停止を防ぐ（キープアライブ）
+        if: always()
+        env:
+          KEEPALIVE_DAYS: '20'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash || true
+
+          LAST=$(git log -1 --format=%ct)
+          NOW=$(date +%s)
+          DAYS=$(( (NOW - LAST) / 86400 ))
+          echo "最終コミットから ${DAYS} 日経過（しきい値 ${KEEPALIVE_DAYS} 日）"
+
+          if [ "$DAYS" -ge "$KEEPALIVE_DAYS" ]; then
+            date -u +"last-alive: %Y-%m-%dT%H:%M:%SZ" > .keepalive
+            git add .keepalive
+            git commit -m "keepalive: 定期実行の維持（${DAYS}日ぶり）" || true
+            git push || true
+            echo "::notice::キープアライブのコミットを実行しました。"
+          else
+            echo "コミットは不要です。"
+          fi
 
       - uses: actions/configure-pages@v5
         if: steps.run.outputs.code == '0'
