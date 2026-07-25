@@ -20,6 +20,7 @@ UA   = "Mozilla/5.0 (compatible; supply-status-updater/1.0)"
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "state.json")
 XLSX  = os.path.join(HERE, "latest.xlsx")
+SNAP  = os.path.join(HERE, "snapshot.json")   # 前版の出荷状況（悪化/改善判定用）
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
 
 def log(m): print(f"[{datetime.datetime.now():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
@@ -121,7 +122,12 @@ def main():
         log(f"  size={len(blob):,} bytes  sha256={h[:16]}…")
 
         if not force and h == prev_hash:
+            # 変更が無い日も「最終確認時刻」を残す（定期実行の自動停止対策）
+            st["last_checked"] = datetime.datetime.now().isoformat(timespec="seconds")
+            st["last_seen_label"] = label
+            save_state(st)
             log("変更なし（前回と同一ファイル）。処理を終了します。")
+            log(f"  掲載中の版: {st.get('as_of','?')}")
             return 10
 
         if prev_hash:
@@ -136,12 +142,28 @@ def main():
         # Regenerate the HTML
         import build_html
         as_of = ymd_to_iso(ymd)
-        n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url)
+
+        # 前版のスナップショットを読み、状況の悪化/改善を判定する
+        prev = None
+        if os.path.exists(SNAP):
+            try:
+                sj = json.load(open(SNAP, encoding="utf-8"))
+                prev = {k: int(v) for k, v in sj.get("sc", {}).items()}
+                log(f"前版スナップショットを読込: {sj.get('date','?')}（{len(prev):,}品目）")
+            except Exception as e:
+                log(f"警告: スナップショットを読めませんでした（{e}）。今回は変化判定を行いません。")
+                prev = None
+        else:
+            log("スナップショット未作成。今回は変化判定を行わず、次回以降有効になります。")
+
+        n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
+                             prev_snapshot=prev, snapshot_out=SNAP)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
+        now = datetime.datetime.now().isoformat(timespec="seconds")
         save_state({"url": url, "sha256": h, "label": label,
                     "as_of": as_of, "items": n,
-                    "updated_at": datetime.datetime.now().isoformat(timespec="seconds")})
+                    "updated_at": now, "last_checked": now})
         return 0
 
     except urllib.error.URLError as e:
