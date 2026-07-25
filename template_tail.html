@@ -1,10 +1,37 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
+/* 悪化/改善は前版との比較。初回実行時は判定不能 */
+(function(){
+  const c=DATA.chg||{}, el=document.getElementById('nochg');
+  if(!c.compared){
+    el.classList.add('on');
+    el.innerHTML='「悪化」「改善」は<b>前回版との比較</b>で判定します。'+
+      '今回は比較対象がないため該当0件です。次回の更新以降に有効になります。';
+  }else if(!c.worse&&!c.better){
+    el.classList.add('on');
+    el.innerHTML='前回版から<b>出荷状況が変化した品目はありません</b>。';
+  }
+})();
+/* 厚労省の最新版から何日経過したか。ページ再生成が無い日も進むよう、
+   固定値を焼き込まず、閲覧時のブラウザ日付から毎回計算する。 */
+(function(){
+  const el=document.getElementById('elapsed');
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(DATA.date||'');
+  if(!m){ el.style.display='none'; return; }
+  const d0=new Date(+m[1],+m[2]-1,+m[3]);
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const days=Math.round((today-d0)/86400000);
+  if(days<0){ el.style.display='none'; return; }
+  el.textContent = days===0 ? '本日更新' : `${days}日前の版`;
+  el.className='elapsed '+(days<=3?'fresh':days<=10?'mid':'old');
+  el.title=`厚労省の最新版は ${DATA.date.replace(/-/g,'/')} 版です`;
+})();
 document.getElementById('asof').textContent=DATA.date.replace(/-/g,'/')+' 現在 / '+DATA.n.toLocaleString()+'品目';
 if(DATA.gen){
   const f=document.createElement('div');
@@ -25,6 +52,7 @@ function fill(sel,key){
 }
 fill(document.getElementById('fcls'),'cls');
 fill(document.getElementById('fmk'),'m');
+fill(document.getElementById('fpc'),'pc');
 
 /* ---------- Search normalization ---------- */
 /* Full-width -> half-width. NOTE: U+30FC (ー, katakana long vowel) must NOT be
@@ -39,32 +67,51 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',st:new Set(),k:new Set(),cls:'',mk:''}, results=[], shown=0;
+let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),k:new Set(),cls:'',mk:'',pc:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
   if(!terms.length) return true;
-  const h=get(r,'s');
+  const h=state.qMode==='i' ? get(r,'si') : get(r,'s');
   const hk=KATA(h), hh=HIRA(h);
   return terms.every(t=>h.includes(t)||hk.includes(KATA(t))||hh.includes(HIRA(t)));
 }
 
 function run(){
   const terms=norm(state.q).split(/\s+/).filter(Boolean);
-  const S=state.st, K=state.k;
+  const S=state.st, K=state.k, AND=state.stMode==='and';
+  /* does row r satisfy a single status condition? */
+  const test=(r,v)=>
+    v==='normal' ? get(r,'sc')===0 :
+    v==='limited'? get(r,'sc')===1 :
+    v==='stopped'? get(r,'sc')===2 :
+    v==='new'    ? !!get(r,'new') : true;
   results=R.filter(r=>{
-    /* status group: OR. empty = no restriction */
     if(S.size){
-      let hit=false;
-      if(S.has('limited')&&get(r,'sc')===1) hit=true;
-      if(!hit&&S.has('stopped')&&get(r,'sc')===2) hit=true;
-      if(!hit&&S.has('new')&&get(r,'new')) hit=true;
+      /* 通常/限定/停止 are mutually exclusive: always OR within that trio.
+         「今回更新」 overlaps them, so it participates in the chosen mode. */
+      const ship=EX.filter(v=>S.has(v));
+      const shipOK = !ship.length || ship.some(v=>test(r,v));
+      const wantNew = S.has('new');
+      let hit;
+      if(!wantNew)      hit = shipOK;
+      else if(!ship.length) hit = test(r,'new');
+      else hit = AND ? (shipOK && test(r,'new')) : (shipOK || test(r,'new'));
       if(!hit) return false;
     }
     /* dosage form group: OR */
     if(K.size&&!K.has(dv(r,'k'))) return false;
+    /* 変化グループ: OR */
+    if(state.chg.size){
+      const v=get(r,'chg');
+      let hit=false;
+      if(state.chg.has('worse') &&v===1) hit=true;
+      if(!hit&&state.chg.has('better')&&v===2) hit=true;
+      if(!hit) return false;
+    }
     if(state.cls&&dv(r,'cls')!==state.cls) return false;
     if(state.mk&&dv(r,'m')!==state.mk) return false;
+    if(state.pc&&dv(r,'pc')!==state.pc) return false;
     return match(r,terms);
   });
   /* Problem items first — that's what people are searching for */
@@ -109,6 +156,8 @@ function render(){
       `<div class="tags">
         <span class="badge b${sc}">${esc(st)}</span>
         ${get(r,'new')?'<span class="badge bnew">更新</span>':''}
+        ${get(r,'chg')===1?'<span class="badge bworse">悪化</span>':''}
+        ${get(r,'chg')===2?'<span class="badge bbetter">改善</span>':''}
         <span class="kind">${esc(dv(r,'k'))}</span>
       </div>
       <div class="nm">${hl(get(r,'n'),terms)}</div>
@@ -117,6 +166,7 @@ function render(){
         <dl style="margin:0">
         <div class="row"><dt>成分名</dt><dd>${hl(get(r,'i'),terms)}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
+        <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}</dd></div>
         <div class="row"><dt>出荷量</dt><dd>${esc(dv(r,'vol')||'—')}</dd></div>
         ${rsn&&rsn!=='－'?`<div class="row"><dt>理由</dt><dd>${esc(rsn)}</dd></div>`:''}
         ${out&&out!=='－'?`<div class="row"><dt>解除見込</dt><dd>${esc(out)}</dd></div>`:''}
@@ -146,6 +196,13 @@ qEl.addEventListener('input',e=>{
 document.getElementById('clr').addEventListener('click',()=>{
   state.q=''; qEl.value=''; document.getElementById('clr').classList.remove('on'); run(); qEl.focus();
 });
+document.getElementById('smode').addEventListener('click',e=>{
+  const b=e.target.closest('.sm'); if(!b) return;
+  state.qMode=b.dataset.m;
+  document.querySelectorAll('.sm').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  qEl.placeholder = state.qMode==='i' ? '成分名で検索' : '薬剤名で検索';
+  run(); window.scrollTo({top:0});
+});
 document.getElementById('chips').addEventListener('click',e=>{
   const b=e.target.closest('.chip'); if(!b) return;
   const set=state[b.dataset.g], v=b.dataset.f;
@@ -155,32 +212,60 @@ document.getElementById('chips').addEventListener('click',e=>{
 function syncChips(){
   document.querySelectorAll('.chip').forEach(c=>
     c.setAttribute('aria-pressed', state[c.dataset.g].has(c.dataset.f)));
+  /* the AND/OR toggle only matters with 2+ status conditions */
+  const lg=document.getElementById('logic');
+  const meaningful = state.st.has('new') && EX.some(v=>state.st.has(v));
+  lg.classList.toggle('on', meaningful);
+  lg.dataset.mode=state.stMode;
+  lg.textContent=state.stMode==='and'?'かつ':'又は';
   renderActive();
 }
-const LBL={limited:'限定出荷',stopped:'供給停止',new:'今回更新'};
+document.getElementById('logic').addEventListener('click',e=>{
+  e.stopPropagation();
+  state.stMode = state.stMode==='and' ? 'or' : 'and';
+  syncChips(); run(); window.scrollTo({top:0});
+});
+const EX=['normal','limited','stopped'];
+const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
+           worse:'悪化',better:'改善'};
 function renderActive(){
   const box=document.getElementById('active');
   const parts=[];
   state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
+  state.chg.forEach(v=>parts.push({g:'chg',v,t:LBL[v]}));
   state.k.forEach(v=>parts.push({g:'k',v,t:v}));
   if(state.cls) parts.push({g:'cls',v:'',t:state.cls});
+  if(state.pc)  parts.push({g:'pc', v:'',t:state.pc});
   if(state.mk)  parts.push({g:'mk', v:'',t:state.mk});
   if(!parts.length){ box.classList.remove('on'); box.innerHTML=''; return; }
   box.classList.add('on');
-  box.innerHTML='<span class="lbl">絞り込み中</span>'+
-    parts.map(p=>`<span class="pill" data-g="${p.g}" data-v="${esc(p.v)}"><b>${esc(p.t)}</b><span class="x">×</span></span>`).join('')+
+  const useAnd = state.stMode==='and' && state.st.has('new') && EX.some(v=>state.st.has(v));
+  const html=[];
+  parts.forEach((p,i)=>{
+    if(i>0 && p.g==='st' && parts[i-1].g==='st'){
+      /* 又は between exclusive shipping states; chosen mode only around 今回更新 */
+      const around = p.v==='new' || parts[i-1].v==='new';
+      const j = (around && useAnd) ? 'かつ' : '又は';
+      html.push(`<span class="join">${j}</span>`);
+    }
+    html.push(`<span class="pill" data-g="${p.g}" data-v="${esc(p.v)}"><b>${esc(p.t)}</b><span class="x">×</span></span>`);
+  });
+  box.innerHTML='<span class="lbl">絞り込み中</span>'+html.join('')+
     '<button class="clrall" id="clrall">すべて解除</button>';
 }
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
-    state.st.clear(); state.k.clear(); state.cls=''; state.mk='';
+    state.st.clear(); state.k.clear(); state.chg.clear();
+    state.cls=''; state.mk=''; state.pc=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
+    document.getElementById('fpc').value='';
     syncChips(); run(); return;
   }
   const x=e.target.closest('.x'); if(!x) return;
   const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
-  if(g==='st'||g==='k') state[g].delete(v);
+  if(g==='st'||g==='k'||g==='chg') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
+  else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
   else if(g==='mk'){ state.mk=''; document.getElementById('fmk').value=''; }
   syncChips(); run();
 });
@@ -190,6 +275,7 @@ document.getElementById('advbtn').addEventListener('click',function(){
 });
 document.getElementById('fcls').addEventListener('change',e=>{state.cls=e.target.value;renderActive();run()});
 document.getElementById('fmk').addEventListener('change',e=>{state.mk=e.target.value;renderActive();run()});
+document.getElementById('fpc').addEventListener('change',e=>{state.pc=e.target.value;renderActive();run()});
 window.addEventListener('scroll',()=>{
   if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500) render();
   document.getElementById('top').classList.toggle('on',window.scrollY>900);
