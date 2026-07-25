@@ -47,37 +47,55 @@ def find_header_row(path, max_scan=10):
             return i
     return 1
 
-def build(xlsx_path, out_path, as_of=None, source_label="", source_url=""):
+def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
+          prev_snapshot=None, snapshot_out=None):
+    """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
+    snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
     df = pd.read_excel(xlsx_path, header=hdr)
     c = list(df.columns)
     if len(c) < 21:
         raise ValueError(f"列数が想定と異なります（{len(c)}列）。様式変更の可能性があります。")
 
-    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note']}
+    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note','pc']}
     def idx(key, val):
         d = dicts[key]
         if val not in d: d[val] = len(d)
         return d[val]
 
     rows = []
+    snap = {}
     for _, r in df.iterrows():
         name = clean(r[c[5]])
         if not name: continue
         st = strip_prefix(r[c[11]])
         ing, mk, sp, yj = clean(r[c[2]]), clean(r[c[6]]), clean(r[c[3]]), clean(r[c[4]])
+        sc = SC.get(st, 3)
+        # 悪化/改善: compare severity against the previous edition (0<1<2)
+        chg = 0
+        if prev_snapshot is not None and yj in prev_snapshot:
+            old_sc = prev_snapshot[yj]
+            if sc in (0,1,2) and old_sc in (0,1,2):
+                if   sc > old_sc: chg = 1   # 悪化
+                elif sc < old_sc: chg = 2   # 改善
+        elif prev_snapshot:
+            chg = 3                          # 新規掲載
+        snap[yj] = sc
         rows.append([
             name, ing, idx('m',mk), sp, yj,
             idx('k', strip_prefix(r[c[0]])),
             idx('cls', clean(r[c[1]]).replace('\n','')),
-            idx('st', st), SC.get(st, 3),
+            idx('st', st), sc,
             idx('vol', strip_prefix(r[c[16]])),
             idx('rsn', strip_prefix(r[c[13]])),
             idx('out', strip_prefix(r[c[14]])),
             idx('note', clean(r[c[15]])),
             serial_to_date(r[c[12]]),
             1 if clean(r[c[20]]) == 'New' else 0,
-            to_half(f"{name} {ing} {mk} {sp} {yj}").lower(),
+            to_half(name).lower(),   # [15] 品名の検索用
+            to_half(ing).lower(),    # [16] 成分名の検索用
+            idx('pc', strip_prefix(r[c[7]])),  # [17] ⑧製品区分
+            chg,                                # [18] 0=変化なし 1=悪化 2=改善 3=新規
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -90,6 +108,17 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url=""):
         "d": {k: [s for s,_ in sorted(v.items(), key=lambda x: x[1])] for k,v in dicts.items()},
         "r": rows,
     }
+    if snapshot_out:
+        with open(snapshot_out, "w", encoding="utf-8") as f:
+            json.dump({"date": data["date"], "sc": snap}, f, separators=(',',':'))
+
+    data["chg"] = {
+        "worse":    sum(1 for r in rows if r[18] == 1),
+        "better":   sum(1 for r in rows if r[18] == 2),
+        "new":      sum(1 for r in rows if r[18] == 3),
+        "compared": prev_snapshot is not None and len(prev_snapshot) > 0,
+    }
+
     head = open(TEMPLATE_HEAD, encoding="utf-8").read()
     tail = open(TEMPLATE_TAIL, encoding="utf-8").read()
     with open(out_path, "w", encoding="utf-8") as f:
