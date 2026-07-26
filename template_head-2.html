@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>医薬品供給状況 検索</title>
+<style>
+:root{
+  --bg:#f7f9fb; --surface:#ffffff; --surface2:#eef2f7; --line:#dde5ee;
+  --ink:#16202b; --ink2:#4d6070; --ink3:#7d8fa1;
+  /* status colors: darkened for AA contrast on white */
+  --ok:#0a6b40; --warn:#855400; --stop:#b52424; --accent:#0a68b0;
+  --pur:#5f34ab;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;
+  font-size:15px; line-height:1.6; overscroll-behavior-y:none;
+}
+/* ---------- Header ---------- */
+header{
+  position:sticky; top:0; z-index:50; background:rgba(255,255,255,.94);
+  backdrop-filter:blur(12px); border-bottom:1px solid var(--line);
+  box-shadow:0 1px 3px rgba(16,32,48,.05);
+  padding:calc(env(safe-area-inset-top) + 10px) 12px 0;
+}
+.brand{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.brand h1{font-size:16px;font-weight:700;margin:0;letter-spacing:.02em}
+.brand .date{font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.elapsed{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;
+  white-space:nowrap;font-variant-numeric:tabular-nums;margin-left:auto}
+.elapsed.fresh{background:#e3f6ec;color:var(--ok)}
+.elapsed.mid{background:var(--surface2);color:var(--ink2)}
+.elapsed.old{background:#fdf0d9;color:var(--warn)}
+.brand{flex-wrap:wrap}
+.smode{display:flex;gap:0;margin-bottom:8px;background:var(--surface2);
+  border:1px solid var(--line);border-radius:10px;padding:3px}
+.sm{flex:1;min-height:44px;padding:4px;border:0;border-radius:8px;font-size:13px;font-weight:700;
+  background:none;color:var(--ink3);cursor:pointer;font-family:inherit;transition:.15s}
+.sm[aria-pressed="true"]{background:var(--surface);color:var(--accent);
+  box-shadow:0 1px 2px rgba(16,32,48,.08)}
+.searchwrap{position:relative;margin-bottom:8px}
+#q{
+  width:100%; padding:13px 40px 13px 40px; font-size:16px;
+  background:var(--surface2); border:1px solid var(--line);
+  border-radius:var(--r); color:var(--ink); outline:none;
+}
+#q:focus{background:var(--surface)}
+#q:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(11,116,196,.14)}
+#q::placeholder{color:var(--ink3)}
+.sicon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--ink3);font-size:16px;pointer-events:none}
+#clr{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:40px;height:40px;border:0;border-radius:50%;background:var(--surface2);
+  color:var(--ink2);font-size:18px;cursor:pointer;display:none;line-height:1
+}
+#clr.on{display:block}
+/* ---------- Filter chips ---------- */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{
+  flex:0 0 auto;min-height:44px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:600;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink2);cursor:pointer;
+  white-space:nowrap;transition:.15s;display:inline-flex;align-items:center
+}
+.chips{align-items:center}
+.glabel{flex:0 0 auto;font-size:11px;color:var(--ink3);font-weight:700;padding:0 1px 0 2px;white-space:nowrap}
+.gdiv{flex:0 0 auto;width:1px;height:20px;background:var(--line);margin:0 3px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.w[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
+.chip.s[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
+.chip.n[aria-pressed="true"]{background:var(--pur);border-color:var(--pur);color:#fff}
+.chip.o[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.chip.dn[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
+.chip.up[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.logic{flex:0 0 auto;min-height:44px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:800;
+  align-items:center;
+  background:var(--surface2);border:1px dashed var(--ink3);color:var(--ink2);
+  cursor:pointer;white-space:nowrap;font-family:inherit;display:none}
+.logic.on{display:inline-flex}
+.logic[data-mode="and"]{background:var(--ink2);border-style:solid;border-color:var(--ink2);color:#fff}
+/* ---------- Advanced ---------- */
+#adv{display:none;gap:8px;padding-bottom:10px;flex-direction:column}
+#adv.on{display:flex}
+#adv select{
+  width:100%;min-height:46px;padding:11px;font-size:15px;background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;color:var(--ink);outline:none
+}
+.active{display:none;flex-wrap:wrap;gap:6px;align-items:center;padding:0 0 10px}
+.active.on{display:flex}
+.active .lbl{font-size:11px;color:var(--ink3);font-weight:700}
+.pill{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:600;
+  min-height:40px;padding:0 4px 0 11px;border-radius:999px;background:var(--surface2);
+  border:1px solid var(--line);color:var(--ink2)}
+.pill b{font-weight:700;color:var(--ink)}
+.active .join{font-size:11px;font-weight:800;color:var(--ink3);padding:0 1px}
+.pill .x{cursor:pointer;color:var(--ink3);font-size:15px;line-height:1;
+  width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;flex:0 0 auto}
+.clrall{background:none;border:0;color:var(--accent);font-size:12px;font-weight:700;
+  cursor:pointer;text-decoration:underline;padding:0 6px;min-height:40px;font-family:inherit}
+.advbtn{
+  display:flex;align-items:center;width:100%;min-height:44px;
+  background:none;border:0;color:var(--ink3);font-size:12.5px;padding:0;margin-bottom:4px;
+  cursor:pointer;text-align:left;font-family:inherit
+}
+/* ---------- Count bar ---------- */
+.nochg{display:none;margin:0;padding:10px 14px;font-size:12px;line-height:1.7;
+  background:#fdf6e8;border-bottom:1px solid var(--line);color:#6b4a00}
+.nochg.on{display:block}
+.count{
+  padding:9px 14px;font-size:12px;color:var(--ink3);
+  border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;
+  display:flex;justify-content:space-between;align-items:center
+}
+.count b{color:var(--accent);font-size:14px}
+/* ---------- Cards ---------- */
+#list{padding:10px 12px calc(env(safe-area-inset-bottom) + 70px)}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ink3);
+  border-radius:var(--r);padding:13px 14px;margin-bottom:9px;cursor:pointer;
+  box-shadow:0 1px 2px rgba(16,32,48,.04)
+}
+.card:active{background:#fbfcfe}
+.card.s0{border-left-color:var(--ok)}
+.card.s1{border-left-color:var(--warn)}
+.card.s2{border-left-color:var(--stop)}
+.tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:7px}
+.badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.b0{background:#e3f6ec;color:var(--ok)}
+.b1{background:#fdf0d9;color:var(--warn)}
+.b2{background:#fde8e8;color:var(--stop)}
+.b3{background:var(--surface2);color:var(--ink2)}
+.bnew{background:var(--pur);color:#fff}
+.bworse{background:var(--stop);color:#fff}
+.bbetter{background:var(--ok);color:#fff}
+.kind{font-size:11px;color:var(--ink3);padding:3px 7px;background:var(--surface2);border-radius:6px}
+.nm{font-size:15px;font-weight:700;line-height:1.4;margin-bottom:3px;word-break:break-word}
+.sub{font-size:12.5px;color:var(--ink2);word-break:break-word}
+.sub .sep{color:var(--ink3);margin:0 5px}
+.pcb{display:inline-flex;align-items:center;justify-content:center;
+  min-width:26px;height:20px;padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;
+  border:1.5px solid currentColor;white-space:nowrap;flex:0 0 auto}
+.pc-sen{color:#0a68b0}      /* 先発品 */
+.pc-kou{color:#c2185b}      /* 後発品 */
+.pc-jun{color:#00838f}      /* 準先発品 */
+.pc-cho{color:#5f34ab}      /* 長期収載品 */
+.pc-hoka{color:#7d8fa1}     /* その他医薬品 */
+.pc-mi{color:#855400}       /* 未収載医薬品 */
+.kb{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;
+  padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
+  background:#e8f1e9;color:#2f6b3a;border:1.5px solid #2f6b3a}
+.kc{display:inline-flex;align-items:center;justify-content:center;height:20px;
+  padding:0 6px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
+  background:#5f34ab;color:#fff}
+/* 比較画面の並び替え */
+.ovsort{display:flex;gap:6px;padding:9px 12px 0}
+.sortb{flex:1;min-height:44px;padding:0 4px;border-radius:9px;font-size:13px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit;white-space:nowrap}
+.sortb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+/* ---------- 同一成分薬 比較 ---------- */
+.cmpbtn{margin-top:11px;width:100%;min-height:46px;padding:8px;border-radius:10px;
+  background:var(--surface2);border:1px solid var(--line);color:var(--accent);
+  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.cmpbtn:active{background:#e3eff9}
+#ov{position:fixed;inset:0;z-index:100;background:var(--bg);display:none;flex-direction:column}
+#ov.on{display:flex}
+.ovh{position:sticky;top:0;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;
+  display:flex;align-items:flex-start;gap:10px;box-shadow:0 1px 3px rgba(16,32,48,.05)}
+.ovh h2{margin:0;font-size:15.5px;font-weight:800;line-height:1.45;flex:1;word-break:break-word}
+.ovh .sc{display:block;font-size:11.5px;color:var(--ink3);font-weight:600;margin-top:3px}
+#ovx{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink2);font-size:19px;cursor:pointer;line-height:1}
+.ovb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:10px 12px calc(env(safe-area-inset-bottom) + 26px)}
+.grp{font-size:11.5px;font-weight:800;color:var(--ink3);padding:12px 3px 6px}
+.cmprow{display:flex;align-items:center;gap:9px;padding:11px 12px;margin-bottom:7px;
+  background:var(--surface);border:1px solid var(--line);border-radius:11px;
+  border-left:4px solid var(--ink3);box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.cmprow.s0{border-left-color:var(--ok)}
+.cmprow.s1{border-left-color:var(--warn)}
+.cmprow.s2{border-left-color:var(--stop)}
+.cmprow.me{background:#eef6fd;border-color:var(--accent)}
+.cmpmain{flex:1;min-width:0}
+.cmpnm{font-size:13.5px;font-weight:700;line-height:1.45;word-break:break-word}
+.cmpsub{font-size:11.5px;color:var(--ink3);margin-top:2px;word-break:break-word}
+.cmpst{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;
+  display:inline-block;margin-top:4px}
+.cmpyen{flex:0 0 auto;text-align:right;font-size:14px;font-weight:800;
+  font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.cmpyen small{display:block;font-size:10px;color:var(--ink3);font-weight:600}
+.yen{display:inline-block;margin-left:7px;font-size:12px;font-weight:700;
+  color:var(--ink2);background:var(--surface2);border-radius:5px;padding:1px 7px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
+/* ---------- Detail rows ---------- */
+.det{display:none;margin-top:11px;padding-top:11px;border-top:1px dashed var(--line)}
+.card.open .det{display:block}
+.row{display:flex;gap:10px;font-size:12.5px;padding:4px 0;align-items:flex-start}
+.row dt{flex:0 0 74px;color:var(--ink3);font-weight:600}
+.row dd{margin:0;flex:1;color:var(--ink);word-break:break-word}
+.hint{font-size:11px;color:var(--ink3);margin-top:9px;text-align:right}
+/* ---------- Empty / sentinel ---------- */
+.empty{text-align:center;padding:60px 24px;color:var(--ink3)}
+.empty .big{font-size:34px;margin-bottom:12px}
+.empty b{color:var(--ink2);display:block;margin-bottom:6px;font-size:15px}
+#more{text-align:center;padding:18px;color:var(--ink3);font-size:13px}
+#top{
+  position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 18px);
+  width:46px;height:46px;border-radius:50%;background:var(--accent);color:#fff;
+  border:0;font-size:19px;cursor:pointer;display:none;
+  box-shadow:0 4px 14px rgba(16,32,48,.22);z-index:60
+}
+#top.on{display:block}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>医薬品供給状況</h1>
+    <span class="date" id="asof"></span>
+    <span class="elapsed" id="elapsed"></span>
+  </div>
+  <div class="smode" id="smode">
+    <button class="sm" data-m="n" aria-pressed="true">品名で検索</button>
+    <button class="sm" data-m="i" aria-pressed="false">成分名で検索</button>
+  </div>
+  <div class="searchwrap">
+    <span class="sicon">🔍</span>
+    <input id="q" type="search" inputmode="search" autocomplete="off"
+      placeholder="薬剤名で検索" enterkeyhint="search">
+    <button id="clr" aria-label="検索条件を消す">×</button>
+  </div>
+  <div class="chips" id="chips">
+    <span class="glabel">状況</span>
+    <button class="chip o" data-g="st" data-f="normal" aria-pressed="false">通常出荷</button>
+    <button class="chip w" data-g="st" data-f="limited" aria-pressed="false">限定出荷</button>
+    <button class="chip s" data-g="st" data-f="stopped" aria-pressed="false">供給停止</button>
+    <button class="chip n" data-g="st" data-f="new" aria-pressed="false">今回更新</button>
+    <button class="logic" id="logic" data-mode="or" title="条件の組み合わせ方を切り替え">又は</button>
+    <span class="gdiv"></span>
+    <span class="glabel">変化</span>
+    <button class="chip dn" data-g="chg" data-f="worse" aria-pressed="false">悪化</button>
+    <button class="chip up" data-g="chg" data-f="better" aria-pressed="false">改善</button>
+    <span class="gdiv"></span>
+    <span class="glabel">剤形</span>
+    <button class="chip" data-g="k" data-f="内用薬" aria-pressed="false">内用薬</button>
+    <button class="chip" data-g="k" data-f="外用薬" aria-pressed="false">外用薬</button>
+    <button class="chip" data-g="k" data-f="注射薬" aria-pressed="false">注射薬</button>
+  </div>
+  <div class="active" id="active"></div>
+  <button class="advbtn" id="advbtn">▸ 薬効分類・製品区分・製造販売業者でしぼり込む</button>
+  <div id="adv">
+    <select id="fcls"><option value="">薬効分類：すべて</option></select>
+    <select id="fpc"><option value="">製品区分：すべて</option></select>
+    <select id="fmk"><option value="">製造販売業者：すべて</option></select>
+  </div>
+</header>
+<div class="nochg" id="nochg"></div>
+<div class="count"><span id="cnt">読み込み中…</span><span id="sortnote"></span></div>
+<div id="list"></div>
+<div id="more"></div>
+<button id="top" aria-label="先頭へ戻る">↑</button>
+<div id="ov" role="dialog" aria-modal="true" aria-labelledby="ovt">
+  <div class="ovh">
+    <h2 id="ovt"></h2>
+    <button id="ovx" aria-label="閉じる">×</button>
+  </div>
+  <div class="ovsort">
+    <button class="sortb" id="sortK" data-s="k" aria-pressed="true">剤形で並べる</button>
+    <button class="sortb" id="sortS" data-s="s" aria-pressed="false">規格で並べる</button>
+  </div>
+  <div class="ovb" id="ovb"></div>
+</div>
+<script>
+const DATA =
