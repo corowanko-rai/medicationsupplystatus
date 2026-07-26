@@ -313,7 +313,7 @@ document.getElementById('top').addEventListener('click',()=>window.scrollTo({top
 
 /* ---------- 同一成分薬 比較 ---------- */
 const KORDER={'内用薬':0,'外用薬':1,'注射薬':2};
-let cmpState={ing:null,yj:null,sort:'k'};   /* sort: 'k'=剤形 / 's'=規格 */
+let cmpState={ing:null,yj:null,sort:'s'};   /* 's'=規格順 / 'a'=入手できる順 / 'k'=剤形順 */
 function openCmp(ingIdx, myYj){
   cmpState.ing=+ingIdx; cmpState.yj=myYj;
   drawCmp();
@@ -321,41 +321,67 @@ function openCmp(ingIdx, myYj){
   document.body.style.overflow='hidden';
 }
 function drawCmp(){
-  const ingIdx=cmpState.ing, myYj=cmpState.yj, mode=cmpState.sort;
+  const ingIdx=cmpState.ing, myYj=cmpState.yj;
   const list=(BY_ING.get(ingIdx)||[]).slice();
   const ing=D.i[ingIdx]||'';
-  /* グループ内は薬価の安い順。薬価不明は末尾へ */
-  const byPrice=(a,b)=>{
+  /* 剤形が1種類しかない成分では「剤形順」は規格順と同じ結果になるため隠す */
+  const kinds=new Set(list.map(r=>dv(r,'k'))).size;
+  const kb=document.getElementById('sortK');
+  kb.style.display = kinds>=2 ? '' : 'none';
+  if(kinds<2 && cmpState.sort==='k') cmpState.sort='s';
+  const mode=cmpState.sort;
+  /* 薬価の安い順（不明は末尾）→ 同一供給状況をまとめる（通常→限定→停止）→ 品名 */
+  const byPriceStatus=(a,b)=>{
     const pa=get(a,'price'), pb=get(b,'price');
-    if(pa==null&&pb==null) return get(a,'n').localeCompare(get(b,'n'),'ja');
-    if(pa==null) return 1;
-    if(pb==null) return -1;
-    if(pa!==pb) return pa-pb;
+    if(pa==null&&pb!=null) return 1;
+    if(pb==null&&pa!=null) return -1;
+    if(pa!=null&&pb!=null&&pa!==pb) return pa-pb;
+    const sa=get(a,'sc'), sb=get(b,'sc');
+    if(sa!==sb) return sa-sb;
     return get(a,'n').localeCompare(get(b,'n'),'ja');
   };
+  /* 規格の並び順は、その規格の最安値で決める */
+  const rep=new Map();
+  list.forEach(r=>{
+    const sp=get(r,'sp'), p=get(r,'price');
+    if(p==null) return;
+    if(!rep.has(sp)||p<rep.get(sp)) rep.set(sp,p);
+  });
+  const bySpec=(a,b)=>{
+    const sa=get(a,'sp'), sb=get(b,'sp');
+    if(sa===sb) return 0;
+    const ra=rep.has(sa)?rep.get(sa):Infinity, rb=rep.has(sb)?rep.get(sb):Infinity;
+    if(ra!==rb) return ra-rb;
+    return sa.localeCompare(sb,'ja');
+  };
   if(mode==='k'){
-    /* 剤形ごと → その中で薬価順 */
+    /* 剤形 → 規格 → 薬価 → 供給状況 */
     list.sort((a,b)=>{
-      const ka=KORDER[dv(a,'k')]??9, kb=KORDER[dv(b,'k')]??9;
-      if(ka!==kb) return ka-kb;
-      return byPrice(a,b);
+      const ka=KORDER[dv(a,'k')]??9, kb2=KORDER[dv(b,'k')]??9;
+      if(ka!==kb2) return ka-kb2;
+      const sp=bySpec(a,b);
+      if(sp!==0) return sp;
+      return byPriceStatus(a,b);
+    });
+  }else if(mode==='a'){
+    /* 供給状況 → 薬価 → 規格。今すぐ入手できるものを先頭に */
+    list.sort((a,b)=>{
+      const sa=get(a,'sc'), sb=get(b,'sc');
+      if(sa!==sb) return sa-sb;
+      const pa=get(a,'price'), pb=get(b,'price');
+      if(pa==null&&pb!=null) return 1;
+      if(pb==null&&pa!=null) return -1;
+      if(pa!=null&&pb!=null&&pa!==pb) return pa-pb;
+      const sp=bySpec(a,b);
+      if(sp!==0) return sp;
+      return get(a,'n').localeCompare(get(b,'n'),'ja');
     });
   }else{
-    /* 規格ごと → その中で薬価順。規格の並びは代表薬価の安い順 */
-    const rep=new Map();
-    list.forEach(r=>{
-      const sp=get(r,'sp'), p=get(r,'price');
-      if(p==null) return;
-      if(!rep.has(sp)||p<rep.get(sp)) rep.set(sp,p);
-    });
+    /* 規格 → 薬価 → 供給状況 */
     list.sort((a,b)=>{
-      const sa=get(a,'sp'), sb=get(b,'sp');
-      if(sa!==sb){
-        const ra=rep.has(sa)?rep.get(sa):Infinity, rb=rep.has(sb)?rep.get(sb):Infinity;
-        if(ra!==rb) return ra-rb;
-        return sa.localeCompare(sb,'ja');
-      }
-      return byPrice(a,b);
+      const sp=bySpec(a,b);
+      if(sp!==0) return sp;
+      return byPriceStatus(a,b);
     });
   }
   const ps=list.map(r=>get(r,'price')).filter(v=>v!=null);
@@ -365,16 +391,26 @@ function drawCmp(){
     (lo!=null&&hi!=null&&lo!==hi?` ／ 薬価 ${fmtY(lo)}〜${fmtY(hi)}円`:
      lo!=null?` ／ 薬価 ${fmtY(lo)}円`:'')+'</span>';
 
-  let html='', lastG=null;
+  const STL={0:'通常出荷',1:'限定出荷',2:'供給停止'};
+  let html='', lastG=null, lastSub=null;
   list.forEach(r=>{
-    const g = mode==='k' ? dv(r,'k') : get(r,'sp');
-    if(g!==lastG){ html+=`<div class="grp">${esc(g||'(規格不明)')}</div>`; lastG=g; }
+    const g = mode==='k' ? dv(r,'k')
+            : mode==='a' ? (STL[get(r,'sc')]||'その他')
+            : get(r,'sp');
+    if(g!==lastG){
+      html+=`<div class="grp">${esc(g||'(規格不明)')}</div>`; lastG=g; lastSub=null;
+    }
+    if(mode==='k'){
+      /* 剤形の中は規格ごとに小見出しを入れる */
+      const sub=get(r,'sp');
+      if(sub!==lastSub){ html+=`<div class="grpsub">${esc(sub||'(規格不明)')}</div>`; lastSub=sub; }
+    }
     const sc=get(r,'sc'), me=get(r,'yj')===myYj, pv=get(r,'price');
     html+=`<div class="cmprow s${sc}${me?' me':''}">
       <div class="cmpmain">
         <div class="cmpnm">${pcBadge(r)}${kbBadge(r)}${kcBadge(r)} ${esc(get(r,'n'))}</div>
-        <div class="cmpsub">${esc(get(r,'sp'))}｜${esc(dv(r,'m'))}</div>
-        <span class="cmpst b${sc}">${esc(dv(r,'st'))}</span>
+        <div class="cmpsub">${mode==='a'?`<b class="sphl">${esc(get(r,'sp'))}</b>`:esc(get(r,'sp'))}｜${esc(dv(r,'m'))}</div>
+        ${mode==='a'?'':`<span class="cmpst b${sc}">${esc(dv(r,'st'))}</span>`}
       </div>
       <div class="cmpyen">${pv!=null?fmtY(pv)+'<small>円</small>':'<small>薬価<br>なし</small>'}</div>
     </div>`;
@@ -383,6 +419,7 @@ function drawCmp(){
   document.getElementById('ovb').scrollTop=0;
   document.querySelectorAll('.sortb').forEach(b=>
     b.setAttribute('aria-pressed', b.dataset.s===mode));
+  document.getElementById('ovb').dataset.mode=mode;
 }
 document.querySelector('.ovsort').addEventListener('click',e=>{
   const b=e.target.closest('.sortb'); if(!b) return;
@@ -398,6 +435,87 @@ document.getElementById('list').addEventListener('click',e=>{
   e.stopPropagation();
   openCmp(b.dataset.ing, b.dataset.yj);
 });
+/* ---------- 後発品が高い薬 ----------
+   YJコードの先頭9桁＝薬効分類+成分+剤形+規格。
+   ここが同じものだけが「置き換えうる相手」なので、この単位で比較する。 */
+const REVERSE=(()=>{
+  const g=new Map();
+  R.forEach(r=>{
+    if(get(r,'price')==null) return;
+    const k=get(r,'yj').slice(0,9);
+    if(k.length<9) return;
+    if(!g.has(k)) g.set(k,[]);
+    g.get(k).push(r);
+  });
+  const out=[];
+  const BRAND=new Set(['先発品','長期収載品']);
+  g.forEach(rows=>{
+    const brands=rows.filter(r=>BRAND.has(dv(r,'pc')));
+    const gens  =rows.filter(r=>dv(r,'pc')==='後発品');
+    if(!brands.length||!gens.length) return;
+    const lo=Math.min(...brands.map(r=>get(r,'price')));
+    const over=gens.filter(r=>get(r,'price')>lo)
+                   .sort((a,b)=>get(b,'price')-get(a,'price'));
+    if(!over.length) return;
+    /* 同額の先発が複数ある場合は品名順で代表を決める */
+    const base=brands.filter(r=>get(r,'price')===lo)
+                     .sort((a,b)=>get(a,'n').localeCompare(get(b,'n'),'ja'))[0];
+    out.push({base, lo, over, gap:get(over[0],'price')-lo});
+  });
+  /* 差額の大きい順 */
+  return out.sort((a,b)=>b.gap-a.gap);
+})();
+
+function drawRv(){
+  const box=document.getElementById('rvbody');
+  document.getElementById('rvt').innerHTML=
+    `後発品が高い薬<span class="sc">${REVERSE.length}件`+
+    (PINFO.as_of?` ／ 薬価 ${PINFO.as_of.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3')}適用`:'')+
+    `</span>`;
+  if(!REVERSE.length){
+    box.innerHTML='<div class="rvempty">'+
+      (PINFO.available
+        ? '該当する薬剤はありません。'
+        : '薬価データが取得できていないため判定できません。')+'</div>';
+    return;
+  }
+  let h='<div class="lgnote" style="margin:10px 0 14px">'+
+    '先発品・長期収載品より<b>高い後発品</b>がある組み合わせです。'+
+    '同じ成分・剤形・規格どうしで比較しています。差額の大きい順。</div>';
+  REVERSE.forEach(x=>{
+    const b=x.base;
+    h+=`<div class="rvgrp">
+      <div class="rvhd">
+        <div class="rvnm">${pcBadge(b)}${kbBadge(b)}${kcBadge(b)} ${esc(get(b,'n'))}
+          <span class="rvsub">${esc(get(b,'sp'))}｜${esc(dv(b,'m'))}｜${esc(dv(b,'st'))}</span>
+        </div>
+        <div class="rvyen">${fmtY(x.lo)}<small>円</small></div>
+      </div>`;
+    x.over.forEach(o=>{
+      h+=`<div class="rvg">
+        <div class="m">
+          <div class="gn">${pcBadge(o)} ${esc(get(o,'n'))}</div>
+          <div class="gs">${esc(dv(o,'m'))}｜${esc(dv(o,'st'))}</div>
+        </div>
+        <div class="gy">${fmtY(get(o,'price'))}<small>+${fmtY(Math.round((get(o,'price')-x.lo)*10)/10)}</small></div>
+      </div>`;
+    });
+    h+='</div>';
+  });
+  box.innerHTML=h;
+  box.scrollTop=0;
+}
+document.getElementById('rvbtn').addEventListener('click',()=>{
+  drawRv();
+  document.getElementById('rv').classList.add('on');
+  document.body.style.overflow='hidden';
+});
+function closeRv(){
+  document.getElementById('rv').classList.remove('on');
+  document.body.style.overflow='';
+}
+document.getElementById('rvx').addEventListener('click',closeRv);
+
 /* ---------- 凡例 ---------- */
 (function(){
   const R_=(k,v,sub)=>`<div class="lgrow"><div class="lgk">${k}</div>`+
@@ -447,6 +565,13 @@ document.getElementById('list').addEventListener('click',e=>{
   h+='<div class="lgnote">'+
      '<b>カードをタップ</b>すると、成分名・薬効分類・理由・解除見込み・YJコードなどが開きます。'+
      'さらに<b>「同一成分薬を比較」</b>で、同じ成分の全製品を規格・剤形・メーカーを問わず一覧できます。'+
+     '<br><b>規格順</b>＝同じ規格の中で安い順。同一規格の置き換え先を探すとき。'+
+     '<br><b>入手できる順</b>＝通常出荷を先頭に。今すぐ手に入るものを探すとき。'+
+     '<br><b>剤形順</b>＝内用・外用・注射でまとめる。剤形が複数ある成分でのみ表示されます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品より高い後発品がある組み合わせを、'+
+     '先発品名で一覧できます。同じ成分・剤形・規格どうしで比較し、差額の大きい順に並びます。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>検索</b>：全角・半角どちらでも同じ結果です（ＤＳ５０％＝DS50%）。'+
@@ -469,7 +594,7 @@ document.getElementById('lgbtn').addEventListener('click',openLg);
 document.getElementById('lgx').addEventListener('click',closeLg);
 
 document.getElementById('ovx').addEventListener('click',closeCmp);
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); } });
 
 run();
 </script>

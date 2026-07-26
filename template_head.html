@@ -118,10 +118,32 @@ header{
   display:flex;justify-content:space-between;align-items:center
 }
 .count b{color:var(--accent);font-size:14px}
-.lgbtn{min-height:44px;padding:0 4px 0 10px;background:none;border:0;
+.cbtns{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+.rvb{color:var(--stop)!important}
+.lgbtn{min-height:44px;padding:0 7px;background:none;border:0;
   color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
   font-family:inherit;white-space:nowrap;text-decoration:underline}
 /* ---------- 凡例 ---------- */
+#rv{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
+#rv.on{display:flex}
+/* 逆転一覧 */
+.rvgrp{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:12px 13px;margin-bottom:10px;box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.rvhd{display:flex;gap:9px;align-items:flex-start;padding-bottom:9px;
+  border-bottom:1px dashed var(--line);margin-bottom:9px}
+.rvnm{flex:1;font-size:13.5px;font-weight:800;line-height:1.45;word-break:break-word}
+.rvnm .rvsub{display:block;font-size:11.5px;color:var(--ink3);font-weight:600;margin-top:2px}
+.rvyen{flex:0 0 auto;text-align:right;font-size:14px;font-weight:800;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.rvyen small{display:block;font-size:10px;color:var(--ink3);font-weight:600}
+.rvg{display:flex;gap:9px;align-items:flex-start;padding:6px 0}
+.rvg .m{flex:1;min-width:0}
+.rvg .gn{font-size:12.5px;line-height:1.45;word-break:break-word}
+.rvg .gs{font-size:11px;color:var(--ink3);margin-top:1px}
+.rvg .gy{flex:0 0 auto;text-align:right;font-size:13px;font-weight:800;color:var(--stop);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.rvg .gy small{display:block;font-size:10px;font-weight:700}
+.rvempty{text-align:center;padding:50px 20px;color:var(--ink3);font-size:14px;line-height:1.8}
 #lg{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
 #lg.on{display:flex}
 .lgb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
@@ -177,7 +199,7 @@ header{
   background:#5f34ab;color:#fff}
 /* 比較画面の並び替え */
 .ovsort{display:flex;gap:6px;padding:9px 12px 0}
-.sortb{flex:1;min-height:44px;padding:0 4px;border-radius:9px;font-size:13px;font-weight:700;
+.sortb{flex:1;min-height:44px;padding:0 2px;border-radius:9px;font-size:12.5px;font-weight:700;
   background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
   cursor:pointer;font-family:inherit;white-space:nowrap}
 .sortb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -198,6 +220,8 @@ header{
 .ovb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:10px 12px calc(env(safe-area-inset-bottom) + 26px)}
 .grp{font-size:11.5px;font-weight:800;color:var(--ink3);padding:12px 3px 6px}
+.grpsub{font-size:11px;font-weight:700;color:var(--ink3);padding:5px 3px 4px 10px;
+  border-left:2px solid var(--line);margin:2px 0 4px}
 .cmprow{display:flex;align-items:center;gap:9px;padding:11px 12px;margin-bottom:7px;
   background:var(--surface);border:1px solid var(--line);border-radius:11px;
   border-left:4px solid var(--ink3);box-shadow:0 1px 2px rgba(16,32,48,.04)}
@@ -208,6 +232,7 @@ header{
 .cmpmain{flex:1;min-width:0}
 .cmpnm{font-size:13.5px;font-weight:700;line-height:1.45;word-break:break-word}
 .cmpsub{font-size:11.5px;color:var(--ink3);margin-top:2px;word-break:break-word}
+.sphl{color:var(--ink);font-weight:800}
 .cmpst{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;
   display:inline-block;margin-top:4px}
 .cmpyen{flex:0 0 auto;text-align:right;font-size:14px;font-weight:800;
@@ -284,11 +309,21 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 <div class="nochg" id="nochg"></div>
 <div class="count">
   <span id="cnt">読み込み中…</span>
-  <button class="lgbtn" id="lgbtn" aria-label="バッジの意味を見る">？ バッジの意味</button>
+  <span class="cbtns">
+    <button class="lgbtn rvb" id="rvbtn" aria-label="後発品が高い薬の一覧">後発品が高い</button>
+    <button class="lgbtn" id="lgbtn" aria-label="バッジの意味を見る">？</button>
+  </span>
 </div>
 <div id="list"></div>
 <div id="more"></div>
 <button id="top" aria-label="先頭へ戻る">↑</button>
+<div id="rv" role="dialog" aria-modal="true" aria-labelledby="rvt">
+  <div class="ovh">
+    <h2 id="rvt">後発品が高い薬</h2>
+    <button id="rvx" aria-label="閉じる">×</button>
+  </div>
+  <div class="lgb" id="rvbody"></div>
+</div>
 <div id="lg" role="dialog" aria-modal="true" aria-labelledby="lgt">
   <div class="ovh">
     <h2 id="lgt">バッジと表示の意味</h2>
@@ -302,8 +337,9 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button id="ovx" aria-label="閉じる">×</button>
   </div>
   <div class="ovsort">
-    <button class="sortb" id="sortK" data-s="k" aria-pressed="true">剤形で並べる</button>
-    <button class="sortb" id="sortS" data-s="s" aria-pressed="false">規格で並べる</button>
+    <button class="sortb" data-s="s" aria-pressed="true">規格順</button>
+    <button class="sortb" data-s="a" aria-pressed="false">入手できる順</button>
+    <button class="sortb" data-s="k" aria-pressed="false" id="sortK">剤形順</button>
   </div>
   <div class="ovb" id="ovb"></div>
 </div>
