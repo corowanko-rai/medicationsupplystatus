@@ -35,11 +35,48 @@ jobs:
       - name: 依存パッケージのインストール
         run: pip install pandas openpyxl
 
+      # 薬価リストの取得。失敗しても供給状況ページの生成は続行する。
+      - name: 薬価基準収載品目リストを取得
+        id: prices
+        continue-on-error: true
+        run: |
+          set +e
+          python fetch_prices.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::薬価リストを更新しました。" ;;
+            10) echo "::notice::薬価リストに変更はありません。" ;;
+            *)  echo "::warning::薬価リストの取得に失敗しました。薬価なしで続行します。" ;;
+          esac
+
+      # 基礎的医薬品（変更調剤可）の一覧。失敗しても続行する。
+      - name: 基礎的医薬品リストを取得
+        id: kiso
+        continue-on-error: true
+        run: |
+          set +e
+          python fetch_kiso.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::基礎的医薬品リストを更新しました。" ;;
+            10) echo "::notice::基礎的医薬品リストに変更はありません。" ;;
+            *)  echo "::warning::基礎的医薬品リストの取得に失敗しました。バッジなしで続行します。" ;;
+          esac
+
       - name: 更新チェックと生成
         id: run
         run: |
           set +e
-          python fetch_update.py ${{ inputs.force && '--force' || '' }}
+          # 薬価が更新された場合は、供給Excelが同じでも作り直す
+          EXTRA=""
+          if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+          if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then EXTRA="--force"; fi
+          python fetch_update.py $EXTRA
           code=$?
           set -e
           echo "code=$code" >> $GITHUB_OUTPUT
@@ -62,7 +99,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json snapshot.json
+          git add state.json snapshot.json prices.json kiso.json
           git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
           git push
 
