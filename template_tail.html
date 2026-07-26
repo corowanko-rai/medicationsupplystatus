@@ -121,7 +121,7 @@ function run(){
   document.getElementById('list').innerHTML='';
   const n=results.length;
   document.getElementById('cnt').innerHTML=n?`<b>${n.toLocaleString()}</b> 件`:'該当なし';
-  document.getElementById('sortnote').textContent=n>1?'供給停止・限定出荷を先頭に表示':'';
+
   if(!n){
     document.getElementById('list').innerHTML=
       '<div class="empty"><div class="big">🔎</div><b>該当する医薬品がありません</b>'+
@@ -398,8 +398,78 @@ document.getElementById('list').addEventListener('click',e=>{
   e.stopPropagation();
   openCmp(b.dataset.ing, b.dataset.yj);
 });
+/* ---------- 凡例 ---------- */
+(function(){
+  const R_=(k,v,sub)=>`<div class="lgrow"><div class="lgk">${k}</div>`+
+    `<div class="lgv">${v}${sub?`<small>${sub}</small>`:''}</div></div>`;
+  const S_=(t)=>`<div class="lgsec">${t}</div>`;
+  const pc=(t,c)=>`<span class="pcb ${c}">${t}</span>`;
+  const bd=(t,c)=>`<span class="badge ${c}">${t}</span>`;
+
+  let h='';
+  h+=S_('供給状況');
+  h+=R_(bd('通常出荷','b0'),'通常どおり出荷されています');
+  h+=R_(bd('限定出荷','b1'),'出荷が制限されています',
+        '括弧内に理由（自社の事情／他社品の影響／その他）が入ります');
+  h+=R_(bd('供給停止','b2'),'出荷が止まっています');
+  h+=R_('<span class="lgbar" style="background:var(--ok)"></span>'+
+        '<span class="lgbar" style="background:var(--warn);margin-left:3px"></span>'+
+        '<span class="lgbar" style="background:var(--stop);margin-left:3px"></span>',
+        'カード左端の色帯も同じ意味です','緑＝通常／黄＝限定／赤＝停止');
+
+  h+=S_('製品区分');
+  h+=R_(pc('先','pc-sen'),'先発品');
+  h+=R_(pc('後','pc-kou'),'後発品');
+  h+=R_(pc('準先','pc-jun'),'準先発品');
+  h+=R_(pc('長期','pc-cho'),'長期収載品');
+  h+=R_(pc('他','pc-hoka'),'その他医薬品');
+  h+=R_(pc('未','pc-mi'),'未収載医薬品','薬価が設定されていないため薬価は表示されません');
+
+  h+=S_('基礎的医薬品');
+  h+=R_('<span class="kb">基</span>','基礎的医薬品です');
+  h+=R_('<span class="kc">変更可</span>',
+        '後発医薬品と同様に変更調剤が認められます',
+        '基のみで変更可が付かない場合は、変更調剤の対象外です');
+
+  h+=S_('前回版からの変化');
+  h+=R_(bd('更新','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「New」表示に対応');
+  h+=R_(bd('悪化','bworse'),'供給状況が悪くなりました','通常出荷→限定出荷、限定出荷→供給停止 など');
+  h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など');
+
+  h+=S_('その他の表示');
+  h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）');
+  h+=R_('<span class="yen" style="margin-left:0">¥10.8</span>','薬価（円）',
+        '薬価基準収載品目リストから取得。適用日はカードを開くと表示されます');
+
+  h+='<div class="lgnote">'+
+     '<b>並び順</b>：供給停止・限定出荷を先頭に表示します。探したい薬が上に来るようにしています。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>カードをタップ</b>すると、成分名・薬効分類・理由・解除見込み・YJコードなどが開きます。'+
+     'さらに<b>「同一成分薬を比較」</b>で、同じ成分の全製品を規格・剤形・メーカーを問わず一覧できます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>検索</b>：全角・半角どちらでも同じ結果です（ＤＳ５０％＝DS50%）。'+
+     'ひらがなでカタカナ名も引けます（ろきそ→ロキソニン）。'+
+     '検索窓の上で「品名」と「成分名」を切り替えられます。'+
+     '</div>';
+
+  document.getElementById('lgbody').innerHTML=h;
+})();
+function openLg(){
+  document.getElementById('lg').classList.add('on');
+  document.getElementById('lgbody').scrollTop=0;
+  document.body.style.overflow='hidden';
+}
+function closeLg(){
+  document.getElementById('lg').classList.remove('on');
+  document.body.style.overflow='';
+}
+document.getElementById('lgbtn').addEventListener('click',openLg);
+document.getElementById('lgx').addEventListener('click',closeLg);
+
 document.getElementById('ovx').addEventListener('click',closeCmp);
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCmp(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); } });
 
 run();
 </script>
