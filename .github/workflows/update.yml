@@ -6,10 +6,14 @@ on:
     - cron: '0 22 * * *'
   workflow_dispatch:        # 手動実行も可能
     inputs:
-      force:
-        description: '変更がなくても強制再生成'
-        type: boolean
-        default: false
+      mode:
+        description: '実行モード'
+        type: choice
+        default: 'local'
+        options:
+          - local     # 厚労省へアクセスせず、保存済みデータから再生成（表示調整・販売中止の登録用）
+          - check     # 厚労省を確認し、更新があれば取得（通常の定期実行と同じ）
+          - force     # 厚労省から強制的に再取得
 
 permissions:
   contents: write
@@ -36,9 +40,11 @@ jobs:
         run: pip install pandas openpyxl
 
       # 薬価リストの取得。失敗しても供給状況ページの生成は続行する。
+      # local モードでは厚労省へアクセスしない。
       - name: 薬価基準収載品目リストを取得
         id: prices
         continue-on-error: true
+        if: inputs.mode != 'local'
         run: |
           set +e
           python fetch_prices.py
@@ -55,6 +61,7 @@ jobs:
       - name: 基礎的医薬品リストを取得
         id: kiso
         continue-on-error: true
+        if: inputs.mode != 'local'
         run: |
           set +e
           python fetch_kiso.py
@@ -71,16 +78,24 @@ jobs:
         id: run
         run: |
           set +e
-          # 薬価が更新された場合は、供給Excelが同じでも作り直す
-          EXTRA=""
-          if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
-          if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
-          # 販売中止の登録が変わった場合も作り直す
-          if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
-            EXTRA="--force"
+          MODE="${{ inputs.mode }}"
+          if [ -z "$MODE" ]; then MODE="check"; fi   # 定期実行は check
+
+          if [ "$MODE" = "local" ]; then
+            # 厚労省へは一切アクセスせず、保存済みExcelから作り直すだけ
+            python fetch_update.py --local
+          else
+            EXTRA=""
+            # 薬価や基礎的リストが更新された場合は、供給Excelが同じでも作り直す
+            if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            # 販売中止の登録が変わった場合も作り直す
+            if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
+              EXTRA="--force"
+            fi
+            if [ "$MODE" = "force" ]; then EXTRA="--force"; fi
+            python fetch_update.py $EXTRA
           fi
-          if [ "${{ inputs.force }}" = "true" ]; then EXTRA="--force"; fi
-          python fetch_update.py $EXTRA
           code=$?
           set -e
           echo "code=$code" >> $GITHUB_OUTPUT
@@ -103,7 +118,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json snapshot.json prices.json kiso.json
+          git add state.json snapshot.json prices.json kiso.json latest.xlsx
           git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
           git push
 
