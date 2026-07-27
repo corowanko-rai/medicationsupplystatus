@@ -75,6 +75,10 @@ jobs:
           EXTRA=""
           if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
           if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+          # 販売中止の登録が変わった場合も作り直す
+          if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
+            EXTRA="--force"
+          fi
           if [ "${{ inputs.force }}" = "true" ]; then EXTRA="--force"; fi
           python fetch_update.py $EXTRA
           code=$?
