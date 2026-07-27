@@ -128,6 +128,19 @@ header{
 #rv{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
 #rv.on{display:flex}
 /* 逆転一覧 */
+.rvtools{display:flex;gap:6px;padding:9px 12px 0;align-items:center}
+.rvsw{position:relative;flex:1;min-width:0}
+.rvsw .sicon{position:absolute;left:11px;top:50%;transform:translateY(-50%);
+  color:var(--ink3);font-size:14px;pointer-events:none}
+#rvq{width:100%;min-height:44px;padding:0 38px 0 34px;font-size:15px;
+  background:var(--surface2);border:1px solid var(--line);border-radius:10px;
+  color:var(--ink);outline:none}
+#rvq:focus{background:var(--surface);border-color:var(--accent)}
+#rvqx{position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border:0;border-radius:50%;background:var(--surface2);
+  color:var(--ink2);font-size:17px;cursor:pointer;display:none;line-height:1}
+#rvqx.on{display:block}
+.rvord{flex:0 0 auto;min-width:96px}
 .rvgrp{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:12px 13px;margin-bottom:10px;box-shadow:0 1px 2px rgba(16,32,48,.04)}
 .rvhd{display:flex;gap:9px;align-items:flex-start;padding-bottom:9px;
@@ -285,7 +298,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
   <div class="searchwrap">
     <span class="sicon">🔍</span>
     <input id="q" type="search" inputmode="search" autocomplete="off"
-      placeholder="薬剤名で検索" enterkeyhint="search">
+      placeholder="薬剤名で検索（スペースでAND）" enterkeyhint="search">
     <button id="clr" aria-label="検索条件を消す">×</button>
   </div>
   <div class="chips" id="chips">
@@ -332,6 +345,15 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <h2 id="rvt">後発品が高い薬</h2>
     <button id="rvx" aria-label="閉じる">×</button>
   </div>
+  <div class="rvtools">
+    <div class="rvsw">
+      <span class="sicon">🔍</span>
+      <input id="rvq" type="search" inputmode="search" autocomplete="off"
+        placeholder="先発品名で絞り込む（スペースでAND）" enterkeyhint="search">
+      <button id="rvqx" aria-label="消す">×</button>
+    </div>
+    <button class="sortb rvord" id="rvord" data-o="gap">差額順</button>
+  </div>
   <div class="ovsort" id="rvk">
     <button class="sortb" data-k="" aria-pressed="true">すべて</button>
     <button class="sortb" data-k="内用薬" aria-pressed="false">内用薬</button>
@@ -352,7 +374,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <h2 id="ovt"></h2>
     <button id="ovx" aria-label="閉じる">×</button>
   </div>
-  <div class="ovsort">
+  <div class="ovsort" id="cmpsort">
     <button class="sortb" data-s="s" aria-pressed="true">規格順</button>
     <button class="sortb" data-s="a" aria-pressed="false">入手できる順</button>
     <button class="sortb" data-s="k" aria-pressed="false" id="sortK">剤形順</button>

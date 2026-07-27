@@ -433,11 +433,11 @@ function drawCmp(){
   });
   document.getElementById('ovb').innerHTML=html;
   document.getElementById('ovb').scrollTop=0;
-  document.querySelectorAll('.sortb').forEach(b=>
+  document.querySelectorAll('#cmpsort .sortb').forEach(b=>
     b.setAttribute('aria-pressed', b.dataset.s===mode));
   document.getElementById('ovb').dataset.mode=mode;
 }
-document.querySelector('.ovsort').addEventListener('click',e=>{
+document.getElementById('cmpsort').addEventListener('click',e=>{
   const b=e.target.closest('.sortb'); if(!b) return;
   cmpState.sort=b.dataset.s;
   drawCmp();
@@ -482,10 +482,25 @@ const REVERSE=(()=>{
   return out.sort((a,b)=>b.gap-a.gap);
 })();
 
-let rvKind='';   /* '' = すべて */
+let rvKind='';          /* '' = すべて */
+let rvQ='';             /* 先発品名の絞り込み（AND） */
+let rvOrder='gap';      /* gap=差額順 / asc=名前昇順 / desc=名前降順 */
+const RVORD={gap:'差額順',asc:'名前 A→Z',desc:'名前 Z→A'};
 function drawRv(){
   const box=document.getElementById('rvbody');
-  const list = rvKind ? REVERSE.filter(x=>x.k===rvKind) : REVERSE;
+  let list = rvKind ? REVERSE.filter(x=>x.k===rvKind) : REVERSE.slice();
+  /* 先発品名でインクリメンタル検索（剤形フィルタと併用） */
+  const terms=norm(rvQ).split(/\s+/).filter(Boolean);
+  if(terms.length){
+    list=list.filter(x=>{
+      const h=norm(get(x.base,'n'));
+      const hk=KATA(h), hh=HIRA(h);
+      return terms.every(t=>h.includes(t)||hk.includes(KATA(t))||hh.includes(HIRA(t)));
+    });
+  }
+  if(rvOrder==='asc')      list.sort((a,b)=>get(a.base,'n').localeCompare(get(b.base,'n'),'ja'));
+  else if(rvOrder==='desc')list.sort((a,b)=>get(b.base,'n').localeCompare(get(a.base,'n'),'ja'));
+  else                     list.sort((a,b)=>b.gap-a.gap);
   /* 剤形ボタンは該当が無いものを隠す（押しても0件になるのを避ける） */
   const avail=new Set(REVERSE.map(x=>x.k));
   document.querySelectorAll('#rvk .sortb').forEach(b=>{
@@ -493,16 +508,20 @@ function drawRv(){
     b.style.display = (!k || avail.has(k)) ? '' : 'none';
     b.setAttribute('aria-pressed', k===rvKind);
   });
+  document.getElementById('rvord').textContent=RVORD[rvOrder];
+  document.getElementById('rvqx').classList.toggle('on', !!rvQ);
   document.getElementById('rvt').innerHTML=
     `後発品が高い薬<span class="sc">${list.length}件`+
     (rvKind?` （${rvKind}）`:'')+
+    (terms.length?` ／ 「${esc(rvQ.trim())}」`:'')+
     (PINFO.as_of?` ／ 薬価 ${PINFO.as_of.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3')}適用`:'')+
     `</span>`;
   if(!list.length){
     box.innerHTML='<div class="rvempty">'+
       (!PINFO.available
         ? '薬価データが取得できていないため判定できません。'
-        : rvKind ? `${rvKind}に該当する薬剤はありません。`
+        : terms.length ? 'キーワードに一致する先発品がありません。'
+      : rvKind ? `${rvKind}に該当する薬剤はありません。`
                  : '該当する薬剤はありません。')+'</div>';
     return;
   }
@@ -513,7 +532,7 @@ function drawRv(){
     const b=x.base;
     h+=`<div class="rvgrp">
       <div class="rvhd">
-        <div class="rvnm">${pcBadge(b)}${kbBadge(b)}${kcBadge(b)} ${esc(get(b,'n'))}
+        <div class="rvnm">${pcBadge(b)}${kbBadge(b)}${kcBadge(b)} ${hl(get(b,'n'),terms)}
           <span class="rvsub">${esc(get(b,'sp'))}｜${esc(dv(b,'m'))}｜${esc(dv(b,'st'))}</span>
         </div>
         <div class="rvyen">${fmtY(x.lo)}<small>円</small></div>
@@ -541,6 +560,19 @@ function closeRv(){
   document.getElementById('rv').classList.remove('on');
   document.body.style.overflow='';
 }
+let rvT;
+document.getElementById('rvq').addEventListener('input',e=>{
+  rvQ=e.target.value;
+  clearTimeout(rvT); rvT=setTimeout(()=>{drawRv();document.getElementById('rvbody').scrollTop=0;},180);
+});
+document.getElementById('rvqx').addEventListener('click',()=>{
+  rvQ=''; document.getElementById('rvq').value=''; drawRv();
+  document.getElementById('rvq').focus();
+});
+document.getElementById('rvord').addEventListener('click',()=>{
+  rvOrder = rvOrder==='gap' ? 'asc' : rvOrder==='asc' ? 'desc' : 'gap';
+  drawRv(); document.getElementById('rvbody').scrollTop=0;
+});
 document.getElementById('rvk').addEventListener('click',e=>{
   const b=e.target.closest('.sortb'); if(!b) return;
   rvKind=b.dataset.k;
@@ -610,10 +642,12 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+='<div class="lgnote">'+
      '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品より高い後発品がある組み合わせを、'+
      '先発品名で一覧できます。同じ成分・剤形・規格どうしで比較し、差額の大きい順に並びます。'+
-     '上部のボタンで<b>剤形（内用薬・外用薬・注射薬）で絞り込め</b>ます。'+
+     '上部のボタンで<b>剤形で絞り込み</b>、検索窓で<b>先発品名を絞り込み</b>できます。'+
+     '右のボタンで<b>差額順／名前の昇順・降順</b>を切り替えられます。'+
      '</div>';
   h+='<div class="lgnote">'+
-     '<b>検索</b>：全角・半角どちらでも同じ結果です（ＤＳ５０％＝DS50%）。'+
+     '<b>検索</b>：<b>スペースで区切るとAND検索</b>になります（例「アゼルニジピン 16mg 日医工」）。'+
+     '全角・半角どちらでも同じ結果です（ＤＳ５０％＝DS50%）。'+
      'ひらがなでカタカナ名も引けます（ろきそ→ロキソニン）。'+
      '検索窓の上で「品名」と「成分名」を切り替えられます。'+
      '</div>';
