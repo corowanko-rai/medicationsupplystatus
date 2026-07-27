@@ -6,6 +6,7 @@
 ダウンロードして検索用HTMLを再生成する。
 
   python3 fetch_update.py            # 通常実行（変更時のみ更新）
+  python3 fetch_update.py --local    # 厚労省へアクセスせず、保存済みExcelから再生成
   python3 fetch_update.py --force    # 変更がなくても強制再生成
   python3 fetch_update.py --check    # 確認のみ（DLも生成もしない）
 
@@ -91,9 +92,41 @@ def ymd_to_iso(ymd):
     except Exception:
         return datetime.date.today().isoformat()
 
+def rebuild_only():
+    """厚労省へアクセスせず、保存済みのExcelから作り直すだけ。
+    表示の調整や販売中止の登録だけを反映したいときに使う。"""
+    if not os.path.exists(XLSX):
+        log("ERROR: 保存済みのExcelがありません。先に通常実行してください。")
+        return 1
+    st = load_state()
+    as_of = st.get("as_of") or datetime.date.today().isoformat()
+    log("ローカル再生成モード（厚労省へのアクセスはしません）")
+    log(f"  使用するExcel: {XLSX}")
+    log(f"  基準日: {as_of}")
+
+    import build_html
+    prev = None
+    if os.path.exists(SNAP):
+        try:
+            sj = json.load(open(SNAP, encoding="utf-8"))
+            prev = {k: int(v) for k, v in sj.get("sc", {}).items()}
+        except Exception:
+            prev = None
+
+    # 再生成では悪化/改善の基準を動かさない（スナップショットは書き換えない）
+    n = build_html.build(XLSX, OUT, as_of=as_of,
+                         source_label=st.get("label", ""), source_url=st.get("url", ""),
+                         prev_snapshot=prev, snapshot_out=None,
+                         prices_path=PRICES, kiso_path=KISO, disc_path=DISC)
+    log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
+    return 0
+
+
 def main():
     force = "--force" in sys.argv
     check = "--check" in sys.argv
+    if "--local" in sys.argv:
+        return rebuild_only()
     try:
         log("厚労省ページを確認中…")
         html = http_get(PAGE).decode("utf-8", "replace")
