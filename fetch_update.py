@@ -92,6 +92,20 @@ def ymd_to_iso(ymd):
     except Exception:
         return datetime.date.today().isoformat()
 
+def _load_keep_chg():
+    """保存済みの悪化/改善の判定結果を読む。再生成で結果が消えないようにする。"""
+    if not os.path.exists(SNAP):
+        return None
+    try:
+        sj = json.load(open(SNAP, encoding="utf-8"))
+        c = sj.get("chg")
+        if c is None:
+            return None
+        return {k: int(v) for k, v in c.items()}
+    except Exception:
+        return None
+
+
 def rebuild_only():
     """厚労省へアクセスせず、保存済みのExcelから作り直すだけ。
     表示の調整や販売中止の登録だけを反映したいときに使う。"""
@@ -117,6 +131,7 @@ def rebuild_only():
     n = build_html.build(XLSX, OUT, as_of=as_of,
                          source_label=st.get("label", ""), source_url=st.get("url", ""),
                          prev_snapshot=prev, snapshot_out=None,
+                         keep_chg=_load_keep_chg(),
                          prices_path=PRICES, kiso_path=KISO, disc_path=DISC)
     log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
     return 0
@@ -157,7 +172,12 @@ def main():
         h = hashlib.sha256(blob).hexdigest()
         log(f"  size={len(blob):,} bytes  sha256={h[:16]}…")
 
-        if not force and h == prev_hash:
+        # 供給Excelが前回と同一なら、悪化/改善の比較基準を動かしてはいけない。
+        # （--force は薬価更新などによる再生成のためのもので、
+        #   同じExcelでスナップショットを取り直すと変化が消えてしまう）
+        same_excel = (h == prev_hash)
+
+        if not force and same_excel:
             # 変更が無い日も「最終確認時刻」を残す（定期実行の自動停止対策）
             st["last_checked"] = datetime.datetime.now().isoformat(timespec="seconds")
             st["last_seen_label"] = label
@@ -192,8 +212,16 @@ def main():
         else:
             log("スナップショット未作成。今回は変化判定を行わず、次回以降有効になります。")
 
+        # Excelが変わっていない再生成では、スナップショットを書き換えない
+        snap_out = None if same_excel else SNAP
+        keep = None
+        if same_excel:
+            # Excelが同じなら比較し直さず、前回の判定結果をそのまま使う
+            keep = _load_keep_chg()
+            log("  供給Excelは前回と同一のため、前回の変化判定を引き継ぎます")
+
         n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
-                             prev_snapshot=prev, snapshot_out=SNAP,
+                             prev_snapshot=prev, snapshot_out=snap_out, keep_chg=keep,
                              prices_path=PRICES, kiso_path=KISO,
                              disc_path=DISC)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")

@@ -263,7 +263,7 @@ def lookup_price(pr, yj):
 
 
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
-          prev_snapshot=None, snapshot_out=None, prices_path=None,
+          prev_snapshot=None, snapshot_out=None, prices_path=None, keep_chg=None,
           kiso_path=None, disc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
@@ -291,6 +291,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     disc = load_discontinued(disc_path, name_index)
     rows = []
     snap = {}
+    chg_map = {}
     n_price = 0
     n_kiso = 0
     n_kchg = 0
@@ -303,7 +304,10 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         sc = SC.get(st, 3)
         # 悪化/改善: compare severity against the previous edition (0<1<2)
         chg = 0
-        if prev_snapshot is not None and yj in prev_snapshot:
+        if keep_chg is not None:
+            # 再生成時は前回の判定結果をそのまま引き継ぐ（比較し直さない）
+            chg = keep_chg.get(yj, 0)
+        elif prev_snapshot is not None and yj in prev_snapshot:
             old_sc = prev_snapshot[yj]
             if sc in (0,1,2) and old_sc in (0,1,2):
                 if   sc > old_sc: chg = 1   # 悪化
@@ -311,6 +315,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         elif prev_snapshot:
             chg = 3                          # 新規掲載
         snap[yj] = sc
+        chg_map[yj] = chg
         price = lookup_price(pr, yj)
         if price is not None:
             n_price += 1
@@ -359,8 +364,14 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "r": rows,
     }
     if snapshot_out:
+        # sc … 今回の出荷状況（次回の比較に使う）
+        # chg … 今回検出した悪化/改善（再生成しても消えないよう結果を保存する）
         with open(snapshot_out, "w", encoding="utf-8") as f:
-            json.dump({"date": data["date"], "sc": snap}, f, separators=(',',':'))
+            json.dump({
+                "date": data["date"],
+                "sc": snap,
+                "chg": {yj: v for yj, v in chg_map.items() if v},
+            }, f, separators=(',', ':'))
 
     data["price"] = {
         "available": pr is not None,
