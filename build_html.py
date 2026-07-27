@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Excel -> 単一HTML検索ツール 変換モジュール"""
-import pandas as pd, json, re, datetime, os
+import pandas as pd, json, re, datetime, os, unicodedata
 
 TEMPLATE_HEAD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template_head.html")
 TEMPLATE_TAIL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template_tail.html")
@@ -62,6 +62,180 @@ def load_prices(path):
     return None
 
 
+def norm_name(s):
+    """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
+    s = unicodedata.normalize("NFKC", str(s))
+    for a, b in (("「", ""), ("」", ""), ("（", "("), ("）", ")"), ("・", "")):
+        s = s.replace(a, b)
+    return re.sub(r"\s+", "", s).lower()
+
+
+JP_DATE = re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日")
+ISO_DATE = re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})")
+# 貼り付けデータに混ざる見出し・状態表記
+DISC_NOISE = {"販売中止", "予定", "販売中止予定", "供給停止", "限定出荷", "通常出荷",
+              "経過措置", "告知日", "実施日", "回収", "出荷調整"}
+DISC_LABEL = ("販売会社", "製造会社", "薬価", "包装薬価", "備考", "剤形", "規格")
+# 包装欄の判定。「バラシクロビル」を「バラ」で誤判定しないよう、数字を伴う場合のみ
+PKG_PATTERNS = [
+    re.compile(r"^(PTP|ＰＴＰ)\s*\d"),
+    re.compile(r"^バラ\s*\d"),
+    re.compile(r"^\d"),
+    re.compile(r"^(瓶|びん|袋|箱|缶|ボトル|キット|アンプル|バイアル|シリンジ|管|筒)\s*\d"),
+    re.compile(r"[（(]\s*\d+\s*(mg|g|mL|ml|μg|IU|単位)\s*/"),
+    re.compile(r"^\s*[×x]\s*\d"),
+]
+
+
+def _is_pkg_line(s):
+    return any(p.search(s) for p in PKG_PATTERNS)
+
+
+def _to_iso(s):
+    m = JP_DATE.search(s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    m = ISO_DATE.search(s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return ""
+
+
+def parse_discontinued_text(text):
+    """DrugShortage.JP からコピーした文章をそのまま解釈する。
+
+    想定する形（改行位置や空行は問わない）:
+        告知日:
+        2026年7月24日
+        実施日:
+        2026年10月1日 予定
+        販売中止
+        カルベジロール錠２０ｍｇ「ＪＧ」
+        PTP100錠(20mg/錠 PTP 10錠×10)
+
+    薬剤名だけを並べた行や、`薬剤名, 実施日, メモ` 形式も受け付ける。
+    """
+    recs = []
+    rec = {"n": "", "d": "", "name": "", "m": ""}
+    want = None
+
+    def push(r):
+        if r["name"]:
+            recs.append(r)
+
+    for raw in text.splitlines():
+        ln = raw.strip()
+        if not ln or ln.startswith("#"):
+            continue
+
+        # ラベル行・包装行はカンマ判定より先に落とす
+        # （「包装薬価: 1,080.00円」をカンマ区切りと誤解しないため）
+        if ln.startswith(DISC_LABEL) or ln in DISC_NOISE:
+            continue
+
+        # 「薬剤名, 日付, メモ」形式（カンマ区切り）はそのまま1件として扱う
+        if "," in ln and not ln.startswith(("告知日", "実施日")):
+            parts = [x.strip() for x in ln.split(",")]
+            if parts[0] and not _is_pkg_line(parts[0]) and parts[0] not in DISC_NOISE:
+                push(rec)
+                rec = {"n": "", "d": "", "name": "", "m": ""}
+                d1 = _to_iso(parts[1]) if len(parts) > 1 else ""
+                recs.append({
+                    "name": parts[0],
+                    "n": "",
+                    "d": d1,
+                    "m": (parts[2] if len(parts) > 2 else
+                          (parts[1] if len(parts) > 1 and not d1 else "")),
+                })
+                want = None
+                continue
+
+        if ln.startswith("告知日"):
+            push(rec)
+            rec = {"n": "", "d": "", "name": "", "m": ""}
+            want = None
+            if JP_DATE.search(ln) or ISO_DATE.search(ln):
+                rec["n"] = _to_iso(ln)
+            else:
+                want = "n"
+            continue
+
+        if ln.startswith("実施日"):
+            want = None
+            if JP_DATE.search(ln) or ISO_DATE.search(ln):
+                rec["d"] = _to_iso(ln)
+            else:
+                want = "d"
+            continue
+
+        if JP_DATE.search(ln) or ISO_DATE.search(ln):
+            if want:
+                rec[want] = _to_iso(ln)
+                want = None
+            continue
+
+        if ln in DISC_NOISE or ln.startswith(DISC_LABEL) or _is_pkg_line(ln):
+            continue
+
+        if not rec["name"]:
+            rec["name"] = ln
+        else:
+            # 名前が埋まっている状態で別の名前行が来た＝次の品目
+            # （包装や会社名は上で除外済みなので、ここに来るのは薬剤名）
+            push(rec)
+            rec = {"n": "", "d": "", "name": ln, "m": ""}
+
+    push(rec)
+    return recs
+
+
+def norm_name(s):
+    """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
+    s = unicodedata.normalize("NFKC", str(s))
+    for a, b in (("「", ""), ("」", ""), ("（", "("), ("）", ")"), ("・", "")):
+        s = s.replace(a, b)
+    return re.sub(r"\s+", "", s).lower()
+
+
+def load_discontinued(path, name_index=None):
+    """販売中止の登録を読む。DSJPからの貼り付けをそのまま解釈できる。
+    同名の品目が複数ある場合は取り違えを防ぐため登録せず警告を出す。"""
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        text = open(path, encoding="utf-8").read()
+    except Exception as e:
+        print(f"  警告: 販売中止ファイルを読めませんでした: {e}")
+        return {}
+
+    out = {}
+    ambiguous, notfound = [], []
+    for rec in parse_discontinued_text(text):
+        key = rec["name"]
+        info = {"n": rec["n"], "d": rec["d"], "m": rec.get("m", "")}
+        # YJコード直接指定
+        if re.fullmatch(r"[0-9A-Za-z]{6,12}", key) and re.search(r"\d", key):
+            out[key.upper()] = info
+            continue
+        if not name_index:
+            notfound.append(key)
+            continue
+        hits = name_index.get(norm_name(key))
+        if not hits:
+            notfound.append(key)
+        elif len(hits) > 1:
+            ambiguous.append((key, hits))
+        else:
+            out[hits[0]] = info
+
+    for k in notfound:
+        print(f"  警告: 販売中止「{k}」は該当する薬剤が見つかりません（表記をご確認ください）")
+    for k, hits in ambiguous:
+        print(f"  警告: 販売中止「{k}」は同名が {len(hits)} 件あります。"
+              f"YJコードで指定してください → {', '.join(hits)}")
+    return out
+
+
 def load_kiso(path):
     """kiso.json（変更調剤が認められる基礎的医薬品の品名集合）を読む。"""
     if not path or not os.path.exists(path):
@@ -90,7 +264,7 @@ def lookup_price(pr, yj):
 
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, prices_path=None,
-          kiso_path=None):
+          kiso_path=None, disc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
@@ -107,11 +281,20 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
 
     pr = load_prices(prices_path)
     kiso = load_kiso(kiso_path)
+    # 薬剤名 → YJコード の索引（販売中止を名前で登録できるようにするため）
+    name_index = {}
+    for _, r in df.iterrows():
+        nm = clean(r[c[5]])
+        yjc = clean(r[c[4]])
+        if nm and yjc:
+            name_index.setdefault(norm_name(nm), []).append(yjc)
+    disc = load_discontinued(disc_path, name_index)
     rows = []
     snap = {}
     n_price = 0
     n_kiso = 0
     n_kchg = 0
+    n_disc = 0
     for _, r in df.iterrows():
         name = clean(r[c[5]])
         if not name: continue
@@ -137,6 +320,13 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         # 変更調剤が認められる基礎的医薬品（品名で突合）
         kc = 1 if (kiso is not None and name in kiso) else 0
         n_kchg += kc
+        # 販売中止（手動登録）。供給状況とは別軸の情報として持つ
+        dc = disc.get(yj)
+        if dc:
+            n_disc += 1
+            dcv = [dc["n"], dc["d"], dc.get("m", "")]
+        else:
+            dcv = 0
         rows.append([
             name, idx('i', ing), idx('m',mk), sp, yj,
             idx('k', strip_prefix(r[c[0]])),
@@ -155,6 +345,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             price,                              # [19] 薬価（円）／不明はnull
             kb,                                 # [20] 1=⑨基礎的医薬品
             kc,                                 # [21] 1=変更調剤が認められる基礎的医薬品
+            dcv,                                # [22] 販売中止 [告知日,実施日,メモ] / 0
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -176,6 +367,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "as_of": (pr or {}).get("as_of", ""),
         "matched": n_price,
     }
+
+    data["disc"] = {"count": n_disc, "registered": len(disc)}
 
     data["kiso"] = {
         "basic": n_kiso,

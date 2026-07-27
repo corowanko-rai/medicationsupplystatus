@@ -1,7 +1,7 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -68,7 +68,7 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),k:new Set(),cls:'',mk:'',pc:''}, results=[], shown=0;
+let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),k:new Set(),cls:'',mk:'',pc:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
@@ -102,6 +102,8 @@ function run(){
     }
     /* dosage form group: OR */
     if(K.size&&!K.has(dv(r,'k'))) return false;
+    /* 販売グループ */
+    if(state.dc.size && !dcOf(r)) return false;
     /* 変化グループ: OR */
     if(state.chg.size){
       const v=get(r,'chg');
@@ -144,6 +146,9 @@ const KINFO=DATA.kiso||{};
 /* ⑨基礎的医薬品 / 変更調剤が認められる基礎的医薬品 */
 const kbBadge=(r)=>get(r,'kb')?'<span class="kb" title="基礎的医薬品">基</span>':'';
 const kcBadge=(r)=>get(r,'kc')?'<span class="kc" title="後発医薬品と同様に変更調剤が認められる基礎的医薬品">変更可</span>':'';
+/* 販売中止（手動登録）。供給状況とは別軸なので専用の表示にする */
+const dcOf=(r)=>{const v=get(r,'disc'); return (v&&v!==0)?v:null;};
+const dcBadge=(r)=>dcOf(r)?'<span class="badge bdisc" title="販売中止（手動登録）">販売中止</span>':'';
 /* 成分名 → 該当行（同一成分薬の比較用） */
 const BY_ING=(()=>{const m=new Map();
   R.forEach(r=>{const k=r[F.i]; if(!m.has(k))m.set(k,[]); m.get(k).push(r);});
@@ -169,11 +174,12 @@ function render(){
   for(let i=shown;i<end;i++){
     const r=results[i], sc=get(r,'sc'), st=dv(r,'st');
     const el=document.createElement('div');
-    el.className='card s'+sc;
+    el.className='card s'+sc+(dcOf(r)?' disc':'');
     const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
     el.innerHTML=
       `<div class="tags">
         ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}
+        ${dcBadge(r)}
         <span class="badge b${sc}">${esc(st)}</span>
         ${get(r,'new')?'<span class="badge bnew">更新</span>':''}
         ${get(r,'chg')===1?'<span class="badge bworse">悪化</span>':''}
@@ -182,12 +188,21 @@ function render(){
       </div>
       <div class="nm">${hl(get(r,'n'),terms)}</div>
       <div class="sub">${hl(get(r,'sp'),terms)}<span class="sep">|</span>${hl(dv(r,'m'),terms)}${
-        get(r,'price')!=null?`<span class="yen">¥${fmtY(get(r,'price'))}</span>`:''}</div>
+        get(r,'price')!=null?`<span class="yen">¥${fmtY(get(r,'price'))}</span>`:''}${
+        (()=>{const d=dcOf(r); return (d&&d[1])?`<span class="dcd">中止 ${esc(d[1])}</span>`:'';})()}</div>
       <div class="det">
         <dl style="margin:0">
         <div class="row"><dt>成分名</dt><dd>${hl(dv(r,'i'),terms)}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
         <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}</dd></div>
+        ${(()=>{const d=dcOf(r); if(!d) return '';
+          const L=[];
+          if(d[0]) L.push(`告知日 ${esc(d[0])}`);
+          if(d[1]) L.push(`実施日 <b>${esc(d[1])}</b>`);
+          return `<div class="row"><dt>販売中止</dt><dd>${
+            L.length?L.join('<br>'):'<b>予定</b>'}${
+            d[2]?`<br><span style="color:var(--ink3);font-size:11.5px">${esc(d[2])}</span>`:''}</dd></div>`;
+        })()}
         ${get(r,'kb')?`<div class="row"><dt>基礎的</dt><dd>対象${
           get(r,'kc')?'／<b>後発品と同様に変更調剤が可能</b>':
           (KINFO.swap_available?'（変更調剤の対象外）':'')}</dd></div>`:''}
@@ -256,11 +271,12 @@ document.getElementById('logic').addEventListener('click',e=>{
 });
 const EX=['normal','limited','stopped'];
 const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
-           worse:'悪化',better:'改善'};
+           worse:'悪化',better:'改善',disc:'販売中止'};
 function renderActive(){
   const box=document.getElementById('active');
   const parts=[];
   state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
+  state.dc.forEach(v=>parts.push({g:'dc',v,t:LBL[v]}));
   state.chg.forEach(v=>parts.push({g:'chg',v,t:LBL[v]}));
   state.k.forEach(v=>parts.push({g:'k',v,t:v}));
   if(state.cls) parts.push({g:'cls',v:'',t:state.cls});
@@ -284,7 +300,7 @@ function renderActive(){
 }
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
-    state.st.clear(); state.k.clear(); state.chg.clear();
+    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear();
     state.cls=''; state.mk=''; state.pc=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
     document.getElementById('fpc').value='';
@@ -292,7 +308,7 @@ document.getElementById('active').addEventListener('click',e=>{
   }
   const x=e.target.closest('.x'); if(!x) return;
   const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
-  if(g==='st'||g==='k'||g==='chg') state[g].delete(v);
+  if(g==='st'||g==='k'||g==='chg'||g==='dc') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
   else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
   else if(g==='mk'){ state.mk=''; document.getElementById('fmk').value=''; }
@@ -408,7 +424,7 @@ function drawCmp(){
     const sc=get(r,'sc'), me=get(r,'yj')===myYj, pv=get(r,'price');
     html+=`<div class="cmprow s${sc}${me?' me':''}">
       <div class="cmpmain">
-        <div class="cmpnm">${pcBadge(r)}${kbBadge(r)}${kcBadge(r)} ${esc(get(r,'n'))}</div>
+        <div class="cmpnm">${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${dcBadge(r)} ${esc(get(r,'n'))}</div>
         <div class="cmpsub">${mode==='a'?`<b class="sphl">${esc(get(r,'sp'))}</b>`:esc(get(r,'sp'))}｜${esc(dv(r,'m'))}</div>
         ${mode==='a'?'':`<span class="cmpst b${sc}">${esc(dv(r,'st'))}</span>`}
       </div>
@@ -548,6 +564,11 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+=R_('<span class="kc">変更可</span>',
         '後発医薬品と同様に変更調剤が認められます',
         '基のみで変更可が付かない場合は、変更調剤の対象外です');
+
+  h+=S_('販売中止');
+  h+=R_(bd('販売中止','bdisc'),'販売中止が登録されています',
+        '製薬企業の告知に基づく手動登録です。厚労省Excelでは「通常出荷」のままの品目もあります。'+
+        '薬価には影響しません（薬価は薬価基準収載品目リストのみを参照）');
 
   h+=S_('前回版からの変化');
   h+=R_(bd('更新','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「New」表示に対応');

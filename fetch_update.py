@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "state.json")
 XLSX  = os.path.join(HERE, "latest.xlsx")
 SNAP  = os.path.join(HERE, "snapshot.json")   # 前版の出荷状況（悪化/改善判定用）
+DISC  = os.path.join(HERE, "discontinued.txt") # 販売中止の手動登録
 KISO  = os.path.join(HERE, "kiso.json")       # 変更調剤可の基礎的医薬品（fetch_kiso.py が作成）
 PRICES= os.path.join(HERE, "prices.json")     # 薬価（fetch_prices.py が作成。無ければ薬価なしで動く）
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
@@ -160,7 +161,8 @@ def main():
 
         n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
                              prev_snapshot=prev, snapshot_out=SNAP,
-                             prices_path=PRICES, kiso_path=KISO)
+                             prices_path=PRICES, kiso_path=KISO,
+                             disc_path=DISC)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = datetime.datetime.now().isoformat(timespec="seconds")
