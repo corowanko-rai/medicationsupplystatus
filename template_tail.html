@@ -476,29 +476,40 @@ const REVERSE=(()=>{
     /* 同額の先発が複数ある場合は品名順で代表を決める */
     const base=brands.filter(r=>get(r,'price')===lo)
                      .sort((a,b)=>get(a,'n').localeCompare(get(b,'n'),'ja'))[0];
-    out.push({base, lo, over, gap:get(over[0],'price')-lo});
+    out.push({base, lo, over, gap:get(over[0],'price')-lo, k:dv(base,'k')});
   });
   /* 差額の大きい順 */
   return out.sort((a,b)=>b.gap-a.gap);
 })();
 
+let rvKind='';   /* '' = すべて */
 function drawRv(){
   const box=document.getElementById('rvbody');
+  const list = rvKind ? REVERSE.filter(x=>x.k===rvKind) : REVERSE;
+  /* 剤形ボタンは該当が無いものを隠す（押しても0件になるのを避ける） */
+  const avail=new Set(REVERSE.map(x=>x.k));
+  document.querySelectorAll('#rvk .sortb').forEach(b=>{
+    const k=b.dataset.k;
+    b.style.display = (!k || avail.has(k)) ? '' : 'none';
+    b.setAttribute('aria-pressed', k===rvKind);
+  });
   document.getElementById('rvt').innerHTML=
-    `後発品が高い薬<span class="sc">${REVERSE.length}件`+
+    `後発品が高い薬<span class="sc">${list.length}件`+
+    (rvKind?` （${rvKind}）`:'')+
     (PINFO.as_of?` ／ 薬価 ${PINFO.as_of.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3')}適用`:'')+
     `</span>`;
-  if(!REVERSE.length){
+  if(!list.length){
     box.innerHTML='<div class="rvempty">'+
-      (PINFO.available
-        ? '該当する薬剤はありません。'
-        : '薬価データが取得できていないため判定できません。')+'</div>';
+      (!PINFO.available
+        ? '薬価データが取得できていないため判定できません。'
+        : rvKind ? `${rvKind}に該当する薬剤はありません。`
+                 : '該当する薬剤はありません。')+'</div>';
     return;
   }
   let h='<div class="lgnote" style="margin:10px 0 14px">'+
     '先発品・長期収載品より<b>高い後発品</b>がある組み合わせです。'+
     '同じ成分・剤形・規格どうしで比較しています。差額の大きい順。</div>';
-  REVERSE.forEach(x=>{
+  list.forEach(x=>{
     const b=x.base;
     h+=`<div class="rvgrp">
       <div class="rvhd">
@@ -530,6 +541,12 @@ function closeRv(){
   document.getElementById('rv').classList.remove('on');
   document.body.style.overflow='';
 }
+document.getElementById('rvk').addEventListener('click',e=>{
+  const b=e.target.closest('.sortb'); if(!b) return;
+  rvKind=b.dataset.k;
+  drawRv();
+  document.getElementById('rvbody').scrollTop=0;
+});
 document.getElementById('rvx').addEventListener('click',closeRv);
 
 /* ---------- 凡例 ---------- */
@@ -593,6 +610,7 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+='<div class="lgnote">'+
      '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品より高い後発品がある組み合わせを、'+
      '先発品名で一覧できます。同じ成分・剤形・規格どうしで比較し、差額の大きい順に並びます。'+
+     '上部のボタンで<b>剤形（内用薬・外用薬・注射薬）で絞り込め</b>ます。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>検索</b>：全角・半角どちらでも同じ結果です（ＤＳ５０％＝DS50%）。'+
