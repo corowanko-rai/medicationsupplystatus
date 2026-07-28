@@ -7,13 +7,14 @@ on:
   workflow_dispatch:        # 手動実行も可能
     inputs:
       mode:
-        description: '実行モード'
+        description: '実行モード（既定=local：厚労省へアクセスしない）'
         type: choice
         default: 'local'
         options:
-          - local     # 厚労省へアクセスせず、保存済みデータから再生成（表示調整・販売中止の登録用）
-          - check     # 厚労省を確認し、更新があれば取得（通常の定期実行と同じ）
+          - local     # 厚労省へアクセスせず再生成（表示調整・販売中止の登録用）
+          - check     # 厚労省を確認し、更新があれば取得
           - force     # 厚労省から強制的に再取得
+    # ※毎朝7時の定期実行は inputs が無いため、常に check で動作します
 
 permissions:
   contents: write
