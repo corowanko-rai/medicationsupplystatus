@@ -139,6 +139,7 @@ def main():
 
         data = {
             "as_of": year,
+            "file": url.rsplit("/", 1)[-1],
             "sha256": h,
             "source": url,
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),

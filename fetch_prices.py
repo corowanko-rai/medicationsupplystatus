@@ -186,7 +186,7 @@ def main():
         if check:
             log("--check のため、ダウンロードは行いません。")
             log(f"  前回の版: {prev.get('as_of','(未取得)')}")
-            log(f"  今回の版: {page_date}")
+            log(f"  今回の版: {max(excels[s][0] for s in excels)}")
             return 0
 
         blobs, digest = {}, hashlib.sha256()
@@ -214,8 +214,16 @@ def main():
         if os.path.exists(tmp):
             os.remove(tmp)
 
+        # ページのURL日付は改定後も変わらない（例: tp20260401-01.html のまま
+        # 中身が7月15日適用に差し替わる）。実際のExcelの日付を採用する。
+        excel_date = max(excels[s][0] for s in excels)
+
         data = {
-            "as_of": page_date,
+            "as_of": excel_date,
+            # 区分ごとの日付（画面で個別に表示する）
+            "files": {KIND[s]: {"date": excels[s][0],
+                                "name": excels[s][1].rsplit("/", 1)[-1]}
+                      for s in sorted(excels)},
             "sha256": h,
             "source": page_url,
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),

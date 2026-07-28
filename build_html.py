@@ -377,6 +377,25 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "available": pr is not None,
         "as_of": (pr or {}).get("as_of", ""),
         "matched": n_price,
+        "files": (pr or {}).get("files", {}),
+        "fetched": (pr or {}).get("updated_at", ""),
+    }
+
+    # データ元ごとの日付（画面の「データの鮮度」で表示する）
+    kj = {}
+    if kiso_path and os.path.exists(kiso_path):
+        try:
+            kj = json.load(open(kiso_path, encoding="utf-8"))
+        except Exception:
+            kj = {}
+    data["sources"] = {
+        "supply": {"label": "医療用医薬品供給状況",
+                   "date": data["date"],
+                   "file": (source_url or "").rsplit("/", 1)[-1]},
+        "kiso":   {"label": "変更調剤が認められる基礎的医薬品等",
+                   "date": kj.get("as_of", ""),
+                   "file": kj.get("file", ""),
+                   "fetched": kj.get("updated_at", "")},
     }
 
     data["disc"] = {"count": n_disc, "registered": len(disc)}

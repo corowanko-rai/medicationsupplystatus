@@ -668,6 +668,35 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '検索窓の上で「品名」と「成分名」を切り替えられます。'+
      '</div>';
 
+  /* ---- データの鮮度（取得元ごとの日付） ---- */
+  const SRC=DATA.sources||{}, PF=(PINFO.files||{});
+  const fmtD=(d)=>{
+    if(!d) return '—';
+    if(/^\d{8}$/.test(d)) return d.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3');
+    if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d.replace(/-/g,'/');
+    return esc(d);
+  };
+  h+=S_('データの鮮度');
+  const row=(name,date,file)=>
+    `<div class="srcrow"><div class="srcn">${esc(name)}</div>`+
+    `<div class="srcd">${fmtD(date)}</div></div>`+
+    (file?`<div class="srcf">${esc(file)}</div>`:'');
+  if(SRC.supply) h+=row('医療用医薬品供給状況', SRC.supply.date, SRC.supply.file);
+  ['内用薬','注射薬','外用薬'].forEach(k=>{
+    if(PF[k]) h+=row('薬価基準収載品目リスト（'+k+'）', PF[k].date, PF[k].name);
+  });
+  if(!Object.keys(PF).length && PINFO.available)
+    h+=row('薬価基準収載品目リスト', PINFO.as_of, '');
+  if(!PINFO.available)
+    h+=row('薬価基準収載品目リスト', '', '（未取得）');
+  if(SRC.kiso) h+=row('変更調剤が認められる基礎的医薬品等',
+                      SRC.kiso.date, SRC.kiso.file||'（未取得）');
+  h+='<div class="lgnote" style="margin-top:12px">'+
+     '厚労省の各ファイルを<b>毎朝7時に自動確認</b>し、更新があった分だけ取得します。'+
+     '日付はそのファイルが適用・作成された日です。'+
+     (DATA.gen?`<br>このページの生成日時：${esc(DATA.gen)}`:'')+
+     '</div>';
+
   document.getElementById('lgbody').innerHTML=h;
 })();
 function openLg(){
