@@ -1,0 +1,26 @@
+name: 販売中止の登録
+description: DrugShortage.JP からコピーした内容を貼り付けるだけで登録できます
+title: "販売中止の登録"
+labels: ["販売中止"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DrugShortage.JP のカードを選択してコピーし、下の欄に貼り付けて
+        **Submit new issue** を押してください。整形は不要です。
+        会社名や薬価の行が混ざっていても無視されます。
+        複数まとめて貼っても構いません。
+  - type: textarea
+    id: body
+    attributes:
+      label: 貼り付け欄
+      placeholder: |
+        告知日:
+        2026年7月28日
+        実施日:
+        2026年10月1日 予定
+        販売中止
+        カルベジロール錠２０ｍｇ「ＪＧ」
+        PTP100錠(20mg/錠 PTP 10錠×10)
+    validations:
+      required: true
