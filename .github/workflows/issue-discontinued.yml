@@ -1,0 +1,117 @@
+name: 販売中止をIssueから登録
+
+# 「販売中止」ラベルの付いたIssueが作成／編集されたときだけ動きます。
+# 他のIssueには反応しません。
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    # ラベルが付いているIssueのみ処理する
+    if: contains(github.event.issue.labels.*.name, '販売中止')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存パッケージのインストール
+        run: pip install pandas openpyxl
+
+      - name: Issue本文を取り出す
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$BODY" > _issue_body.txt
+          echo "--- 受け取った本文 ---"
+          cat _issue_body.txt
+
+      - name: discontinued.txt に追記
+        id: apply
+        run: |
+          set +e
+          python apply_issue.py _issue_body.txt "${{ github.event.issue.number }}" | tee _apply.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          {
+            echo 'log<<EOF'
+            cat _apply.log
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+          rm -f _issue_body.txt
+          if [ $code -eq 1 ]; then exit 1; fi
+
+      - name: ページを再生成（厚労省へはアクセスしません）
+        if: steps.apply.outputs.code == '0'
+        run: python fetch_update.py --local
+
+      - name: 変更をコミット
+        if: steps.apply.outputs.code == '0'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash || true
+          git add discontinued.txt
+          git diff --staged --quiet || \
+            git commit -m "販売中止を登録（Issue #${{ github.event.issue.number }}）"
+          git push
+
+      - name: 公開用ディレクトリを準備
+        if: steps.apply.outputs.code == '0'
+        run: |
+          mkdir -p public
+          cp 医薬品供給状況_検索.html public/index.html
+
+      - uses: actions/configure-pages@v5
+        if: steps.apply.outputs.code == '0'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.apply.outputs.code == '0'
+        with:
+          path: public
+
+      - uses: actions/deploy-pages@v4
+        if: steps.apply.outputs.code == '0'
+
+      # 結果をIssueにコメントし、成功なら自動で閉じる
+      - name: 結果を返信
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const code = '${{ steps.apply.outputs.code }}';
+            const log  = `${{ steps.apply.outputs.log }}`;
+            let msg;
+            if (code === '0') {
+              msg = '✅ 登録しました。数分後に公開ページへ反映されます。\n\n```\n' + log + '\n```';
+            } else if (code === '10') {
+              msg = '⚠️ 本文が空でした。貼り付け内容をご確認ください。';
+            } else {
+              msg = '❌ 読み取れませんでした。告知日・実施日・薬剤名・包装を含めて貼り直してください。\n\n```\n' + log + '\n```';
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body: msg
+            });
+            if (code === '0') {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, state: 'closed'
+              });
+            }
