@@ -498,7 +498,11 @@ const REVERSE=(()=>{
     const gens  =rows.filter(r=>dv(r,'pc')==='後発品');
     if(!brands.length||!gens.length) return;
     const lo=Math.min(...brands.map(r=>get(r,'price')));
-    /* 先発品・長期収載品「以上」の後発品を拾う（同額を含む） */
+    /* 「先発品・長期収載品 ≦ 最も安い後発品」のときだけ対象にする。
+       後発品が1つでも高ければ拾う方式だと、安い後発品が別にある場合まで
+       含まれてしまい、実務上の意味が薄れるため。 */
+    const gLo=Math.min(...gens.map(r=>get(r,'price')));
+    if(lo>gLo) return;
     const over=gens.filter(r=>get(r,'price')>=lo)
                    .sort((a,b)=>get(b,'price')-get(a,'price'));
     if(!over.length) return;
@@ -563,7 +567,8 @@ function drawRv(){
     return;
   }
   let h='<div class="lgnote" style="margin:10px 0 14px">'+
-    '先発品・長期収載品と<b>同額かそれより高い後発品</b>がある組み合わせです。'+
+    '先発品・長期収載品が<b>最も安い後発品と同額か、それより安い</b>組み合わせです。'+
+    'つまり<b>後発品に変えても安くならない</b>ものを集めています。'+
     '同じ成分・剤形・規格どうしで比較しています。差額の大きい順。</div>';
   list.forEach(x=>{
     const b=x.base;
@@ -690,7 +695,8 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '未収載医薬品（液化酸素など）はYJコードが短く判定できないため、選択肢に出ません。'+
      '</div>';
   h+='<div class="lgnote">'+
-     '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品と同額かそれより高い後発品がある組み合わせを、'+
+     '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品が<b>最も安い後発品と同額かそれより安い</b>組み合わせ、'+
+     'つまり後発品に変えても安くならないものを'+
      '先発品名で一覧できます。同じ成分・剤形・規格どうしで比較し、差額の大きい順に並びます。'+
      '<b>「高い」「同額」</b>で絞り込めます（同額は選定療養の説明などで役立ちます）。'+
      'さらに<b>剤形での絞り込み</b>と、検索窓での<b>先発品名の絞り込み</b>ができます。'+
