@@ -29,8 +29,12 @@ def clean_body(text):
     - チェックボックス行
     """
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    # Issueテンプレートが自動で付ける見出し・案内文は解析対象から外す
+    DROP = ("貼り付け欄", "販売中止の登録", "_No response_", "### ")
     out = []
     for ln in text.splitlines():
+        if ln.strip() in ("貼り付け欄", "_No response_"):
+            continue
         t = ln.rstrip()
         s = t.strip()
         if s in ("```", "~~~") or s.startswith("```"):
@@ -38,6 +42,8 @@ def clean_body(text):
         if re.match(r"^\s*[-*]\s*\[[ xX]\]", s):     # チェックボックス
             continue
         s2 = re.sub(r"^\s*(#{1,6}\s*|>\s*)", "", t)  # 見出し・引用
+        if s2.strip() in ("貼り付け欄", "販売中止の登録"):
+            continue
         out.append(s2)
     # 前後の空行を落とす
     while out and not out[0].strip():
