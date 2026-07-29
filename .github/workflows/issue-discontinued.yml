@@ -4,7 +4,7 @@ name: 販売中止をIssueから登録
 # 他のIssueには反応しません。
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [opened, edited, reopened, labeled]
 
 permissions:
   contents: write
@@ -18,10 +18,35 @@ concurrency:
 
 jobs:
   apply:
-    # ラベルが付いているIssueのみ処理する
-    if: contains(github.event.issue.labels.*.name, '販売中止')
+    # 「販売中止」を含むIssueだけ処理する。
+    # ラベルはリポジトリに未作成だと自動付与されないため、
+    # タイトルまたは本文でも判定する。
+    if: >-
+      contains(github.event.issue.labels.*.name, '販売中止') ||
+      contains(github.event.issue.title, '販売中止') ||
+      contains(github.event.issue.body, '販売中止')
     runs-on: ubuntu-latest
     steps:
+      # ラベルが未作成なら作り、Issueに付ける（次回以降の判別用）
+      - name: ラベルを用意する
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const name = '販売中止';
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name });
+            } catch (e) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo,
+                name, color: '2b3947',
+                description: '販売中止の登録用（自動処理されます）' });
+            }
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, labels: [name] });
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
