@@ -1,6 +1,11 @@
 name: 医薬品供給状況の自動更新
 
 on:
+  # 販売中止の登録ファイルを直接編集した場合、Run workflow なしで反映する
+  push:
+    branches: [main]
+    paths:
+      - 'discontinued.txt'
   schedule:
     # UTC 22:00 = JST 翌07:00（毎日）
     - cron: '0 22 * * *'
@@ -45,7 +50,7 @@ jobs:
       - name: 薬価基準収載品目リストを取得
         id: prices
         continue-on-error: true
-        if: inputs.mode != 'local'
+        if: inputs.mode != 'local' && github.event_name != 'push'
         run: |
           set +e
           python fetch_prices.py
@@ -62,7 +67,7 @@ jobs:
       - name: 基礎的医薬品リストを取得
         id: kiso
         continue-on-error: true
-        if: inputs.mode != 'local'
+        if: inputs.mode != 'local' && github.event_name != 'push'
         run: |
           set +e
           python fetch_kiso.py
@@ -80,7 +85,11 @@ jobs:
         run: |
           set +e
           MODE="${{ inputs.mode }}"
-          if [ -z "$MODE" ]; then MODE="check"; fi   # 定期実行は check
+          if [ -z "$MODE" ]; then
+            # discontinued.txt の編集で起動した場合は厚労省へアクセスしない。
+            # 定期実行（schedule）は check。
+            if [ "${{ github.event_name }}" = "push" ]; then MODE="local"; else MODE="check"; fi
+          fi
 
           if [ "$MODE" = "local" ]; then
             # 厚労省へは一切アクセスせず、保存済みExcelから作り直すだけ
