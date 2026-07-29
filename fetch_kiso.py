@@ -127,7 +127,17 @@ def main():
         h = hashlib.sha256(blob).hexdigest()
         log(f"取得完了 {len(blob):,} bytes / sha256={h[:16]}…")
 
+        fname = url.rsplit("/", 1)[-1]
         if prev.get("sha256") == h:
+            # 中身が同じでも記録が古い形式なら、ファイル名などだけ更新する
+            if prev.get("file") != fname or prev.get("as_of") != year:
+                prev["file"] = fname
+                prev["as_of"] = year
+                prev["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                with open(OUT, "w", encoding="utf-8") as f:
+                    json.dump(prev, f, ensure_ascii=False, separators=(",", ":"))
+                log(f"変更なし。ファイル情報のみ更新しました（{fname}）")
+                return 0
             log("変更なし（前回と同一）。処理を終了します。")
             return 10
 
@@ -139,7 +149,7 @@ def main():
 
         data = {
             "as_of": year,
-            "file": url.rsplit("/", 1)[-1],
+            "file": fname,
             "sha256": h,
             "source": url,
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),

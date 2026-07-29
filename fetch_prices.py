@@ -197,7 +197,22 @@ def main():
         h = digest.hexdigest()
         log(f"取得完了。統合ハッシュ={h[:16]}…")
 
+        excel_date = max(excels[s][0] for s in excels)
+        files_meta = {KIND[s]: {"date": excels[s][0],
+                                "name": excels[s][1].rsplit("/", 1)[-1]}
+                      for s in sorted(excels)}
+
         if prev.get("sha256") == h:
+            # 中身は同じでも、記録している日付やファイル名が古い形式・古い値なら
+            # そこだけ更新する（再解析はしないので処理は一瞬で終わる）
+            if prev.get("as_of") != excel_date or prev.get("files") != files_meta:
+                prev["as_of"] = excel_date
+                prev["files"] = files_meta
+                prev["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                with open(OUT, "w", encoding="utf-8") as f:
+                    json.dump(prev, f, ensure_ascii=False, separators=(",", ":"))
+                log(f"変更なし。日付情報のみ更新しました（{excel_date}）")
+                return 0
             log("変更なし（前回と同一）。処理を終了します。")
             return 10
 
@@ -214,16 +229,9 @@ def main():
         if os.path.exists(tmp):
             os.remove(tmp)
 
-        # ページのURL日付は改定後も変わらない（例: tp20260401-01.html のまま
-        # 中身が7月15日適用に差し替わる）。実際のExcelの日付を採用する。
-        excel_date = max(excels[s][0] for s in excels)
-
         data = {
             "as_of": excel_date,
-            # 区分ごとの日付（画面で個別に表示する）
-            "files": {KIND[s]: {"date": excels[s][0],
-                                "name": excels[s][1].rsplit("/", 1)[-1]}
-                      for s in sorted(excels)},
+            "files": files_meta,
             "sha256": h,
             "source": page_url,
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),

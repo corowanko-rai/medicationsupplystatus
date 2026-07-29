@@ -1,7 +1,7 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -53,6 +53,7 @@ function fill(sel,key){
 fill(document.getElementById('fcls'),'cls');
 fill(document.getElementById('fmk'),'m');
 fill(document.getElementById('fpc'),'pc');
+fill(document.getElementById('ffm'),'fm');
 
 /* ---------- Search normalization ---------- */
 /* Full-width -> half-width. NOTE: U+30FC (ー, katakana long vowel) must NOT be
@@ -68,7 +69,7 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),k:new Set(),cls:'',mk:'',pc:''}, results=[], shown=0;
+let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
@@ -115,6 +116,7 @@ function run(){
     if(state.cls&&dv(r,'cls')!==state.cls) return false;
     if(state.mk&&dv(r,'m')!==state.mk) return false;
     if(state.pc&&dv(r,'pc')!==state.pc) return false;
+    if(state.fm&&dv(r,'fm')!==state.fm) return false;
     return match(r,terms);
   });
   /* Problem items first — that's what people are searching for */
@@ -148,7 +150,16 @@ const kbBadge=(r)=>get(r,'kb')?'<span class="kb" title="基礎的医薬品">基<
 const kcBadge=(r)=>get(r,'kc')?'<span class="kc" title="後発医薬品と同様に変更調剤が認められる基礎的医薬品">変更可</span>':'';
 /* 販売中止（手動登録）。供給状況とは別軸なので専用の表示にする */
 const dcOf=(r)=>{const v=get(r,'disc'); return (v&&v!==0)?v:null;};
-const dcBadge=(r)=>dcOf(r)?'<span class="badge bdisc" title="販売中止（手動登録）">販売中止</span>':'';
+/* 販売中止は包装単位で起こる。包装が特定できている場合は
+   「一部の包装のみ」と分かる表示にする。 */
+const dcPkgs=(r)=>{const v=dcOf(r); const a=(v&&v[3])||[];
+  return Array.isArray(a)?a.filter(e=>e&&e.p):[];};
+const dcBadge=(r)=>{
+  if(!dcOf(r)) return '';
+  return dcPkgs(r).length
+    ? '<span class="badge bdisc part" title="一部の包装が販売中止（他の包装は継続の可能性）">販売中止（一部包装）</span>'
+    : '<span class="badge bdisc" title="販売中止（手動登録）">販売中止</span>';
+};
 /* 成分名 → 該当行（同一成分薬の比較用） */
 const BY_ING=(()=>{const m=new Map();
   R.forEach(r=>{const k=r[F.i]; if(!m.has(k))m.set(k,[]); m.get(k).push(r);});
@@ -194,14 +205,27 @@ function render(){
         <dl style="margin:0">
         <div class="row"><dt>成分名</dt><dd>${hl(dv(r,'i'),terms)}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
+        ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
         <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}</dd></div>
         ${(()=>{const d=dcOf(r); if(!d) return '';
-          const L=[];
-          if(d[0]) L.push(`告知日 ${esc(d[0])}`);
-          if(d[1]) L.push(`実施日 <b>${esc(d[1])}</b>`);
-          return `<div class="row"><dt>販売中止</dt><dd>${
-            L.length?L.join('<br>'):'<b>予定</b>'}${
-            d[2]?`<br><span style="color:var(--ink3);font-size:11.5px">${esc(d[2])}</span>`:''}</dd></div>`;
+          const pk=dcPkgs(r);
+          let body;
+          if(pk.length){
+            /* 包装ごとに中止時期が違うため、包装単位で並べる */
+            body='<b>下記の包装のみ</b>'+
+              '<div class="pkwarn">他の包装は継続している場合があります。'+
+              '製薬企業の案内でご確認ください。</div>'+
+              pk.map(e=>`<div class="pkrow"><span class="pkn">${esc(e.p)}</span>`+
+                `<span class="pkd">${e.d?esc(e.d):'—'}</span></div>`).join('');
+            if(d[0]) body+=`<div class="pkmeta">告知日 ${esc(d[0])}</div>`;
+          }else{
+            const L=[];
+            if(d[0]) L.push(`告知日 ${esc(d[0])}`);
+            if(d[1]) L.push(`実施日 <b>${esc(d[1])}</b>`);
+            body = L.length?L.join('<br>'):'<b>予定</b>';
+          }
+          return `<div class="row"><dt>販売中止</dt><dd>${body}${
+            d[2]?`<div class="pkmeta">${esc(d[2])}</div>`:''}</dd></div>`;
         })()}
         ${get(r,'kb')?`<div class="row"><dt>基礎的</dt><dd>対象${
           get(r,'kc')?'／<b>後発品と同様に変更調剤が可能</b>':
@@ -280,6 +304,7 @@ function renderActive(){
   state.chg.forEach(v=>parts.push({g:'chg',v,t:LBL[v]}));
   state.k.forEach(v=>parts.push({g:'k',v,t:v}));
   if(state.cls) parts.push({g:'cls',v:'',t:state.cls});
+  if(state.fm)  parts.push({g:'fm', v:'',t:state.fm});
   if(state.pc)  parts.push({g:'pc', v:'',t:state.pc});
   if(state.mk)  parts.push({g:'mk', v:'',t:state.mk});
   if(!parts.length){ box.classList.remove('on'); box.innerHTML=''; return; }
@@ -301,9 +326,10 @@ function renderActive(){
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
     state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear();
-    state.cls=''; state.mk=''; state.pc=''; state.stMode='or';
+    state.cls=''; state.mk=''; state.pc=''; state.fm=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
     document.getElementById('fpc').value='';
+    document.getElementById('ffm').value='';
     syncChips(); run(); return;
   }
   const x=e.target.closest('.x'); if(!x) return;
@@ -311,6 +337,7 @@ document.getElementById('active').addEventListener('click',e=>{
   if(g==='st'||g==='k'||g==='chg'||g==='dc') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
   else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
+  else if(g==='fm'){ state.fm=''; document.getElementById('ffm').value=''; }
   else if(g==='mk'){ state.mk=''; document.getElementById('fmk').value=''; }
   syncChips(); run();
 });
@@ -321,6 +348,7 @@ document.getElementById('advbtn').addEventListener('click',function(){
 document.getElementById('fcls').addEventListener('change',e=>{state.cls=e.target.value;renderActive();run()});
 document.getElementById('fmk').addEventListener('change',e=>{state.mk=e.target.value;renderActive();run()});
 document.getElementById('fpc').addEventListener('change',e=>{state.pc=e.target.value;renderActive();run()});
+document.getElementById('ffm').addEventListener('change',e=>{state.fm=e.target.value;renderActive();run()});
 window.addEventListener('scroll',()=>{
   if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500) render();
   document.getElementById('top').classList.toggle('on',window.scrollY>900);
@@ -630,6 +658,8 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '基のみで変更可が付かない場合は、変更調剤の対象外です');
 
   h+=S_('販売中止');
+  h+=R_(bd('販売中止（一部包装）','bdisc part'),'一部の包装のみ販売中止です',
+        '他の包装は継続している場合があります。カードを開くと該当包装が並びます');
   h+=R_(bd('販売中止','bdisc'),'販売中止が登録されています',
         '製薬企業の告知に基づく手動登録です。厚労省Excelでは「通常出荷」のままの品目もあります。'+
         '薬価には影響しません（薬価は薬価基準収載品目リストのみを参照）');
@@ -640,7 +670,8 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など');
 
   h+=S_('その他の表示');
-  h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）');
+  h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）',
+        '「剤形（詳細）」の絞り込みでは、軟膏・クリーム・テープ・OD錠など38種に分類しています');
   h+=R_('<span class="yen" style="margin-left:0">¥10.8</span>','薬価（円）',
         '薬価基準収載品目リストから取得。適用日はカードを開くと表示されます');
 
@@ -653,6 +684,10 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '<br><b>規格順</b>＝同じ規格の中で安い順。同一規格の置き換え先を探すとき。'+
      '<br><b>入手できる順</b>＝通常出荷を先頭に。今すぐ手に入るものを探すとき。'+
      '<br><b>剤形順</b>＝内用・外用・注射でまとめる。剤形が複数ある成分でのみ表示されます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>剤形（詳細）</b>：品名と YJコードの剤形記号から判定しています。'+
+     '未収載医薬品（液化酸素など）はYJコードが短く判定できないため、選択肢に出ません。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>「後発品が高い」</b>（件数バーの赤い文字）：先発品・長期収載品と同額かそれより高い後発品がある組み合わせを、'+

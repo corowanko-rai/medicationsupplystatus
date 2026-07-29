@@ -62,6 +62,83 @@ def load_prices(path):
     return None
 
 
+# ---- 細かい剤形の判定 --------------------------------------------
+# 供給状況Excelには「内用薬/外用薬/注射薬」の3分類しかないため、
+# 品名のキーワードを優先し、決まらない分だけYJコード8桁目の
+# 剤形記号で補う。記号の意味は剤形区分ごとに異なる点に注意
+# （M＝内用薬ではカプセル、外用薬では軟膏）。
+FORM_RULES = {
+  "内用薬": [
+    ("OD錠", r"OD錠|口腔内崩壊"),
+    ("チュアブル", r"チュアブル|かみ砕|咀嚼"),
+    ("ドライシロップ", r"ドライシロップ|DS\d|ＤＳ"),
+    ("シロップ", r"シロップ"),
+    ("内用液", r"内用液|経口液|内服液|内服ゼリー|経口ゼリー"),
+    ("細粒", r"細粒"),
+    ("顆粒", r"顆粒|グラニュール"),
+    ("散", r"散\b|散剤|散\d|散$|原末|末$"),
+    ("カプセル", r"カプセル"),
+    ("錠", r"錠"),
+  ],
+  "外用薬": [
+    ("眼軟膏", r"眼軟膏"),
+    ("軟膏", r"軟膏"),
+    ("クリーム", r"クリーム"),
+    ("ゲル", r"ゲル|ジェル"),
+    ("ローション", r"ローション|乳液"),
+    ("テープ", r"テープ|パッチ"),
+    ("パップ", r"パップ|湿布"),
+    ("貼付剤", r"貼付"),
+    ("坐剤", r"坐剤|座薬|坐薬|ホスコ"),
+    ("点眼", r"点眼|眼灌流|眼科用"),
+    ("点鼻", r"点鼻"),
+    ("点耳", r"点耳"),
+    ("吸入", r"吸入|エアゾール|ネブライザ|ジェヌエア|ディスカス|タービュヘイラー|レスピマット|エリプタ"),
+    ("うがい", r"うがい|含嗽"),
+    ("浣腸", r"浣腸"),
+    ("スプレー", r"スプレー|フォーム|ミスト|噴霧|エロゾル|エアゾル|ゾル\d|ゾル$"),
+    ("腟錠・腟剤", r"腟|膣"),
+    ("口腔・歯科用", r"歯科用|口腔用|口腔内|トローチ|舌下"),
+    ("パスタ", r"パスタ|ペースト"),
+    ("消毒・外用液", r"消毒|消エタ|消アル|外用液|液$|液\d|液（|チンキ|エタノール|アルコール|イソプロパノール|イソプロ|アンモニア水|ポビドンヨード|オキシドール"),
+    ("原末・その他", r"原末|末$|カンフル|ゴム末"),
+    ("油・その他基剤", r"油$|油\d|油（|油「|石ケン|ワセリン"),
+    ("ワイプ・清拭", r"ワイプ|清拭"),
+  ],
+  "注射薬": [
+    ("キット・シリンジ", r"キット|シリンジ|オートインジェクター"),
+    ("点滴静注", r"点滴|輸液|バッグ"),
+    ("静注", r"静注|静脈内"),
+    ("筋注", r"筋注|筋肉内"),
+    ("皮下注", r"皮下注"),
+    ("注射剤", r".*"),
+  ],
+}
+FORM_SYM = {
+  "内用薬": {"F":"錠","G":"錠","M":"カプセル","N":"カプセル","C":"細粒","D":"顆粒",
+            "A":"散","B":"散","R":"ドライシロップ","Q":"シロップ","S":"内用液","X":"散"},
+  "外用薬": {"M":"軟膏","N":"クリーム","S":"テープ","J":"坐剤","K":"浣腸","R":"点鼻",
+            "Q":"点眼","G":"吸入","Y":"浣腸","F":"うがい","X":"消毒・外用液"},
+  "注射薬": {"A":"注射剤","G":"キット・シリンジ","D":"注射剤","F":"点滴静注",
+            "H":"静注","P":"キット・シリンジ","S":"キット・シリンジ","X":"注射剤"},
+}
+_FORM_CACHE = {}
+
+
+def detect_form(name, kind, yj):
+    """細かい剤形を返す。判定できなければ '' を返す。"""
+    nm = unicodedata.normalize("NFKC", str(name or "")).replace("「", "").replace("」", "")
+    for label, pat in FORM_RULES.get(kind, []):
+        key = (kind, label)
+        rx = _FORM_CACHE.get(key)
+        if rx is None:
+            rx = _FORM_CACHE[key] = re.compile(pat, re.I)
+        if rx.search(nm):
+            return label
+    sym = (str(yj or "")[7:8] or "").upper()
+    return FORM_SYM.get(kind, {}).get(sym, "")
+
+
 def norm_name(s):
     """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
     s = unicodedata.normalize("NFKC", str(s))
@@ -116,7 +193,7 @@ def parse_discontinued_text(text):
     薬剤名だけを並べた行や、`薬剤名, 実施日, メモ` 形式も受け付ける。
     """
     recs = []
-    rec = {"n": "", "d": "", "name": "", "m": ""}
+    rec = {"n": "", "d": "", "name": "", "m": "", "p": ""}
     want = None
 
     def push(r):
@@ -138,11 +215,12 @@ def parse_discontinued_text(text):
             parts = [x.strip() for x in ln.split(",")]
             if parts[0] and not _is_pkg_line(parts[0]) and parts[0] not in DISC_NOISE:
                 push(rec)
-                rec = {"n": "", "d": "", "name": "", "m": ""}
+                rec = {"n": "", "d": "", "name": "", "m": "", "p": ""}
                 d1 = _to_iso(parts[1]) if len(parts) > 1 else ""
                 recs.append({
                     "name": parts[0],
                     "n": "",
+                    "p": "",
                     "d": d1,
                     "m": (parts[2] if len(parts) > 2 else
                           (parts[1] if len(parts) > 1 and not d1 else "")),
@@ -152,7 +230,7 @@ def parse_discontinued_text(text):
 
         if ln.startswith("告知日"):
             push(rec)
-            rec = {"n": "", "d": "", "name": "", "m": ""}
+            rec = {"n": "", "d": "", "name": "", "m": "", "p": ""}
             want = None
             if JP_DATE.search(ln) or ISO_DATE.search(ln):
                 rec["n"] = _to_iso(ln)
@@ -174,7 +252,13 @@ def parse_discontinued_text(text):
                 want = None
             continue
 
-        if ln in DISC_NOISE or ln.startswith(DISC_LABEL) or _is_pkg_line(ln):
+        if _is_pkg_line(ln):
+            # 販売中止は包装単位で起こる。薬剤名の直後の包装表記を控えておき、
+            # 「どの包装が中止か」を画面に出せるようにする。
+            if rec["name"] and not rec["p"]:
+                rec["p"] = ln
+            continue
+        if ln in DISC_NOISE or ln.startswith(DISC_LABEL):
             continue
 
         if not rec["name"]:
@@ -183,10 +267,87 @@ def parse_discontinued_text(text):
             # 名前が埋まっている状態で別の名前行が来た＝次の品目
             # （包装や会社名は上で除外済みなので、ここに来るのは薬剤名）
             push(rec)
-            rec = {"n": "", "d": "", "name": ln, "m": ""}
+            rec = {"n": "", "d": "", "name": ln, "m": "", "p": ""}
 
     push(rec)
     return recs
+
+
+# ---- 細かい剤形の判定 --------------------------------------------
+# 供給状況Excelには「内用薬/外用薬/注射薬」の3分類しかないため、
+# 品名のキーワードを優先し、決まらない分だけYJコード8桁目の
+# 剤形記号で補う。記号の意味は剤形区分ごとに異なる点に注意
+# （M＝内用薬ではカプセル、外用薬では軟膏）。
+FORM_RULES = {
+  "内用薬": [
+    ("OD錠", r"OD錠|口腔内崩壊"),
+    ("チュアブル", r"チュアブル|かみ砕|咀嚼"),
+    ("ドライシロップ", r"ドライシロップ|DS\d|ＤＳ"),
+    ("シロップ", r"シロップ"),
+    ("内用液", r"内用液|経口液|内服液|内服ゼリー|経口ゼリー"),
+    ("細粒", r"細粒"),
+    ("顆粒", r"顆粒|グラニュール"),
+    ("散", r"散\b|散剤|散\d|散$|原末|末$"),
+    ("カプセル", r"カプセル"),
+    ("錠", r"錠"),
+  ],
+  "外用薬": [
+    ("眼軟膏", r"眼軟膏"),
+    ("軟膏", r"軟膏"),
+    ("クリーム", r"クリーム"),
+    ("ゲル", r"ゲル|ジェル"),
+    ("ローション", r"ローション|乳液"),
+    ("テープ", r"テープ|パッチ"),
+    ("パップ", r"パップ|湿布"),
+    ("貼付剤", r"貼付"),
+    ("坐剤", r"坐剤|座薬|坐薬|ホスコ"),
+    ("点眼", r"点眼|眼灌流|眼科用"),
+    ("点鼻", r"点鼻"),
+    ("点耳", r"点耳"),
+    ("吸入", r"吸入|エアゾール|ネブライザ|ジェヌエア|ディスカス|タービュヘイラー|レスピマット|エリプタ"),
+    ("うがい", r"うがい|含嗽"),
+    ("浣腸", r"浣腸"),
+    ("スプレー", r"スプレー|フォーム|ミスト|噴霧|エロゾル|エアゾル|ゾル\d|ゾル$"),
+    ("腟錠・腟剤", r"腟|膣"),
+    ("口腔・歯科用", r"歯科用|口腔用|口腔内|トローチ|舌下"),
+    ("パスタ", r"パスタ|ペースト"),
+    ("消毒・外用液", r"消毒|消エタ|消アル|外用液|液$|液\d|液（|チンキ|エタノール|アルコール|イソプロパノール|イソプロ|アンモニア水|ポビドンヨード|オキシドール"),
+    ("原末・その他", r"原末|末$|カンフル|ゴム末"),
+    ("油・その他基剤", r"油$|油\d|油（|油「|石ケン|ワセリン"),
+    ("ワイプ・清拭", r"ワイプ|清拭"),
+  ],
+  "注射薬": [
+    ("キット・シリンジ", r"キット|シリンジ|オートインジェクター"),
+    ("点滴静注", r"点滴|輸液|バッグ"),
+    ("静注", r"静注|静脈内"),
+    ("筋注", r"筋注|筋肉内"),
+    ("皮下注", r"皮下注"),
+    ("注射剤", r".*"),
+  ],
+}
+FORM_SYM = {
+  "内用薬": {"F":"錠","G":"錠","M":"カプセル","N":"カプセル","C":"細粒","D":"顆粒",
+            "A":"散","B":"散","R":"ドライシロップ","Q":"シロップ","S":"内用液","X":"散"},
+  "外用薬": {"M":"軟膏","N":"クリーム","S":"テープ","J":"坐剤","K":"浣腸","R":"点鼻",
+            "Q":"点眼","G":"吸入","Y":"浣腸","F":"うがい","X":"消毒・外用液"},
+  "注射薬": {"A":"注射剤","G":"キット・シリンジ","D":"注射剤","F":"点滴静注",
+            "H":"静注","P":"キット・シリンジ","S":"キット・シリンジ","X":"注射剤"},
+}
+_FORM_CACHE = {}
+
+
+def detect_form(name, kind, yj):
+    """細かい剤形を返す。判定できなければ '' を返す。"""
+    nm = unicodedata.normalize("NFKC", str(name or "")).replace("「", "").replace("」", "")
+    for label, pat in FORM_RULES.get(kind, []):
+        key = (kind, label)
+        rx = _FORM_CACHE.get(key)
+        if rx is None:
+            rx = _FORM_CACHE[key] = re.compile(pat, re.I)
+        if rx.search(nm):
+            return label
+    sym = (str(yj or "")[7:8] or "").upper()
+    return FORM_SYM.get(kind, {}).get(sym, "")
 
 
 def norm_name(s):
@@ -210,12 +371,31 @@ def load_discontinued(path, name_index=None):
 
     out = {}
     ambiguous, notfound = [], []
+
+    def add(yj, rec):
+        """販売中止は包装単位で起こるため、1薬剤に複数の包装を持てるようにする。
+        （PTP50錠だけ中止でPTP10錠は継続、という状態を表せるようにする）"""
+        cur = out.setdefault(yj, {"n": "", "d": "", "m": "", "pk": []})
+        entry = {"n": rec["n"], "d": rec["d"], "p": rec.get("p", "")}
+        for i, e in enumerate(cur["pk"]):
+            if e.get("p") == entry["p"]:      # 同じ包装の再登録は上書き
+                cur["pk"][i] = entry
+                break
+        else:
+            cur["pk"].append(entry)
+        ds = [e["d"] for e in cur["pk"] if e["d"]]
+        cur["d"] = min(ds) if ds else ""      # 代表は最も早い実施日
+        ns = [e["n"] for e in cur["pk"] if e["n"]]
+        cur["n"] = min(ns) if ns else ""
+        if rec.get("m"):
+            cur["m"] = rec["m"]
+
     for rec in parse_discontinued_text(text):
         key = rec["name"]
-        info = {"n": rec["n"], "d": rec["d"], "m": rec.get("m", "")}
         # YJコード直接指定
-        if re.fullmatch(r"[0-9A-Za-z]{6,12}", key) and re.search(r"\d", key):
-            out[key.upper()] = info
+        if re.fullmatch(r"[0-9A-Za-z]{6,12}", key) and re.search(r"\d", key) \
+                and not re.search(r"[ぁ-んァ-ヶ一-龥]", key):
+            add(key.upper(), rec)
             continue
         if not name_index:
             notfound.append(key)
@@ -226,7 +406,7 @@ def load_discontinued(path, name_index=None):
         elif len(hits) > 1:
             ambiguous.append((key, hits))
         else:
-            out[hits[0]] = info
+            add(hits[0], rec)
 
     for k in notfound:
         print(f"  警告: 販売中止「{k}」は該当する薬剤が見つかりません（表記をご確認ください）")
@@ -273,7 +453,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     if len(c) < 21:
         raise ValueError(f"列数が想定と異なります（{len(c)}列）。様式変更の可能性があります。")
 
-    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note','pc','i']}
+    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note','pc','i','fm']}
     def idx(key, val):
         d = dicts[key]
         if val not in d: d[val] = len(d)
@@ -320,6 +500,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         if price is not None:
             n_price += 1
         # ⑨基礎的医薬品（1：対象）
+        kind_txt = strip_prefix(r[c[0]])
+        form = detect_form(name, kind_txt, yj)
         kb = 1 if clean(r[c[8]]).startswith("1") else 0
         n_kiso += kb
         # 変更調剤が認められる基礎的医薬品（品名で突合）
@@ -329,7 +511,9 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         dc = disc.get(yj)
         if dc:
             n_disc += 1
-            dcv = [dc["n"], dc["d"], dc.get("m", "")]
+            # [告知日, 実施日, メモ, 包装ごとの明細]
+            dcv = [dc.get("n", ""), dc.get("d", ""), dc.get("m", ""),
+                   dc.get("pk", [])]
         else:
             dcv = 0
         rows.append([
@@ -351,6 +535,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             kb,                                 # [20] 1=⑨基礎的医薬品
             kc,                                 # [21] 1=変更調剤が認められる基礎的医薬品
             dcv,                                # [22] 販売中止 [告知日,実施日,メモ] / 0
+            idx('fm', form),                    # [23] 細かい剤形
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
