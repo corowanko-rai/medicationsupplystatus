@@ -192,7 +192,7 @@ function render(){
         ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}
         ${dcBadge(r)}
         <span class="badge b${sc}">${esc(st)}</span>
-        ${get(r,'new')?'<span class="badge bnew">更新</span>':''}
+        ${get(r,'new')?'<span class="badge bnew">New</span>':''}
         ${get(r,'chg')===1?'<span class="badge bworse">悪化</span>':''}
         ${get(r,'chg')===2?'<span class="badge bbetter">改善</span>':''}
         <span class="kind">${esc(dv(r,'k'))}</span>
@@ -670,7 +670,7 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '薬価には影響しません（薬価は薬価基準収載品目リストのみを参照）');
 
   h+=S_('前回版からの変化');
-  h+=R_(bd('更新','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「New」表示に対応');
+  h+=R_(bd('New','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「New」表示に対応');
   h+=R_(bd('悪化','bworse'),'供給状況が悪くなりました','通常出荷→限定出荷、限定出荷→供給停止 など');
   h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など');
 
