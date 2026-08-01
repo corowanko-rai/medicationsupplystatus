@@ -18,13 +18,16 @@ concurrency:
 
 jobs:
   apply:
-    # 「販売中止」を含むIssueだけ処理する。
-    # ラベルはリポジトリに未作成だと自動付与されないため、
-    # タイトルまたは本文でも判定する。
+    # 【重要】公開リポジトリでは誰でもIssueを作成できるため、
+    # リポジトリの所有者・コラボレーターが立てたIssueだけを処理する。
+    # これが無いと第三者に登録データを書き換えられる。
     if: >-
-      contains(github.event.issue.labels.*.name, '販売中止') ||
-      contains(github.event.issue.title, '販売中止') ||
-      contains(github.event.issue.body, '販売中止')
+      (github.event.issue.user.login == github.repository_owner ||
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                github.event.issue.author_association)) &&
+      (contains(github.event.issue.labels.*.name, '販売中止') ||
+       contains(github.event.issue.title, '販売中止') ||
+       contains(github.event.issue.body, '販売中止'))
     runs-on: ubuntu-latest
     steps:
       # ラベルが未作成なら作り、Issueに付ける（次回以降の判別用）
@@ -115,20 +118,28 @@ jobs:
         if: steps.apply.outputs.code == '0'
 
       # 結果をIssueにコメントし、成功なら自動で閉じる
+      # ステップ出力をスクリプト内に ${{ }} で直接展開すると、
+      # Issue本文（＝外部入力）由来の文字列でJSを壊されうる。
+      # 必ず環境変数を経由して渡す。
       - name: 結果を返信
         if: always()
         uses: actions/github-script@v7
+        env:
+          APPLY_CODE: ${{ steps.apply.outputs.code }}
+          APPLY_LOG: ${{ steps.apply.outputs.log }}
         with:
           script: |
-            const code = '${{ steps.apply.outputs.code }}';
-            const log  = `${{ steps.apply.outputs.log }}`;
+            const code = process.env.APPLY_CODE || '';
+            const log  = process.env.APPLY_LOG || '';
+            // コードブロックを閉じられないよう無害化し、長さも制限する
+            const safe = log.replace(/`/g, "'").slice(0, 3000);
             let msg;
             if (code === '0') {
-              msg = '✅ 登録しました。数分後に公開ページへ反映されます。\n\n```\n' + log + '\n```';
+              msg = '✅ 登録しました。数分後に公開ページへ反映されます。\n\n```\n' + safe + '\n```';
             } else if (code === '10') {
               msg = '⚠️ 本文が空でした。貼り付け内容をご確認ください。';
             } else {
-              msg = '❌ 読み取れませんでした。告知日・実施日・薬剤名・包装を含めて貼り直してください。\n\n```\n' + log + '\n```';
+              msg = '❌ 読み取れませんでした。告知日・実施日・薬剤名・包装を含めて貼り直してください。\n\n```\n' + safe + '\n```';
             }
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
