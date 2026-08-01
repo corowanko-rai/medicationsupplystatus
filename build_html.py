@@ -172,8 +172,44 @@ PKG_PATTERNS = [
 ]
 
 
+# DSJPの画面に並ぶボタン等の文字列。包装名の末尾に紛れ込むため取り除く。
+# 読点は全角/半角どちらもありうるので [、,] で吸収する
+_PKG_NOISE_WORDS = [
+    "セールス",
+    "薬物データベース",
+    "医薬品データベース",
+    "薬価情報提供",
+    "医薬品供給情報",
+    "医薬品[、,]?\\s*バイオテクノロジー",
+    "製薬会社情報",
+    "医薬品[、,]?\\s*薬剤",
+    "製薬業界動向",
+    "医薬品包装価格",
+    "添付文書",
+    "インタビューフォーム",
+    "お知らせ",
+    "案内文書?",
+    "詳細",
+    "リンク",
+    "コピー",
+]
+PKG_NOISE = re.compile(r"\s*(?:" + "|".join(_PKG_NOISE_WORDS) + r")\s*$")
+
+
 def _is_pkg_line(s):
     return any(p.search(s) for p in PKG_PATTERNS)
+
+
+def _clean_pkg(s):
+    """包装名から、貼り付け時に混ざるボタン文字列を取り除く。
+    末尾に複数付くことがあるので、変化しなくなるまで繰り返す。"""
+    t = (s or "").strip()
+    for _ in range(4):
+        t2 = PKG_NOISE.sub("", t).strip()
+        if t2 == t:
+            break
+        t = t2
+    return t
 
 
 def _to_iso(s):
@@ -264,7 +300,7 @@ def parse_discontinued_text(text):
             # 販売中止は包装単位で起こる。薬剤名の直後の包装表記を控えておき、
             # 「どの包装が中止か」を画面に出せるようにする。
             if rec["name"] and not rec["p"]:
-                rec["p"] = ln
+                rec["p"] = _clean_pkg(ln)
             continue
         if ln in DISC_NOISE or ln.startswith(DISC_LABEL):
             continue
@@ -394,7 +430,15 @@ def load_discontinued(path, name_index=None):
         cur = out.setdefault(yj, {"n": "", "d": "", "m": "", "pk": []})
         entry = {"n": rec["n"], "d": rec["d"], "p": rec.get("p", "")}
         for i, e in enumerate(cur["pk"]):
-            if e.get("p") == entry["p"]:      # 同じ包装の再登録は上書き
+            if e.get("p") == entry["p"]:
+                # 同じ包装が複数回出てくることがある（販売会社違いなど）。
+                # 実施日が異なる場合は、早いほうを残す。
+                # 先に入手できなくなる時期を示すほうが実務上安全なため。
+                old_d, new_d = e.get("d", ""), entry.get("d", "")
+                if old_d and new_d:
+                    entry["d"] = min(old_d, new_d)
+                elif old_d and not new_d:
+                    entry["d"] = old_d
                 cur["pk"][i] = entry
                 break
         else:
