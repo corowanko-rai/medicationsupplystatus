@@ -735,7 +735,7 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+='<div class="lgnote" style="margin-top:12px">'+
      '厚労省の各ファイルを<b>毎朝7時に自動確認</b>し、更新があった分だけ取得します。'+
      '日付はそのファイルが適用・作成された日です。'+
-     (DATA.gen?`<br>このページの生成日時：${esc(DATA.gen)}`:'')+
+     (DATA.gen?`<br>このページの生成日時：${esc(DATA.gen)}（日本時間）`:'')+
      '</div>';
 
   document.getElementById('lgbody').innerHTML=h;

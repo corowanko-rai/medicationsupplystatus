@@ -21,12 +21,19 @@ import sys, os, re, json, hashlib, datetime, urllib.request, urllib.error
 
 import fetch_prices as fp   # ページ探索とHTTPの共通処理を再利用
 
+# GitHub Actions は UTC で動くため、記録・ログは日本時間に揃える
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
+def now_jst():
+    return datetime.datetime.now(JST)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT  = os.path.join(HERE, "kiso.json")
 
 
 def log(m):
-    print(f"[{datetime.datetime.now():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
+    print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
 
 
 def find_kiso_xlsx(html):
@@ -133,7 +140,7 @@ def main():
             if prev.get("file") != fname or prev.get("as_of") != year:
                 prev["file"] = fname
                 prev["as_of"] = year
-                prev["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                prev["updated_at"] = now_jst().isoformat(timespec="seconds")
                 with open(OUT, "w", encoding="utf-8") as f:
                     json.dump(prev, f, ensure_ascii=False, separators=(",", ":"))
                 log(f"変更なし。ファイル情報のみ更新しました（{fname}）")
@@ -152,7 +159,7 @@ def main():
             "file": fname,
             "sha256": h,
             "source": url,
-            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "updated_at": now_jst().isoformat(timespec="seconds"),
             "names": sorted(names),
         }
         with open(OUT, "w", encoding="utf-8") as f:

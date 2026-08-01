@@ -139,6 +139,14 @@ def detect_form(name, kind, yj):
     return FORM_SYM.get(kind, {}).get(sym, "")
 
 
+# GitHub Actions は UTC で動くため、表示・記録はすべて日本時間に揃える
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
+def now_jst():
+    return datetime.datetime.now(JST)
+
+
 def norm_name(s):
     """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
     s = unicodedata.normalize("NFKC", str(s))
@@ -350,6 +358,14 @@ def detect_form(name, kind, yj):
     return FORM_SYM.get(kind, {}).get(sym, "")
 
 
+# GitHub Actions は UTC で動くため、表示・記録はすべて日本時間に揃える
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
+def now_jst():
+    return datetime.datetime.now(JST)
+
+
 def norm_name(s):
     """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
     s = unicodedata.normalize("NFKC", str(s))
@@ -544,7 +560,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "date": as_of or datetime.date.today().isoformat(),
         "n": len(rows),
         "src": source_label, "srcurl": source_url,
-        "gen": datetime.datetime.now().strftime("%Y/%m/%d %H:%M"),
+        "gen": now_jst().strftime("%Y/%m/%d %H:%M"),
         "d": {k: [s for s,_ in sorted(v.items(), key=lambda x: x[1])] for k,v in dicts.items()},
         "r": rows,
     }
@@ -600,9 +616,18 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
 
     head = open(TEMPLATE_HEAD, encoding="utf-8").read()
     tail = open(TEMPLATE_TAIL, encoding="utf-8").read()
+
+    # JSONを <script> 内に埋め込むため、HTMLとして解釈されうる文字列を無害化する。
+    # 特に "</script>" が本文（薬剤名・包装名など）に含まれると
+    # scriptタグが途中で閉じ、ページ全体が動かなくなる。
+    payload = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    payload = (payload.replace("</", "<\\/")
+                      .replace("\u2028", "\\u2028")
+                      .replace("\u2029", "\\u2029"))
+
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(head)
-        json.dump(data, f, ensure_ascii=False, separators=(',',':'))
+        f.write(payload)
         f.write(tail)
     return len(rows)
 

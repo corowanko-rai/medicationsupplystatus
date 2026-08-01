@@ -17,6 +17,13 @@
 import sys, os, re, json, hashlib, datetime, urllib.request, urllib.error
 from html.parser import HTMLParser
 
+# GitHub Actions は UTC で動くため、記録・ログは日本時間に揃える
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
+def now_jst():
+    return datetime.datetime.now(JST)
+
 INDEX = "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000078916.html"
 BASE  = "https://www.mhlw.go.jp"
 UA    = "Mozilla/5.0 (compatible; drug-price-updater/1.0)"
@@ -28,7 +35,7 @@ KIND = {"01": "内用薬", "02": "注射薬", "03": "外用薬"}
 
 
 def log(m):
-    print(f"[{datetime.datetime.now():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
+    print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
 
 
 def http_get(url, timeout=120):
@@ -208,7 +215,7 @@ def main():
             if prev.get("as_of") != excel_date or prev.get("files") != files_meta:
                 prev["as_of"] = excel_date
                 prev["files"] = files_meta
-                prev["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                prev["updated_at"] = now_jst().isoformat(timespec="seconds")
                 with open(OUT, "w", encoding="utf-8") as f:
                     json.dump(prev, f, ensure_ascii=False, separators=(",", ":"))
                 log(f"変更なし。日付情報のみ更新しました（{excel_date}）")
@@ -234,7 +241,7 @@ def main():
             "files": files_meta,
             "sha256": h,
             "source": page_url,
-            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "updated_at": now_jst().isoformat(timespec="seconds"),
             "exact": exact,
             "uni": uni,
         }

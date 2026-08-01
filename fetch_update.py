@@ -15,6 +15,13 @@
 import sys, os, re, json, hashlib, datetime, urllib.request, urllib.error
 from html.parser import HTMLParser
 
+# GitHub Actions は UTC で動くため、記録・ログは日本時間に揃える
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
+def now_jst():
+    return datetime.datetime.now(JST)
+
 PAGE = "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/iryou/kouhatu-iyaku/04_00003.html"
 BASE = "https://www.mhlw.go.jp"
 UA   = "Mozilla/5.0 (compatible; supply-status-updater/1.0)"
@@ -27,7 +34,7 @@ KISO  = os.path.join(HERE, "kiso.json")       # 変更調剤可の基礎的医�
 PRICES= os.path.join(HERE, "prices.json")     # 薬価（fetch_prices.py が作成。無ければ薬価なしで動く）
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
 
-def log(m): print(f"[{datetime.datetime.now():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
+def log(m): print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
 
 def http_get(url, timeout=90):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -179,7 +186,7 @@ def main():
 
         if not force and same_excel:
             # 変更が無い日も「最終確認時刻」を残す（定期実行の自動停止対策）
-            st["last_checked"] = datetime.datetime.now().isoformat(timespec="seconds")
+            st["last_checked"] = now_jst().isoformat(timespec="seconds")
             st["last_seen_label"] = label
             save_state(st)
             log("変更なし（前回と同一ファイル）。処理を終了します。")
@@ -226,7 +233,7 @@ def main():
                              disc_path=DISC)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
-        now = datetime.datetime.now().isoformat(timespec="seconds")
+        now = now_jst().isoformat(timespec="seconds")
         save_state({"url": url, "sha256": h, "label": label,
                     "as_of": as_of, "items": n,
                     "updated_at": now, "last_checked": now})
