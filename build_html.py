@@ -490,6 +490,34 @@ def load_kiso(path):
     return None
 
 
+# 和暦の経過措置期限（例: R9.3.31まで）を西暦へ
+WAREKI = re.compile(
+    r"(令和|平成|[RH令平])\s*(\d{1,2})\s*[\.\-/年]\s*(\d{1,2})\s*[\.\-/月]\s*(\d{1,2})")
+
+
+def wareki_to_iso(t):
+    """'R9.3.31まで' → '2027-03-31'。読めなければ '' を返す。"""
+    m = WAREKI.search(str(t or ""))
+    if not m:
+        return ""
+    era, y, mo, d = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    base = (2018 if era in ("R", "令", "令和")
+            else 1988 if era in ("H", "平", "平成") else None)
+    if base is None:
+        return ""
+    try:
+        return f"{base + y:04d}-{mo:02d}-{d:02d}"
+    except Exception:
+        return ""
+
+
+def lookup_expiry(pr, yj):
+    """経過措置による使用期限。統一名収載品には設定されないため完全一致のみ。"""
+    if not pr or not yj:
+        return ""
+    return (pr.get("expiry") or {}).get(yj, "")
+
+
 def lookup_price(pr, yj):
     """YJコードから薬価を引く。
     ① 12桁完全一致（銘柄別収載品）
@@ -557,6 +585,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         snap[yj] = sc
         chg_map[yj] = chg
         price = lookup_price(pr, yj)
+        exp_raw = lookup_expiry(pr, yj)
+        exp_iso = wareki_to_iso(exp_raw)
         if price is not None:
             n_price += 1
         # ⑨基礎的医薬品（1：対象）
@@ -596,6 +626,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             kc,                                 # [21] 1=変更調剤が認められる基礎的医薬品
             dcv,                                # [22] 販売中止 [告知日,実施日,メモ] / 0
             idx('fm', form),                    # [23] 細かい剤形
+            exp_iso or exp_raw,                 # [24] 経過措置期限
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")

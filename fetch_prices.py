@@ -138,10 +138,11 @@ def parse_price_excel(path):
     c_code  = pick("薬価基準収載医薬品コード")
     c_price = pick("薬価")
     c_maker = pick("メーカー名")
+    c_exp   = pick("経過措置による使用期限", "経過措置")
     if c_code is None or c_price is None:
         raise ValueError(f"必要な列が見つかりません: {list(cols)[:12]}")
 
-    exact, uni = {}, {}
+    exact, uni, expiry = {}, {}, {}
     for _, r in df.iterrows():
         code = str(r[c_code]).strip() if r[c_code] is not None else ""
         if not code or code == "nan" or len(code) < 9:
@@ -154,7 +155,12 @@ def parse_price_excel(path):
         maker = "" if c_maker is None else str(r[c_maker] or "").strip()
         if maker in ("", "nan"):
             uni.setdefault(code[:9], price)
-    return exact, uni
+        # 経過措置による使用期限（例: R9.3.31まで）
+        if c_exp is not None:
+            e = str(r[c_exp] or "").strip()
+            if e and e != "nan":
+                expiry[code] = e
+    return exact, uni, expiry
 
 
 def main():
@@ -223,16 +229,18 @@ def main():
             log("変更なし（前回と同一）。処理を終了します。")
             return 10
 
-        exact, uni = {}, {}
+        exact, uni, expiry = {}, {}, {}
         tmp = os.path.join(HERE, "_price_tmp.xlsx")
         for seq in sorted(blobs):
             with open(tmp, "wb") as f:
                 f.write(blobs[seq])
-            e, u = parse_price_excel(tmp)
+            e, u, x = parse_price_excel(tmp)
             exact.update(e)
+            expiry.update(x)
             for k, v in u.items():
                 uni.setdefault(k, v)
-            log(f"  {KIND[seq]}: {len(e):,}件（うち統一名 {len(u):,}）")
+            log(f"  {KIND[seq]}: {len(e):,}件"
+                f"（統一名 {len(u):,} / 経過措置 {len(x):,}）")
         if os.path.exists(tmp):
             os.remove(tmp)
 
@@ -244,6 +252,7 @@ def main():
             "updated_at": now_jst().isoformat(timespec="seconds"),
             "exact": exact,
             "uni": uni,
+            "expiry": expiry,
         }
         with open(OUT, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
