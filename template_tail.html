@@ -1,7 +1,7 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -206,6 +206,20 @@ function render(){
         <div class="row"><dt>成分名</dt><dd>${hl(dv(r,'i'),terms)}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
         ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
+        ${(()=>{const e=get(r,'exp'); if(!e) return '';
+          /* 経過措置期限。期限が近い／過ぎたものは色を変える */
+          const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(e);
+          let cls='exp', note='';
+          if(m){
+            const d=new Date(+m[1],+m[2]-1,+m[3]);
+            const now=new Date(); const t=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+            const days=Math.round((d-t)/86400000);
+            if(days<0){ cls='exp over'; note='（期限切れ）'; }
+            else if(days<=180){ cls='exp near'; note=`（あと${days}日）`; }
+          }
+          const disp = m ? `${m[1]}/${m[2]}/${m[3]}` : e;
+          return `<div class="row"><dt>経過措置</dt><dd><span class="${cls}">${esc(disp)}まで</span>${esc(note)}</dd></div>`;
+        })()}
         <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}</dd></div>
         ${(()=>{const d=dcOf(r); if(!d) return '';
           const pk=dcPkgs(r);
@@ -239,6 +253,16 @@ function render(){
         <div class="row"><dt>YJコード</dt><dd style="font-variant-numeric:tabular-nums">${hl(get(r,'yj'),terms)}</dd></div>
         ${upd?`<div class="row"><dt>状況更新</dt><dd>${esc(upd)}</dd></div>`:''}
         </dl>
+        ${(()=>{const yj=get(r,'yj');
+          if(!yj||yj.length<12) return '';   /* 未収載品はYJが短く対象外 */
+          const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
+          return `<div class="pmda">
+            <a class="pmdabtn" href="${u}?user=1" target="_blank" rel="noopener">
+              添付文書・IF・RMP を見る（PMDA）</a>
+            <a class="pmdasub" href="${u}?user=2" target="_blank" rel="noopener">
+              患者向け資料</a>
+          </div>`;
+        })()}
         ${BY_ING.get(r[F.i]).length>1
           ? `<button class="cmpbtn" data-ing="${r[F.i]}" data-yj="${esc(get(r,'yj'))}">同一成分薬を比較（${BY_ING.get(r[F.i]).length}件）</button>`
           : '<div class="hint">同一成分の他剤はありません</div>'}
@@ -674,6 +698,13 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+=R_(bd('悪化','bworse'),'供給状況が悪くなりました','通常出荷→限定出荷、限定出荷→供給停止 など');
   h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など');
 
+  h+=S_('添付文書・経過措置');
+  h+=R_('<span class="pmdabtn" style="min-height:auto;padding:3px 8px;font-size:11px">PMDA</span>',
+        'カードを開くと、その薬の<b>電子添文</b>を開くボタンが出ます',
+        'インタビューフォーム、RMPと資材、改訂指示反映履歴、審査報告書も同じページから辿れます');
+  h+=R_('<span class="exp near">2027/03/31</span>','経過措置による使用期限',
+        '期限まで6か月以内は黄色、過ぎたものは赤で表示します');
+
   h+=S_('その他の表示');
   h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）',
         '「剤形（詳細）」の絞り込みでは、軟膏・クリーム・テープ・OD錠など38種に分類しています');
@@ -689,6 +720,12 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '<br><b>規格順</b>＝同じ規格の中で安い順。同一規格の置き換え先を探すとき。'+
      '<br><b>入手できる順</b>＝通常出荷を先頭に。今すぐ手に入るものを探すとき。'+
      '<br><b>剤形順</b>＝内用・外用・注射でまとめる。剤形が複数ある成分でのみ表示されます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>添付文書について</b>：PMDAが公開しているYJコード連携の仕組みを使っています。'+
+     'リンク先は常に最新の電子添文なので、改訂があっても自動で反映されます。'+
+     '<br>電子添文・患者向医薬品ガイド・RMP資材等は<b>製造販売業者が著作権を有します</b>。'+
+     '所属する医療機関・薬局での使用を目的とする場合を除き、無断での複製・転載・頒布はできません。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>剤形（詳細）</b>：品名と YJコードの剤形記号から判定しています。'+
