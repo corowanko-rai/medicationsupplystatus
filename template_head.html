@@ -75,6 +75,9 @@ header{
 .chip.s[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
 .chip.n[aria-pressed="true"]{background:var(--pur);border-color:var(--pur);color:#fff}
 .chip.o[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.chip.ex[aria-pressed="true"]{background:var(--ink2);border-color:var(--ink2);color:#fff}
+.chip.exn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
+.chip.exo[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
 .chip.dc[aria-pressed="true"]{background:#2b3947;border-color:#2b3947;color:#fff}
 .chip.dn[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
 .chip.up[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
@@ -216,6 +219,7 @@ header{
 .pcb{display:inline-flex;align-items:center;justify-content:center;
   min-width:26px;height:20px;padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;
   border:1.5px solid currentColor;white-space:nowrap;flex:0 0 auto}
+.jpm{font-size:9px;font-weight:800;margin-left:1px;opacity:.85}
 .pc-sen{color:#0a68b0}      /* 先発品 */
 .pc-kou{color:#c2185b}      /* 後発品 */
 .pc-jun{color:#00838f}      /* 準先発品 */
@@ -335,6 +339,11 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="chip s" data-g="st" data-f="stopped" aria-pressed="false">供給停止</button>
     <button class="chip n" data-g="st" data-f="new" aria-pressed="false">今回更新</button>
     <button class="logic" id="logic" data-mode="or" title="条件の組み合わせ方を切り替え">又は</button>
+    <span class="gdiv"></span>
+    <span class="glabel">経過措置</span>
+    <button class="chip ex" data-g="ex" data-f="has" aria-pressed="false">対象</button>
+    <button class="chip exn" data-g="ex" data-f="near" aria-pressed="false">6か月以内</button>
+    <button class="chip exo" data-g="ex" data-f="over" aria-pressed="false">期限切れ</button>
     <span class="gdiv"></span>
     <span class="glabel">販売</span>
     <button class="chip dc" data-g="dc" data-f="disc" aria-pressed="false">販売中止</button>

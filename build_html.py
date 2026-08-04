@@ -56,6 +56,8 @@ def load_prices(path):
     try:
         d = json.load(open(path, encoding="utf-8"))
         if d.get("exact"):
+            # 局方コードは毎行照会するので集合にしておく
+            d["_jpset"] = set(d.get("jpharm") or [])
             return d
     except Exception:
         pass
@@ -518,6 +520,13 @@ def lookup_expiry(pr, yj):
     return (pr.get("expiry") or {}).get(yj, "")
 
 
+def is_jpharm(pr, yj):
+    """日本薬局方収載品か。薬価リストの「局」の印による。"""
+    if not pr or not yj:
+        return False
+    return yj in (pr.get("_jpset") or set())
+
+
 def lookup_price(pr, yj):
     """YJコードから薬価を引く。
     ① 12桁完全一致（銘柄別収載品）
@@ -586,6 +595,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         chg_map[yj] = chg
         price = lookup_price(pr, yj)
         exp_raw = lookup_expiry(pr, yj)
+        jp = 1 if is_jpharm(pr, yj) else 0
         exp_iso = wareki_to_iso(exp_raw)
         if price is not None:
             n_price += 1
@@ -627,6 +637,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             dcv,                                # [22] 販売中止 [告知日,実施日,メモ] / 0
             idx('fm', form),                    # [23] 細かい剤形
             exp_iso or exp_raw,                 # [24] 経過措置期限
+            jp,                                 # [25] 1=日本薬局方収載品
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")

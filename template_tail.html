@@ -1,7 +1,7 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -69,7 +69,7 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
+let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
@@ -103,6 +103,16 @@ function run(){
     }
     /* dosage form group: OR */
     if(K.size&&!K.has(dv(r,'k'))) return false;
+    /* 経過措置グループ: OR */
+    if(state.ex.size){
+      const e=get(r,'exp');
+      const d=expDays(e);
+      let hit=false;
+      if(state.ex.has('has') && e) hit=true;
+      if(!hit&&state.ex.has('near') && d!=null && d>=0 && d<=180) hit=true;
+      if(!hit&&state.ex.has('over') && d!=null && d<0) hit=true;
+      if(!hit) return false;
+    }
     /* 販売グループ */
     if(state.dc.size && !dcOf(r)) return false;
     /* 変化グループ: OR */
@@ -142,7 +152,11 @@ const PCAB={'先発品':['先','pc-sen'],'後発品':['後','pc-kou'],'準先発
   '長期収載品':['長期','pc-cho'],'その他医薬品':['他','pc-hoka'],'未収載医薬品':['未','pc-mi']};
 function pcBadge(r){
   const t=dv(r,'pc'), a=PCAB[t];
-  return a?`<span class="pcb ${a[1]}" title="${esc(t)}">${a[0]}</span>`:'';
+  if(!a) return '';
+  /* 日本薬局方収載品は（局）を添える。色は区分の色のまま */
+  const jp=get(r,'jp')?'<span class="jpm">局</span>':'';
+  const title=esc(t)+(get(r,'jp')?'（日本薬局方収載品）':'');
+  return `<span class="pcb ${a[1]}" title="${title}">${a[0]}${jp}</span>`;
 }
 const KINFO=DATA.kiso||{};
 /* ⑨基礎的医薬品 / 変更調剤が認められる基礎的医薬品 */
@@ -152,6 +166,14 @@ const kcBadge=(r)=>get(r,'kc')?'<span class="kc" title="後発医薬品と同様
 const dcOf=(r)=>{const v=get(r,'disc'); return (v&&v!==0)?v:null;};
 /* 販売中止は包装単位で起こる。包装が特定できている場合は
    「一部の包装のみ」と分かる表示にする。 */
+/* 経過措置期限までの残り日数。不明なら null */
+function expDays(e){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(e||'');
+  if(!m) return null;
+  const d=new Date(+m[1],+m[2]-1,+m[3]);
+  const n=new Date(); const t=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  return Math.round((d-t)/86400000);
+}
 const dcPkgs=(r)=>{const v=dcOf(r); const a=(v&&v[3])||[];
   return Array.isArray(a)?a.filter(e=>e&&e.p):[];};
 const dcBadge=(r)=>{
@@ -209,18 +231,17 @@ function render(){
         ${(()=>{const e=get(r,'exp'); if(!e) return '';
           /* 経過措置期限。期限が近い／過ぎたものは色を変える */
           const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(e);
+          const days=expDays(e);
           let cls='exp', note='';
-          if(m){
-            const d=new Date(+m[1],+m[2]-1,+m[3]);
-            const now=new Date(); const t=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-            const days=Math.round((d-t)/86400000);
+          if(days!=null){
             if(days<0){ cls='exp over'; note='（期限切れ）'; }
             else if(days<=180){ cls='exp near'; note=`（あと${days}日）`; }
           }
           const disp = m ? `${m[1]}/${m[2]}/${m[3]}` : e;
           return `<div class="row"><dt>経過措置</dt><dd><span class="${cls}">${esc(disp)}まで</span>${esc(note)}</dd></div>`;
         })()}
-        <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}</dd></div>
+        <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}${
+          get(r,'jp')?'（局方品）':''}</dd></div>
         ${(()=>{const d=dcOf(r); if(!d) return '';
           const pk=dcPkgs(r);
           let body;
@@ -319,11 +340,13 @@ document.getElementById('logic').addEventListener('click',e=>{
 });
 const EX=['normal','limited','stopped'];
 const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
-           worse:'悪化',better:'改善',disc:'販売中止'};
+           worse:'悪化',better:'改善',disc:'販売中止',
+           has:'経過措置あり',near:'期限6か月以内',over:'期限切れ'};
 function renderActive(){
   const box=document.getElementById('active');
   const parts=[];
   state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
+  state.ex.forEach(v=>parts.push({g:'ex',v,t:LBL[v]}));
   state.dc.forEach(v=>parts.push({g:'dc',v,t:LBL[v]}));
   state.chg.forEach(v=>parts.push({g:'chg',v,t:LBL[v]}));
   state.k.forEach(v=>parts.push({g:'k',v,t:v}));
@@ -349,7 +372,7 @@ function renderActive(){
 }
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
-    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear();
+    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear(); state.ex.clear();
     state.cls=''; state.mk=''; state.pc=''; state.fm=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
     document.getElementById('fpc').value='';
@@ -358,7 +381,7 @@ document.getElementById('active').addEventListener('click',e=>{
   }
   const x=e.target.closest('.x'); if(!x) return;
   const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
-  if(g==='st'||g==='k'||g==='chg'||g==='dc') state[g].delete(v);
+  if(g==='st'||g==='k'||g==='chg'||g==='dc'||g==='ex') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
   else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
   else if(g==='fm'){ state.fm=''; document.getElementById('ffm').value=''; }
@@ -679,6 +702,9 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+=R_(pc('長期','pc-cho'),'長期収載品');
   h+=R_(pc('他','pc-hoka'),'その他医薬品');
   h+=R_(pc('未','pc-mi'),'未収載医薬品','薬価が設定されていないため薬価は表示されません');
+  h+=R_('<span class="pcb pc-cho">長期<span class="jpm">局</span></span>',
+        '小さな「局」は<b>日本薬局方収載品</b>',
+        '薬価基準収載品目リストの「局」の印によります。色は製品区分のままです');
 
   h+=S_('基礎的医薬品');
   h+=R_('<span class="kb">基</span>','基礎的医薬品です');
@@ -703,7 +729,8 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         'カードを開くと、その薬の<b>電子添文</b>を開くボタンが出ます',
         'インタビューフォーム、RMPと資材、改訂指示反映履歴、審査報告書も同じページから辿れます');
   h+=R_('<span class="exp near">2027/03/31</span>','経過措置による使用期限',
-        '期限まで6か月以内は黄色、過ぎたものは赤で表示します');
+        '期限まで6か月以内は黄色、過ぎたものは赤。'+
+        'チップの「経過措置」で 対象／6か月以内／期限切れ に絞り込めます');
 
   h+=S_('その他の表示');
   h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）',

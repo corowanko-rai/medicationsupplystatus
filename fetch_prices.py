@@ -139,10 +139,19 @@ def parse_price_excel(path):
     c_price = pick("薬価")
     c_maker = pick("メーカー名")
     c_exp   = pick("経過措置による使用期限", "経過措置")
+    # 日本薬局方収載品は「規格」列の右隣（見出しの無い列）に「局」と入る
+    # 注意: 変数 cols は pick() が参照する辞書なので上書きしないこと
+    c_jp = None
+    _order = list(df.columns)
+    _spec = pick("規格")
+    if _spec is not None and _spec in _order:
+        _i = _order.index(_spec)
+        if _i + 1 < len(_order):
+            c_jp = _order[_i + 1]
     if c_code is None or c_price is None:
         raise ValueError(f"必要な列が見つかりません: {list(cols)[:12]}")
 
-    exact, uni, expiry = {}, {}, {}
+    exact, uni, expiry, jpharm = {}, {}, {}, set()
     for _, r in df.iterrows():
         code = str(r[c_code]).strip() if r[c_code] is not None else ""
         if not code or code == "nan" or len(code) < 9:
@@ -160,7 +169,12 @@ def parse_price_excel(path):
             e = str(r[c_exp] or "").strip()
             if e and e != "nan":
                 expiry[code] = e
-    return exact, uni, expiry
+        # 日本薬局方収載品（「局」の印）
+        if c_jp is not None:
+            v = str(r[c_jp] or "").strip()
+            if v == "局":
+                jpharm.add(code)
+    return exact, uni, expiry, jpharm
 
 
 def main():
@@ -229,18 +243,19 @@ def main():
             log("変更なし（前回と同一）。処理を終了します。")
             return 10
 
-        exact, uni, expiry = {}, {}, {}
+        exact, uni, expiry, jpharm = {}, {}, {}, set()
         tmp = os.path.join(HERE, "_price_tmp.xlsx")
         for seq in sorted(blobs):
             with open(tmp, "wb") as f:
                 f.write(blobs[seq])
-            e, u, x = parse_price_excel(tmp)
+            e, u, x, jp = parse_price_excel(tmp)
             exact.update(e)
             expiry.update(x)
+            jpharm |= jp
             for k, v in u.items():
                 uni.setdefault(k, v)
             log(f"  {KIND[seq]}: {len(e):,}件"
-                f"（統一名 {len(u):,} / 経過措置 {len(x):,}）")
+                f"（統一名 {len(u):,} / 経過措置 {len(x):,} / 局方 {len(jp):,}）")
         if os.path.exists(tmp):
             os.remove(tmp)
 
@@ -253,6 +268,7 @@ def main():
             "exact": exact,
             "uni": uni,
             "expiry": expiry,
+            "jpharm": sorted(jpharm),
         }
         with open(OUT, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
