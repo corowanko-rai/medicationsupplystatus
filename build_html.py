@@ -521,10 +521,13 @@ def lookup_expiry(pr, yj):
 
 
 def is_jpharm(pr, yj):
-    """日本薬局方収載品か。薬価リストの「局」の印による。"""
+    """日本薬局方収載品か。薬価リストの「局」の印による。
+    薬価と同様、統一名収載品は先頭9桁でも判定する
+    （例: カロナール原末は統一名『アセトアミノフェン』の局方指定を受け継ぐ）。"""
     if not pr or not yj:
         return False
-    return yj in (pr.get("_jpset") or set())
+    js = pr.get("_jpset") or set()
+    return yj in js or yj[:9] in js
 
 
 def lookup_price(pr, yj):

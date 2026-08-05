@@ -169,11 +169,14 @@ def parse_price_excel(path):
             e = str(r[c_exp] or "").strip()
             if e and e != "nan":
                 expiry[code] = e
-        # 日本薬局方収載品（「局」の印）
+        # 日本薬局方収載品（「局」の印）。
+        # 統一名収載の行にも付くため、薬価と同じく先頭9桁でも引けるようにする。
         if c_jp is not None:
             v = str(r[c_jp] or "").strip()
             if v == "局":
                 jpharm.add(code)
+                if maker in ("", "nan"):
+                    jpharm.add(code[:9])
     return exact, uni, expiry, jpharm
 
 
