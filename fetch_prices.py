@@ -232,9 +232,13 @@ def main():
                                 "name": excels[s][1].rsplit("/", 1)[-1]}
                       for s in sorted(excels)}
 
-        if prev.get("sha256") == h:
-            # 中身は同じでも、記録している日付やファイル名が古い形式・古い値なら
-            # そこだけ更新する（再解析はしないので処理は一瞬で終わる）
+        # 記録すべき項目が揃っているか。プログラム側に項目を足したのに
+        # Excelが変わっていない、という状況では再解析が必要になる。
+        REQUIRED = ("exact", "uni", "expiry", "jpharm", "files", "as_of")
+        missing = [k for k in REQUIRED if k not in prev]
+
+        if prev.get("sha256") == h and not missing:
+            # 中身も項目も同じ。日付だけ古ければそこを直す（再解析は不要）
             if prev.get("as_of") != excel_date or prev.get("files") != files_meta:
                 prev["as_of"] = excel_date
                 prev["files"] = files_meta
@@ -245,6 +249,10 @@ def main():
                 return 0
             log("変更なし（前回と同一）。処理を終了します。")
             return 10
+
+        if prev.get("sha256") == h and missing:
+            log(f"Excelは同じですが、記録に不足があります（{', '.join(missing)}）。"
+                "再解析して作り直します。")
 
         exact, uni, expiry, jpharm = {}, {}, {}, set()
         tmp = os.path.join(HERE, "_price_tmp.xlsx")

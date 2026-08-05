@@ -135,7 +135,12 @@ def main():
         log(f"取得完了 {len(blob):,} bytes / sha256={h[:16]}…")
 
         fname = url.rsplit("/", 1)[-1]
-        if prev.get("sha256") == h:
+        # 将来 項目を足したときに取り残されないよう、必須項目を確認する
+        REQUIRED = ("names", "file", "as_of")
+        missing = [k for k in REQUIRED if k not in prev]
+        if prev.get("sha256") == h and missing:
+            log(f"内容は同じですが記録に不足があります（{', '.join(missing)}）。作り直します。")
+        elif prev.get("sha256") == h:
             # 中身が同じでも記録が古い形式なら、ファイル名などだけ更新する
             if prev.get("file") != fname or prev.get("as_of") != year:
                 prev["file"] = fname
