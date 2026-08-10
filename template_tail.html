@@ -69,7 +69,7 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',qMode:'n',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
+let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
@@ -129,8 +129,22 @@ function run(){
     if(state.fm&&dv(r,'fm')!==state.fm) return false;
     return match(r,terms);
   });
-  /* Problem items first — that's what people are searching for */
-  results.sort((a,b)=>(get(b,'sc')||0)-(get(a,'sc')||0)||get(a,'n').localeCompare(get(b,'n'),'ja'));
+  /* 並び順
+     std  … 供給状況を優先（従来）。困っている薬を先に出す
+     grp  … 成分名 → 規格 → 薬価 → 供給状況。同じ薬を一箇所にまとめる
+     name … 品名の五十音順 */
+  const byName=(a,b)=>get(a,'n').localeCompare(get(b,'n'),'ja');
+  if(state.order==='grp'){
+    results.sort((a,b)=>
+      dv(a,'i').localeCompare(dv(b,'i'),'ja') ||
+      get(a,'sp').localeCompare(get(b,'sp'),'ja') ||
+      ((get(a,'price')??Infinity)-(get(b,'price')??Infinity)) ||
+      (get(a,'sc')-get(b,'sc')) || byName(a,b));
+  }else if(state.order==='name'){
+    results.sort(byName);
+  }else{
+    results.sort((a,b)=>(get(b,'sc')||0)-(get(a,'sc')||0)||byName(a,b));
+  }
   shown=0;
   document.getElementById('list').innerHTML='';
   const n=results.length;
@@ -206,6 +220,24 @@ function render(){
   const end=Math.min(shown+PAGE,results.length);
   for(let i=shown;i<end;i++){
     const r=results[i], sc=get(r,'sc'), st=dv(r,'st');
+    /* まとめ表示のときは成分名・規格の変わり目に見出しを差し込む */
+    if(state.order==='grp'){
+      const prev = i>0 ? results[i-1] : null;
+      if(!prev || dv(prev,'i')!==dv(r,'i')){
+        const h=document.createElement('div');
+        h.className='rgrp';
+        const n=results.filter(x=>dv(x,'i')===dv(r,'i')).length;
+        h.innerHTML=`<span>${esc(dv(r,'i')||'(成分名なし)')}</span>`+
+                    `<span class="cnt">${n}件</span>`;
+        frag.appendChild(h);
+      }
+      if(!prev || dv(prev,'i')!==dv(r,'i') || get(prev,'sp')!==get(r,'sp')){
+        const sh=document.createElement('div');
+        sh.className='rsub';
+        sh.textContent=get(r,'sp')||'(規格不明)';
+        frag.appendChild(sh);
+      }
+    }
     const el=document.createElement('div');
     el.className='card s'+sc+(dcOf(r)?' disc':'');
     const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
@@ -225,7 +257,9 @@ function render(){
         (()=>{const d=dcOf(r); return (d&&d[1])?`<span class="dcd">中止 ${esc(d[1])}</span>`:'';})()}</div>
       <div class="det">
         <dl style="margin:0">
-        <div class="row"><dt>成分名</dt><dd>${hl(dv(r,'i'),terms)}</dd></div>
+        <div class="row"><dt>成分名</dt><dd>${hl(dv(r,'i'),terms)}${
+          dv(r,'i')?`<button class="ingbtn" data-ing="${esc(dv(r,'i'))}"
+            title="成分名検索に切り替えてこの成分で探す">この成分で検索</button>`:''}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
         ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
         ${(()=>{const e=get(r,'exp'); if(!e) return '';
@@ -308,6 +342,14 @@ qEl.addEventListener('input',e=>{
 });
 document.getElementById('clr').addEventListener('click',()=>{
   state.q=''; qEl.value=''; document.getElementById('clr').classList.remove('on'); run(); qEl.focus();
+});
+const ORD={std:'状況を優先',grp:'成分でまとめる',name:'名前順'};
+function syncOrd(){
+  document.getElementById('ordbtn').textContent='並び：'+ORD[state.order];
+}
+document.getElementById('ordbtn').addEventListener('click',()=>{
+  state.order = state.order==='std' ? 'grp' : state.order==='grp' ? 'name' : 'std';
+  syncOrd(); run(); window.scrollTo({top:0});
 });
 document.getElementById('smode').addEventListener('click',e=>{
   const b=e.target.closest('.sm'); if(!b) return;
@@ -522,6 +564,19 @@ function closeCmp(){
   document.body.style.overflow='';
 }
 document.getElementById('list').addEventListener('click',e=>{
+  /* 成分名検索へワンボタンで切り替える */
+  const ib=e.target.closest('.ingbtn');
+  if(ib){
+    e.stopPropagation();
+    state.qMode='i';
+    document.querySelectorAll('.sm').forEach(x=>
+      x.setAttribute('aria-pressed', x.dataset.m==='i'));
+    qEl.placeholder='成分名で検索';
+    state.q=ib.dataset.ing; qEl.value=state.q;
+    document.getElementById('clr').classList.add('on');
+    run(); window.scrollTo({top:0});
+    return;
+  }
   const b=e.target.closest('.cmpbtn'); if(!b) return;
   e.stopPropagation();
   openCmp(b.dataset.ing, b.dataset.yj);
@@ -739,7 +794,10 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '薬価基準収載品目リストから取得。適用日はカードを開くと表示されます');
 
   h+='<div class="lgnote">'+
-     '<b>並び順</b>：供給停止・限定出荷を先頭に表示します。探したい薬が上に来るようにしています。'+
+     '<b>並び順</b>：件数バーの「並び：〜」を押すと3通りに切り替わります。'+
+     '<br><b>状況を優先</b>（既定）… 供給停止・限定出荷が先頭。困っている薬を探すとき。'+
+     '<br><b>成分でまとめる</b> … 成分名→規格→薬価の順。同じ規格を並べて比べるとき。'+
+     '<br><b>名前順</b> … 品名の五十音順。目的の薬を名前で追うとき。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>カードをタップ</b>すると、成分名・薬効分類・理由・解除見込み・YJコードなどが開きます。'+
@@ -765,6 +823,11 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '<b>「高い」「同額」</b>で絞り込めます（同額は選定療養の説明などで役立ちます）。'+
      'さらに<b>剤形での絞り込み</b>と、検索窓での<b>先発品名の絞り込み</b>ができます。'+
      '右のボタンで<b>差額順／名前の昇順・降順</b>を切り替えられます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>この成分で検索</b>：カードを開くと成分名の右にボタンが出ます。'+
+     '押すと成分名検索に切り替わり、その成分名（統一名）が自動で入ります。'+
+     '先発品名で調べていて、後発品を含む全製品を見たいときに使えます。'+
      '</div>';
   h+='<div class="lgnote">'+
      '<b>検索</b>：<b>スペースで区切るとAND検索</b>になります（例「アゼルニジピン 16mg 日医工」）。'+
@@ -819,6 +882,7 @@ document.getElementById('lgx').addEventListener('click',closeLg);
 document.getElementById('ovx').addEventListener('click',closeCmp);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); } });
 
+syncOrd();
 run();
 </script>
 </body>

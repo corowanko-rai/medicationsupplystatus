@@ -122,7 +122,19 @@ header{
   display:flex;justify-content:space-between;align-items:center
 }
 .count b{color:var(--accent);font-size:14px}
+.ordbtn{min-height:44px;padding:0 8px;background:none;border:0;color:var(--ink2);
+  font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;
+  white-space:nowrap;text-decoration:underline;margin-left:auto}
 .cbtns{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+/* 検索結果の見出し（成分名・規格でまとめる） */
+.rgrp{font-size:12px;font-weight:800;color:var(--ink2);padding:14px 4px 6px;
+  border-bottom:1px solid var(--line);margin-bottom:8px;
+  display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rgrp .cnt{font-size:11px;font-weight:700;color:var(--ink3);white-space:nowrap;
+  background:var(--surface2);border-radius:999px;padding:2px 9px;flex:0 0 auto}
+.rgrp>span:first-child{flex:1;min-width:0}
+.rsub{font-size:11.5px;font-weight:700;color:var(--ink3);
+  padding:8px 4px 4px 10px;border-left:2px solid var(--line);margin:4px 0 6px}
 .rvb{color:var(--stop)!important}
 .lgbtn{min-height:44px;padding:0 7px;background:none;border:0;
   color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
@@ -299,6 +311,11 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 .row{display:flex;gap:10px;font-size:12.5px;padding:4px 0;align-items:flex-start}
 .row dt{flex:0 0 74px;color:var(--ink3);font-weight:600}
 .row dd{margin:0;flex:1;color:var(--ink);word-break:break-word}
+.ingbtn{margin-left:8px;min-height:30px;padding:0 10px;border-radius:8px;
+  background:#e3eff9;border:1px solid #bcd9f2;color:var(--accent);
+  font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;
+  white-space:nowrap;vertical-align:middle}
+.ingbtn:active{background:#d3e6f6}
 .hint{font-size:11px;color:var(--ink3);margin-top:9px;text-align:right}
 /* ---------- Empty / sentinel ---------- */
 .empty{text-align:center;padding:60px 24px;color:var(--ink3)}
@@ -369,6 +386,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 <div class="nochg" id="nochg"></div>
 <div class="count">
   <span id="cnt">読み込み中…</span>
+  <button class="ordbtn" id="ordbtn" data-o="std">並び順</button>
   <span class="cbtns">
     <button class="lgbtn rvb" id="rvbtn" aria-label="後発品が高い薬の一覧">後発品が高い</button>
     <button class="lgbtn" id="lgbtn" aria-label="バッジの意味を見る">？</button>
