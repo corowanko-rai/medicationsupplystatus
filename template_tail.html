@@ -581,6 +581,453 @@ document.getElementById('list').addEventListener('click',e=>{
   e.stopPropagation();
   openCmp(b.dataset.ing, b.dataset.yj);
 });
+/* ---------- 画面の切り替え（検索／お知らせ） ---------- */
+const SERIES=DATA.series||{};
+const ALERTS=DATA.alerts||[];
+function switchPage(k){
+  document.querySelectorAll('.ptab').forEach(b=>
+    b.setAttribute('aria-selected', b.dataset.p===k));
+  document.getElementById('searchui').style.display = k==='search' ? '' : 'none';
+  document.querySelector('.count').style.display    = k==='search' ? '' : 'none';
+  const sub=document.querySelector('.count.sub');
+  if(sub) sub.style.display = k==='search' ? '' : 'none';
+  document.getElementById('list').style.display     = k==='search' ? '' : 'none';
+  document.getElementById('more').style.display     = k==='search' ? '' : 'none';
+  const tp=document.getElementById('top');
+  if(tp && k!=='search') tp.classList.remove('on');
+  document.getElementById('board').classList.toggle('on', k==='board');
+  const nc=document.getElementById('nochg');
+  if(nc) nc.style.display = k==='search' ? '' : 'none';
+  if(k==='board'){ drawNews(); drawBoard(); }
+  window.scrollTo({top:0});
+}
+document.querySelector('.ptabs').addEventListener('click',e=>{
+  const b=e.target.closest('.ptab'); if(!b) return;
+  switchPage(b.dataset.p);
+});
+
+/* ---------- 掲示板（上段：お知らせ／下段：推移グラフ） ---------- */
+/* 剤形は薬局の主用途に合わせ、内用薬・外用薬を既定にする */
+let bdKinds=new Set([0,1]);
+let bdLo=50, bdHi=100, chIng='_all', bdFocus=null;
+const KLABEL=['内用薬','外用薬','注射薬'];
+const KSHORT=['内','外','注'];
+const KCLS=['kb-nai','kb-gai','kb-chu'];
+
+/* 選んだ剤形だけで数え直す */
+function pick(a){
+  let n=0,lim=0,stop=0, forms=[];
+  bdKinds.forEach(i=>{
+    const k=a.k[i];
+    if(k[0]>0) forms.push(i);
+    n+=k[0]; lim+=k[1]; stop+=k[2];
+  });
+  return {n,lim,stop,forms,r:n?(lim+stop)/n:0};
+}
+function lv(pct){ return pct>=75?3:pct>=50?2:1; }
+/* ---------- お知らせ掲示板（事実の提示） ---------- */
+const NEWS=DATA.news||[];
+let nwType='', nwRise=10, nwDesc=true;
+const NWLAB={cross:'割合の超過',rise:'逼迫率の上昇',down:'段階的な悪化',swing:'不安定'};
+const NWIC={cross:'!',rise:'↑',down:'▼',swing:'↕'};
+function nwText(x){
+  const nm=D.i[x.i]||'(成分名なし)';
+  const d=(v)=>String(v||'').replace(/-/g,'/');
+  if(x.t==='cross')
+    return `<b>${esc(nm)}</b> は <b>${x.b}%</b> が限定出荷以下になりました`;
+  if(x.t==='rise')
+    return `<b>${esc(nm)}</b> の逼迫率が <b>${x.a}% → ${x.b}%</b> に上昇しました`;
+  if(x.t==='down')
+    return `<b>${esc(nm)}</b> に、通常出荷から段階的に <b>${x.n}段階</b> 悪化した品目があります`;
+  return `<b>${esc(nm)}</b> に、出荷状況が <b>${x.n}回</b> 変動した品目があります（不安定）`;
+}
+function nwSub(x){
+  const d=(v)=>String(v||'').replace(/-/g,'/');
+  if(x.d0&&x.d1) return `${d(x.d0)} 〜 ${d(x.d1)}`;
+  if(x.d1) return `${d(x.d1)} 時点`;
+  return '';
+}
+/* 選んだ剤形だけで、お知らせの割合を計算し直す */
+function nwCalc(x){
+  if(!x.f1) return null;
+  const sum=(f,j)=>{let t=0; bdKinds.forEach(k=>{t+=f[k][j];}); return t;};
+  const n0=sum(x.f0,2), n1=sum(x.f1,2);
+  if(n1<2) return null;                       /* 選んだ剤形に2品目未満 */
+  const r0=n0?(sum(x.f0,0)+sum(x.f0,1))/n0:0;
+  const r1=(sum(x.f1,0)+sum(x.f1,1))/n1;
+  return {a:Math.round(r0*100), b:Math.round(r1*100), n:n1};
+}
+function drawNews(){
+  const list=[];
+  NEWS.forEach(x=>{
+    if(nwType && x.t!==nwType) return;
+    if(x.t==='down'||x.t==='swing'){
+      /* 品目単位の所見は、その薬の剤形で判断する */
+      if(x.kf===undefined||x.kf===null||!bdKinds.has(x.kf)) return;
+      list.push({...x});
+      return;
+    }
+    const c=nwCalc(x);
+    if(!c) return;
+    if(x.t==='rise' && (c.b-c.a)<nwRise) return;
+    if(x.t==='rise' && c.b<=c.a) return;       /* 選び直すと上昇でなくなる場合 */
+    if(x.t==='cross' && c.b<30) return;
+    list.push({...x, a:c.a, b:c.b, tot:c.n});
+  });
+  /* 並び替え：割合の超過と逼迫率の上昇は数値の大小で切り替える */
+  const key=(z)=> z.t==='rise' ? (z.b-z.a) : z.t==='cross' ? z.b : (z.n||0);
+  list.sort((p,q)=> nwDesc ? key(q)-key(p) : key(p)-key(q));
+  document.getElementById('nwsort').textContent = nwDesc ? '高い順' : '低い順';
+  document.getElementById('nwkinds').textContent =
+    [...bdKinds].sort().map(i=>KLABEL[i]).join('・');
+  document.querySelectorAll('#nwtabs .nwt').forEach(b=>
+    b.setAttribute('aria-pressed', (b.dataset.t||'')===nwType));
+  document.getElementById('nwcnt').textContent=`${list.length}件`;
+  const box=document.getElementById('nwlist');
+  if(!NEWS.length){
+    box.innerHTML='<div class="bdempty">'+
+      'お知らせは<b>2回以上の更新</b>がたまると出ます。'+
+      '<br>厚労省の公表のたびに履歴が増えていきます。</div>';
+    return;
+  }
+  if(!list.length){
+    box.innerHTML='<div class="bdempty">該当するお知らせはありません。</div>';
+    return;
+  }
+  box.innerHTML=list.map(x=>
+    `<div class="nwrow" data-ing="${x.i}">
+      <div class="nwic ic-${x.t}">${NWIC[x.t]}</div>
+      <div class="nwbody">
+        <div class="nwtxt"><span class="nwtag tg-${x.t}">${NWLAB[x.t]}</span>${nwText(x)}</div>
+        ${nwSub(x)?`<div class="nwsub">${nwSub(x)}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+document.getElementById('nwsort').addEventListener('click',()=>{
+  nwDesc=!nwDesc; drawNews();
+});
+document.getElementById('nwtabs').addEventListener('click',e=>{
+  const b=e.target.closest('.nwt'); if(!b) return;
+  nwType=b.dataset.t||''; drawNews();
+});
+/* 掲示板の成分をタップ → 中段のグラフと下段の一覧をその成分に合わせる */
+document.getElementById('nwlist').addEventListener('click',e=>{
+  const row=e.target.closest('.nwrow'); if(!row) return;
+  focusIng(row.dataset.ing);
+});
+function focusIng(i){
+  const key=String(i);
+  if(SERIES[key]){
+    chIng=key;
+    const sel=document.getElementById('chsel');
+    if([...sel.options].some(o=>o.value===key)) sel.value=key;
+    drawChart();
+  }
+  /* 下段もその成分だけに絞る */
+  bdFocus=+i;
+  drawBoard();
+  document.getElementById('chart').scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+function drawBoard(){
+  /* --- 上段：逼迫している成分 --- */
+  document.querySelectorAll('#bdk .kb2').forEach(b=>
+    b.setAttribute('aria-pressed', bdKinds.has(+b.dataset.k)));
+  document.querySelectorAll('#bdth .thb').forEach(b=>
+    b.setAttribute('aria-pressed', +b.dataset.lo===bdLo && +b.dataset.hi===bdHi));
+  document.getElementById('rnglb').textContent=bdLo;
+  document.getElementById('rng').value=bdLo;
+
+  const rows=[];
+  ALERTS.forEach(a=>{
+    if(bdFocus!==null && a.i!==bdFocus) return;   /* 掲示板から成分を選んだとき */
+    const v=pick(a);
+    if(v.n<2) return;                       /* 選んだ剤形に2品目以上あること */
+    const pct=v.r*100;
+    if(bdFocus===null && (pct<bdLo || (bdHi<100 && pct>=bdHi))) return;
+    rows.push({a,v,pct});
+  });
+  rows.sort((x,y)=>(y.a.w-x.a.w)||(y.pct-x.pct)||(y.v.n-x.v.n));
+  const worse=rows.filter(x=>x.a.w>0);
+  const rest=rows.filter(x=>x.a.w===0);
+  document.getElementById('bdcnt').textContent =
+    bdFocus!==null ? '1成分を表示中' : `${rows.length}成分`;
+
+  let h='';
+  if(bdFocus!==null){
+    h+='<div class="fcbar">'+
+       `<span>${esc(D.i[bdFocus]||'')} のみ表示中</span>`+
+       '<button class="fcx" id="fcx">解除</button></div>';
+  }
+  if(worse.length){
+    h+=`<div class="bdsub">前回版から悪化（${worse.length}成分）</div>`;
+    worse.forEach(x=>{h+=bdCard(x);});
+  }
+  if(!rows.length){
+    h+='<div class="bdempty">該当する成分はありません。'+
+       '<br>下限を下げるか、剤形を追加してください。</div>';
+  }else{
+    rest.forEach(x=>{h+=bdCard(x);});
+  }
+  document.getElementById('bdlist').innerHTML=h;
+
+  /* --- 下段：推移グラフ --- */
+  const sel=document.getElementById('chsel');
+  if(!sel.options.length){
+    let o='<option value="_all">全体（すべての成分の合計）</option>';
+    ALERTS.forEach(a=>{
+      if(SERIES[String(a.i)])
+        o+=`<option value="${a.i}">${esc(D.i[a.i]||'')}</option>`;
+    });
+    sel.innerHTML=o;
+  }
+  sel.value=chIng;
+  drawChart();
+}
+function bdCard(x){
+  const a=x.a, v=x.v, nm=D.i[a.i]||'(成分名なし)';
+  const pct=Math.round(x.pct*10)/10;
+  const L=lv(pct), ok=v.n-v.lim-v.stop;
+  const w=(t)=>(t/v.n*100).toFixed(2)+'%';
+  /* その成分が持つ剤形をすべて示す（内用だけなら「内」のみ） */
+  const kb=[0,1,2].filter(i=>a.k[i][0]>0)
+    .map(i=>`<span class="kbadge ${KCLS[i]}">${KSHORT[i]}</span>`).join('');
+  return `<div class="bdrow lv${L}" data-ing="${a.i}" data-nm="${esc(nm)}">
+    <div class="bdtop">
+      <div class="bdnm">${esc(nm)}${kb}${a.w?`<span class="bdw">悪化 ${a.w}</span>`:''}</div>
+      <div class="bdpc lv${L}">${pct}<span style="font-size:11px">%</span></div>
+    </div>
+    <div class="bdbar">
+      ${v.stop?`<i class="bi-stop" style="width:${w(v.stop)}"></i>`:''}
+      ${v.lim?`<i class="bi-lim" style="width:${w(v.lim)}"></i>`:''}
+      ${ok?`<i class="bi-ok" style="width:${w(ok)}"></i>`:''}
+    </div>
+    <div class="bdmeta">
+      <span>全<b>${v.n}</b>品目</span>
+      ${v.stop?`<span class="m-stop">供給停止 <b>${v.stop}</b></span>`:''}
+      ${v.lim?`<span class="m-lim">限定出荷 <b>${v.lim}</b></span>`:''}
+      ${ok?`<span class="m-ok">通常出荷 <b>${ok}</b></span>`:''}
+    </div>
+  </div>`;
+}
+document.getElementById('bdth').addEventListener('click',e=>{
+  const b=e.target.closest('.thb'); if(!b) return;
+  bdLo=+b.dataset.lo; bdHi=+b.dataset.hi; drawBoard();
+});
+document.getElementById('rng').addEventListener('input',e=>{
+  bdLo=+e.target.value; bdHi=100;
+  document.getElementById('rnglb').textContent=bdLo;
+  drawBoard();
+});
+document.getElementById('bdlist').addEventListener('click',e=>{
+  if(e.target.id==='fcx'){ bdFocus=null; drawBoard(); }
+});
+document.getElementById('rng2').addEventListener('input',e=>{
+  nwRise=+e.target.value;
+  document.getElementById('rng2lb').textContent=nwRise;
+  drawNews();
+});
+document.getElementById('bdk').addEventListener('click',e=>{
+  const b=e.target.closest('.kb2'); if(!b) return;
+  const k=+b.dataset.k;
+  if(bdKinds.has(k)){ if(bdKinds.size>1) bdKinds.delete(k); }
+  else bdKinds.add(k);
+  drawNews(); drawBoard();
+});
+document.getElementById('bdlist').addEventListener('click',e=>{
+  const row=e.target.closest('.bdrow'); if(!row) return;
+  const i=row.dataset.ing;
+  if(SERIES[i]){ chIng=i; document.getElementById('chsel').value=i; drawChart();
+    document.getElementById('chart').scrollIntoView({behavior:'smooth',block:'center'}); }
+  else{ toSearchByIng(row.dataset.nm); }
+});
+document.getElementById('chsel').addEventListener('change',e=>{
+  chIng=e.target.value; drawChart();
+});
+function toSearchByIng(nm){
+  switchPage('search');
+  state.qMode='i';
+  document.querySelectorAll('.sm').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.m==='i'));
+  qEl.placeholder='成分名で検索';
+  state.q=nm; qEl.value=nm;
+  document.getElementById('clr').classList.add('on');
+  run(); window.scrollTo({top:0});
+}
+
+/* ---------- 折れ線グラフ（限定出荷／供給停止） ----------
+   縦軸は「その成分の全品目数」に固定し、何品目中の何件かが直感で分かるようにする。
+   色は青緑（限定）と赤紫（停止）で、隣り合っても区別できる組み合わせにした。 */
+const C_LIM='#1f9ea8', C_STOP='#c0398f';
+function drawChart(){
+  const box=document.getElementById('chart');
+  const raw=SERIES[chIng]||[];
+  /* 選んだ剤形だけ合計する */
+  const ser=raw.map(p=>{
+    let l=0,st=0;
+    bdKinds.forEach(i=>{ const v=p[1+i]||[0,0]; l+=v[0]; st+=v[1]; });
+    return [p[0],l,st];
+  });
+  /* 縦軸の上限＝その成分の全品目数（選んだ剤形ぶん） */
+  let total=0;
+  if(chIng==='_all'){
+    ALERTS.forEach(a=>{ bdKinds.forEach(i=>{ total+=a.k[i][0]; }); });
+  }else{
+    const a=ALERTS.find(x=>String(x.i)===String(chIng));
+    if(a) bdKinds.forEach(i=>{ total+=a.k[i][0]; });
+  }
+  if(ser.length<2){
+    box.innerHTML='<div class="bdempty">'+
+      'グラフは<b>2回以上の更新</b>がたまると表示されます。'+
+      '<br>厚労省の公表のたびに1点ずつ増えていきます。'+
+      (ser.length?`<br><br>現在の記録：${ser.length}版分`:'')+
+      '</div>';
+    return;
+  }
+  const W=640,H=280, pl=44,pr=18,pt=26,pb=44;
+  const iw=W-pl-pr, ih=H-pt-pb;
+  const top=Math.max(total, ...ser.map(p=>Math.max(p[1],p[2])), 1);
+  const step=Math.max(1,Math.ceil(top/4));
+  const ymax=step*4;
+  const x=(i)=>pl+(ser.length===1?iw/2:iw*i/(ser.length-1));
+  const y=(v)=>pt+ih-(v/ymax)*ih;
+  const path=(k)=>ser.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join('');
+  let g='';
+  for(let v=0;v<=ymax;v+=step){
+    g+=`<line x1="${pl}" y1="${y(v)}" x2="${W-pr}" y2="${y(v)}" stroke="#e6edf4" stroke-width="1"/>`;
+    g+=`<text x="${pl-8}" y="${y(v)+4}" font-size="11" fill="#7d8fa1" text-anchor="end">${v}</text>`;
+  }
+  /* 全品目数の目安線 */
+  if(total>0 && total<=ymax){
+    g+=`<line x1="${pl}" y1="${y(total)}" x2="${W-pr}" y2="${y(total)}"
+        stroke="#b8c6d4" stroke-width="1" stroke-dasharray="5 4"/>`;
+    g+=`<text x="${W-pr}" y="${y(total)-6}" font-size="10.5" fill="#8fa0b0"
+        text-anchor="end">全${total}品目</text>`;
+  }
+  const nlab=Math.min(ser.length,4);
+  const idxs=[...new Set(Array.from({length:nlab},(_,i)=>
+    Math.round(i*(ser.length-1)/Math.max(1,nlab-1))))];
+  idxs.forEach(i=>{
+    const d=ser[i][0].slice(5).replace('-','/');
+    g+=`<text x="${x(i)}" y="${H-pb+20}" font-size="11" fill="#7d8fa1" text-anchor="middle">${d}</text>`;
+  });
+  /* データラベル：各点の数字を出す。重なりを避けて上下に振り分ける */
+  let dots='',labs='';
+  ser.forEach((p,i)=>{
+    const yl=y(p[1]), ys=y(p[2]);
+    dots+=`<circle cx="${x(i)}" cy="${yl}" r="4" fill="#fff" stroke="${C_LIM}" stroke-width="2.5"/>`;
+    dots+=`<circle cx="${x(i)}" cy="${ys}" r="4" fill="#fff" stroke="${C_STOP}" stroke-width="2.5"/>`;
+    const up = yl<=ys;                      /* 上にある方を上側に出す */
+    const anc = i===0?'start':i===ser.length-1?'end':'middle';
+    const dx  = i===0?-2:i===ser.length-1?2:0;
+    labs+=`<text x="${x(i)+dx}" y="${yl+(up?-11:17)}" font-size="11.5" font-weight="700"
+      fill="${C_LIM}" text-anchor="${anc}">${p[1]}</text>`;
+    labs+=`<text x="${x(i)+dx}" y="${ys+(up?17:-11)}" font-size="11.5" font-weight="700"
+      fill="${C_STOP}" text-anchor="${anc}">${p[2]}</text>`;
+  });
+  const last=ser[ser.length-1], first=ser[0];
+  const dl=last[1]-first[1], ds=last[2]-first[2];
+  const arrow=(v)=>v>0?`▲ +${v}`:v<0?`▼ ${v}`:'± 0';
+  const col=(v)=>v>0?'#c94a4a':v<0?'#3f9268':'#7d8fa1';
+  box.innerHTML=
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="出荷状況の推移">
+      ${g}
+      <path d="${path(1)}" fill="none" stroke="${C_LIM}" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${path(2)}" fill="none" stroke="${C_STOP}" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"
+        stroke-dasharray="7 4"/>
+      ${dots}${labs}
+    </svg>
+    <div class="chleg">
+      <span><i class="chkey" style="background:${C_LIM}"></i>限定出荷 ${last[1]}
+        <b style="color:${col(dl)}">${arrow(dl)}</b></span>
+      <span><i class="chkey dash" style="background:${C_STOP}"></i>供給停止 ${last[2]}
+        <b style="color:${col(ds)}">${arrow(ds)}</b></span>
+    </div>`;
+}
+
+/* ---------- お知らせ（供給逼迫の兆し） ----------
+   同一成分の中で限定出荷以下が占める割合を出し、
+   買い増しの判断材料にする。前回版から悪化したものを最優先で見せる。 */
+let alTh=50;
+function drawAl(){
+  const box=document.getElementById('albody');
+  const list=ALERTS.filter(a=>a.r*100>=alTh);
+  document.querySelectorAll('#alth .sortb').forEach(b=>
+    b.setAttribute('aria-pressed', +b.dataset.th===alTh));
+  const worse=ALERTS.filter(a=>a.w>0);
+  document.getElementById('alt').innerHTML=
+    `お知らせ<span class="sc">${list.length}成分`+
+    (DATA.date?` ／ ${DATA.date.replace(/-/g,'/')}版`:'')+`</span>`;
+
+  let h='<div class="alnote">'+
+    '同じ成分の中で<b>限定出荷・供給停止が占める割合</b>です。'+
+    '割合が高いほど、その成分は代替品も含めて入手しにくくなっています。'+
+    '<br>買い増しを検討する際の目安としてご利用ください。'+
+    '</div>';
+
+  if(worse.length){
+    h+='<div class="alsec">前回版から悪化した成分（優先確認）</div>';
+    worse.forEach(a=>{h+=alCard(a);});
+  }
+  h+=`<div class="alsec">逼迫している成分（${alTh===100?'全品目が限定出荷以下':alTh+'%以上'}）</div>`;
+  const rest=list.filter(a=>a.w===0);
+  if(!rest.length && !worse.length){
+    h+='<div class="rvempty">該当する成分はありません。</div>';
+  }else{
+    rest.forEach(a=>{h+=alCard(a);});
+  }
+  box.innerHTML=h;
+  box.scrollTop=0;
+}
+function alCard(a){
+  const nm=D.i[a.i]||'(成分名なし)';
+  const pct=Math.round(a.r*1000)/10;
+  const cls = pct>=75 ? 'hot' : 'warnb';
+  const ok=a.n-a.lim-a.stop;
+  const w=(x)=>(x/a.n*100).toFixed(2)+'%';
+  return `<div class="alrow ${cls}" data-ing="${esc(nm)}">
+    <div class="alhead">
+      <div class="alnm">${esc(nm)}${a.w?`<span class="alw">悪化 ${a.w}</span>`:''}</div>
+      <div class="alpct ${cls}">${pct}%</div>
+    </div>
+    <div class="albar">
+      ${a.stop?`<i class="b-stop" style="width:${w(a.stop)}"></i>`:''}
+      ${a.lim?`<i class="b-lim" style="width:${w(a.lim)}"></i>`:''}
+      ${ok?`<i class="b-ok" style="width:${w(ok)}"></i>`:''}
+    </div>
+    <div class="almeta">
+      <span>全<b>${a.n}</b>品目</span>
+      ${a.stop?`<span style="color:var(--stop)">供給停止 <b>${a.stop}</b></span>`:''}
+      ${a.lim?`<span style="color:var(--warn)">限定出荷 <b>${a.lim}</b></span>`:''}
+      ${ok?`<span style="color:var(--ok)">通常出荷 <b>${ok}</b></span>`:''}
+    </div>
+  </div>`;
+}
+
+function closeAl(){
+  document.getElementById('al').classList.remove('on');
+  document.body.style.overflow='';
+}
+document.getElementById('alx').addEventListener('click',closeAl);
+document.getElementById('alth').addEventListener('click',e=>{
+  const b=e.target.closest('.sortb'); if(!b) return;
+  alTh=+b.dataset.th; drawAl();
+});
+/* 成分名をタップしたら、その成分で検索する */
+document.getElementById('albody').addEventListener('click',e=>{
+  const row=e.target.closest('.alrow'); if(!row) return;
+  closeAl();
+  state.qMode='i';
+  document.querySelectorAll('.sm').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.m==='i'));
+  qEl.placeholder='成分名で検索';
+  state.q=row.dataset.ing; qEl.value=state.q;
+  document.getElementById('clr').classList.add('on');
+  run(); window.scrollTo({top:0});
+});
+
 /* ---------- 後発品が高い薬 ----------
    YJコードの先頭9桁＝薬効分類+成分+剤形+規格。
    ここが同じものだけが「置き換えうる相手」なので、この単位で比較する。 */
@@ -825,6 +1272,31 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '右のボタンで<b>差額順／名前の昇順・降順</b>を切り替えられます。'+
      '</div>';
   h+='<div class="lgnote">'+
+     '<b>「お知らせ」タブ</b>は3段です。'+
+     '<br><b>上段＝お知らせ掲示板</b>：履歴から読み取れた事実を、'+
+     '「割合の超過」「逼迫率の上昇」「段階的な悪化」「不安定」に分けて出します。'+
+     '成分名をタップすると、中段のグラフと下段の一覧がその成分に切り替わります。'+
+     '<br><b>中段＝出荷状況の推移</b>　<b>下段＝逼迫している成分</b>'+
+     '<br>剤形・割合・お知らせの条件は、下段の「表示の設定」で変えられます。'+
+     '</div>';
+  h+='<div class="lgnote" style="display:none">'+
+     '<b>旧</b>：上段に逼迫している成分、下段にその推移グラフが出ます。'+
+     '<br><b>剤形</b>は薬局での用途に合わせ<b>内用薬・外用薬を既定</b>にしています。'+
+     '注射薬も見る場合はボタンで追加してください。選んだ剤形だけで割合を計算し直します。'+
+     '<br><b>割合の範囲</b>は「25〜50%」などの帯で選ぶか、スライダーで下限を自由に決められます。'+
+     '<br>内用薬と外用薬の両方がある成分には<b>「内」「外」</b>のバッジが付きます。'+
+     '<br>グラフの縦軸はその成分の<b>全品目数</b>で、破線が全品目の位置です。'+
+     '各点に件数を表示しています。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>「お知らせ」</b>（件数バーの黄色い文字）：同じ成分の中で'+
+     '<b>限定出荷・供給停止が占める割合</b>を一覧します。'+
+     '割合が高いほど代替品も含めて入手しにくく、買い増しの検討材料になります。'+
+     '<br><b>前回版から悪化した成分は最上段</b>に別枠で出ます。'+
+     'すでに逼迫しきった成分より、今まさに悪化しつつある成分のほうが対処の余地があるためです。'+
+     '<br>成分名をタップすると、その成分で検索できます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
      '<b>この成分で検索</b>：カードを開くと成分名の右にボタンが出ます。'+
      '押すと成分名検索に切り替わり、その成分名（統一名）が自動で入ります。'+
      '先発品名で調べていて、後発品を含む全製品を見たいときに使えます。'+
@@ -880,9 +1352,14 @@ document.getElementById('lgbtn').addEventListener('click',openLg);
 document.getElementById('lgx').addEventListener('click',closeLg);
 
 document.getElementById('ovx').addEventListener('click',closeCmp);
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); closeAl(); } });
 
 syncOrd();
+(function(){
+  const w=(DATA.alerts||[]).filter(a=>a.w>0).length;
+  const b=document.getElementById('ptbadge');
+  if(w){ b.textContent=w; b.classList.add('on'); }
+})();
 run();
 </script>
 </body>

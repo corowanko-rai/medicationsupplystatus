@@ -149,6 +149,15 @@ def now_jst():
     return datetime.datetime.now(JST)
 
 
+def dict_rev(dicts, key, idx):
+    """辞書インデックスから元の文字列を引く。
+    辞書は生成中に増えるため、都度作り直す（件数が少ないので負荷にならない）。"""
+    for k, v in dicts[key].items():
+        if v == idx:
+            return k
+    return ""
+
+
 def norm_name(s):
     """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
     s = unicodedata.normalize("NFKC", str(s))
@@ -543,7 +552,8 @@ def lookup_price(pr, yj):
 
 
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
-          prev_snapshot=None, snapshot_out=None, prices_path=None, keep_chg=None,
+          prev_snapshot=None, snapshot_out=None, snapshot_path=None,
+          prices_path=None, keep_chg=None,
           kiso_path=None, disc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
@@ -656,12 +666,295 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     if snapshot_out:
         # sc … 今回の出荷状況（次回の比較に使う）
         # chg … 今回検出した悪化/改善（再生成しても消えないよう結果を保存する）
+        # hist … 状態が変わった日だけを記録する。
+        #        毎回の全件を残すと膨らむため、変化点のみを積む。
+        prev_hist = {}
+        if os.path.exists(snapshot_out):
+            try:
+                prev_hist = json.load(
+                    open(snapshot_out, encoding="utf-8")).get("hist", {})
+            except Exception:
+                prev_hist = {}
+
+        today = data["date"]
+        prev_dates = []
+        if os.path.exists(snapshot_out):
+            try:
+                prev_dates = json.load(
+                    open(snapshot_out, encoding="utf-8")).get("dates", [])
+            except Exception:
+                prev_dates = []
+        dates = sorted(set(prev_dates) | {today})[-60:]   # 直近60版まで
+        hist = dict(prev_hist)
+        for yj, sc in snap.items():
+            h = hist.get(yj)
+            if not h:
+                hist[yj] = [[today, sc]]        # 初回
+            elif h[-1][1] != sc:
+                h.append([today, sc])           # 変化した日だけ足す
+                if len(h) > 40:                 # 古い分は間引く
+                    hist[yj] = h[-40:]
+
         with open(snapshot_out, "w", encoding="utf-8") as f:
             json.dump({
-                "date": data["date"],
+                "date": today,
+                "dates": dates,
                 "sc": snap,
                 "chg": {yj: v for yj, v in chg_map.items() if v},
+                "hist": hist,
             }, f, separators=(',', ':'))
+
+    # ---- 成分ごとの逼迫度（お知らせ版・グラフ用） ----
+    # 同一成分の中で、限定出荷以下（限定・停止）が占める割合を出す。
+    # 供給停止だけの割合も別に持ち、グラフで積み上げられるようにする。
+    # 剤形ごとに分けて数える。薬局では内用薬・外用薬が主で、
+    # 注射薬まで混ぜると逼迫率が実態とずれるため。
+    KIDX = {"内用薬": 0, "外用薬": 1, "注射薬": 2}
+    # 行の生成が終わった時点で辞書は確定しているので、逆引きを一度だけ作る
+    K_REV = {v: k for k, v in dicts["k"].items()}
+    ing_stat = {}
+    for row in rows:
+        key = row[1]                          # 成分名の辞書インデックス
+        d = ing_stat.setdefault(key, {
+            "n": 0, "lim": 0, "stop": 0, "worse": 0,
+            "k": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],   # 剤形別 [総数, 限定, 停止]
+        })
+        d["n"] += 1
+        ki = KIDX.get(K_REV.get(row[5]), None)
+        if ki is not None:
+            d["k"][ki][0] += 1
+        sc_v = row[8]
+        if sc_v == 1:
+            d["lim"] += 1
+            if ki is not None:
+                d["k"][ki][1] += 1
+        elif sc_v == 2:
+            d["stop"] += 1
+            if ki is not None:
+                d["k"][ki][2] += 1
+        if row[18] == 1:                      # 前回版から悪化
+            d["worse"] += 1
+
+    # しきい値は画面側で自由に変えられるようにするため、
+    # ここでは 25% 以上（または悪化あり）を広めに拾っておく。
+    alerts = []
+    for key, d in ing_stat.items():
+        if d["n"] < 2:                        # 1品目だけの成分は比較にならない
+            continue
+        bad = d["lim"] + d["stop"]
+        ratio = bad / d["n"]
+        if ratio < 0.25 and d["worse"] == 0:
+            continue
+        alerts.append({
+            "i": key, "n": d["n"], "lim": d["lim"], "stop": d["stop"],
+            "r": round(ratio, 4), "w": d["worse"], "k": d["k"],
+        })
+    alerts.sort(key=lambda a: (-a["w"], -a["r"], -a["n"]))
+    data["alerts"] = alerts
+
+    # ---- 出荷状況の推移（折れ線グラフ用） ----
+    # 取得のたびに記録した「変化点」から、各日付での件数を組み立てる。
+    # 全成分ぶんを持つと重いので、お知らせに出る成分と全体の合計だけにする。
+    series = {}
+    src = snapshot_out or snapshot_path
+    if src and os.path.exists(src):
+        try:
+            sj = json.load(open(src, encoding="utf-8"))
+            sdates = sj.get("dates") or ([sj["date"]] if sj.get("date") else [])
+            shist = sj.get("hist") or {}
+        except Exception:
+            sdates, shist = [], {}
+
+        if sdates and shist:
+            want = {a["i"] for a in alerts}
+            # YJコード → (成分名インデックス, 剤形インデックス)
+            yj2 = {r[4]: (r[1], KIDX.get(K_REV.get(r[5]))) for r in rows}
+
+            # 各品目の「日付ごとの状態」を、変化点から前方に埋めて復元する。
+            # 剤形ごとに分けて数え、画面側で内用・外用・注射を選べるようにする。
+            def blank():
+                return [[0, 0], [0, 0], [0, 0]]     # 剤形別 [限定, 停止]
+            per = {d: {} for d in sdates}
+            total = {d: blank() for d in sdates}
+            for yj, pts in shist.items():
+                v = yj2.get(yj)
+                if not v or v[1] is None:
+                    continue
+                ing, ki = v
+                track = ing in want
+                pi, cur = 0, None
+                for d in sdates:
+                    while pi < len(pts) and pts[pi][0] <= d:
+                        cur = pts[pi][1]
+                        pi += 1
+                    if cur == 1 or cur == 2:
+                        j = 0 if cur == 1 else 1
+                        total[d][ki][j] += 1
+                        if track:
+                            per[d].setdefault(ing, blank())[ki][j] += 1
+
+            def pack(src):
+                # [日付, 内用[限定,停止], 外用[...], 注射[...]]
+                return [[d, src[d][0], src[d][1], src[d][2]] for d in sdates]
+
+            series["_all"] = pack(total)
+            for ing in want:
+                series[str(ing)] = [
+                    [d] + (per[d].get(ing) or blank()) for d in sdates
+                ]
+    data["series"] = series
+    data["sdates"] = len(series.get("_all") or [])
+
+    # ---- お知らせ掲示板（事実の提示） ----
+    # 履歴から読み取れる「起きたこと」を、ジャンル別に文章化する。
+    # 予測ではなく事実だけを出す（供給停止は外部要因が支配的で、
+    # 過去の遷移から統計的に予測できる性質のものではないため）。
+    news = []
+    if src and os.path.exists(src):
+        try:
+            sj2 = json.load(open(src, encoding="utf-8"))
+            nd = sj2.get("dates") or []
+            nh = sj2.get("hist") or {}
+        except Exception:
+            nd, nh = [], {}
+
+        if len(nd) >= 2:
+            ing_of = {r[4]: r[1] for r in rows}
+            kind_of = {r[4]: KIDX.get(K_REV.get(r[5])) for r in rows}
+
+            # 成分ごと・剤形ごとに、日付別の [限定, 停止, 総数] を作る。
+            # 画面で剤形を選び直せるよう、剤形別のまま持っておく。
+            def blank3():
+                return [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+            agg = {}
+            for yj, pts in nh.items():
+                ing = ing_of.get(yj)
+                ki = kind_of.get(yj)
+                if ing is None or ki is None:
+                    continue
+                a = agg.setdefault(ing, {d: blank3() for d in nd})
+                pi, cur = 0, None
+                for d in nd:
+                    while pi < len(pts) and pts[pi][0] <= d:
+                        cur = pts[pi][1]
+                        pi += 1
+                    a[d][ki][2] += 1
+                    if cur == 1:
+                        a[d][ki][0] += 1
+                    elif cur == 2:
+                        a[d][ki][1] += 1
+
+            first, last = nd[0], nd[-1]
+            for ing, a in agg.items():
+                tot = lambda d, j: sum(a[d][k][j] for k in range(3))
+                n0, n1 = tot(first, 2), tot(last, 2)
+                if n1 < 2:
+                    continue
+                r0 = (tot(first, 0) + tot(first, 1)) / n0 if n0 else 0
+                r1 = (tot(last, 0) + tot(last, 1)) / n1
+                # 剤形別の内訳を添え、画面側で選び直せるようにする
+                f0 = [list(a[first][k]) for k in range(3)]
+                f1 = [list(a[last][k]) for k in range(3)]
+                # ① 逼迫率が上がった
+                if r1 - r0 >= 0.10:
+                    news.append({
+                        "t": "rise", "i": ing,
+                        "a": round(r0 * 100), "b": round(r1 * 100),
+                        "d0": first, "d1": last, "f0": f0, "f1": f1,
+                    })
+                # ② 限定出荷以下が一定割合を超えた
+                if r1 >= 0.30 and r0 < 0.30:
+                    news.append({"t": "cross", "i": ing,
+                                 "b": round(r1 * 100), "d1": last,
+                                 "f0": f0, "f1": f1})
+
+            # ③④ 品目ごとの推移から、悪化の連続と往復を拾う
+            for yj, pts in nh.items():
+                ing = ing_of.get(yj)
+                if ing is None or len(pts) < 2:
+                    continue
+                seq = [p[1] for p in pts]
+                # 3段階以上の悪化（0→1→2 のように単調に悪くなった）
+                run = 1
+                for i in range(1, len(seq)):
+                    if seq[i] > seq[i - 1]:
+                        run += 1
+                        if run >= 3:
+                            news.append({"t": "down", "i": ing, "yj": yj,
+                                         "d0": pts[0][0], "d1": pts[-1][0],
+                                         "n": run, "kf": kind_of.get(yj)})
+                            break
+                    else:
+                        run = 1
+                # 往復（上がったり下がったりを繰り返す）
+                turns = sum(1 for i in range(1, len(seq) - 1)
+                            if (seq[i] - seq[i - 1]) * (seq[i + 1] - seq[i]) < 0)
+                if turns >= 3:
+                    news.append({"t": "swing", "i": ing, "yj": yj,
+                                 "n": turns + 1, "kf": kind_of.get(yj)})
+
+    # 同じ成分の同じ種類は1件にまとめる。
+    # 種類ごとに枠を分けないと、件数の多い種類だけで埋まってしまう。
+    def rank(z):
+        if z["t"] == "rise":
+            return -(z.get("b", 0) - z.get("a", 0))
+        if z["t"] == "cross":
+            return -z.get("b", 0)
+        return -z.get("n", 0)
+
+    seen, buckets = set(), {"rise": [], "cross": [], "down": [], "swing": []}
+    for x in sorted(news, key=rank):
+        k = (x["t"], x["i"])
+        if k in seen:
+            continue
+        seen.add(k)
+        buckets[x["t"]].append(x)
+    data["news"] = ([*buckets["rise"][:150], *buckets["cross"][:150],
+                     *buckets["down"][:150], *buckets["swing"][:150]])
+
+    # ---- 成分ごとの推移（折れ線グラフ用） ----
+    # snapshot の変化点履歴から「各日にちで何品目が限定出荷／供給停止だったか」を
+    # 復元する。お知らせに出る成分だけに絞るので、容量は小さく収まる。
+    trend = {}
+    if snapshot_out and os.path.exists(snapshot_out):
+        try:
+            hist = json.load(open(snapshot_out, encoding="utf-8")).get("hist", {})
+        except Exception:
+            hist = {}
+        if hist:
+            yj_to_ing = {r[4]: r[1] for r in rows}
+            target = {a["i"] for a in alerts}
+            # 記録に出てくる日付をすべて集める
+            all_days = sorted({d for h in hist.values() for d, _ in h})
+            for ing in target:
+                yjs = [y for y, i in yj_to_ing.items() if i == ing and y in hist]
+                if not yjs:
+                    continue
+                ds, ls, ss = [], [], []
+                for day in all_days:
+                    lim = stop = seen = 0
+                    for y in yjs:
+                        # その日時点で有効な状態（それ以前の最後の記録）
+                        cur = None
+                        for d, sc in hist[y]:
+                            if d <= day:
+                                cur = sc
+                            else:
+                                break
+                        if cur is None:
+                            continue
+                        seen += 1
+                        if cur == 1:
+                            lim += 1
+                        elif cur == 2:
+                            stop += 1
+                    if seen:
+                        ds.append(day)
+                        ls.append(lim)
+                        ss.append(stop)
+                if ds:
+                    trend[ing] = {"d": ds, "l": ls, "s": ss}
+    data["trend"] = trend
 
     data["price"] = {
         "available": pr is not None,

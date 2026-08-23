@@ -37,6 +37,143 @@ header{
 .elapsed.mid{background:var(--surface2);color:var(--ink2)}
 .elapsed.old{background:#fdf0d9;color:var(--warn)}
 .brand{flex-wrap:wrap}
+/* ---- 画面切り替えタブ ---- */
+.ptabs{display:flex;gap:6px;margin-bottom:9px}
+.ptab{flex:1;min-height:44px;padding:6px;border-radius:11px;font-size:14px;font-weight:800;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit;display:flex;align-items:center;
+  justify-content:center;gap:6px;transition:.15s}
+.ptab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.ptbadge{display:none;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
+  background:#e8734a;color:#fff;font-size:11px;font-weight:800;
+  align-items:center;justify-content:center}
+.ptbadge.on{display:inline-flex}
+.ptab[aria-selected="true"] .ptbadge{background:rgba(255,255,255,.3)}
+/* ---- お知らせ掲示板 ---- */
+#board{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
+#board.on{display:block}
+.bdwrap{padding:12px 12px 0}
+.bdsec{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  padding:13px;margin-bottom:13px;box-shadow:0 1px 3px rgba(16,32,48,.05)}
+.bdhd{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  justify-content:space-between;margin-bottom:11px}
+.bdhd h2{margin:0;font-size:14.5px;font-weight:800;color:var(--ink)}
+.bdth{display:flex;gap:4px}
+.thb{min-height:36px;padding:0 11px;border-radius:9px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit}
+.thb[aria-pressed="true"]{background:#e3f0fa;border-color:#8fc3e8;color:#0a5a97}
+#chsel{flex:1;min-width:150px;min-height:38px;padding:0 10px;font-size:13px;
+  background:var(--surface2);border:1px solid var(--line);border-radius:9px;color:var(--ink)}
+.bdrow{border:1px solid var(--line);border-radius:13px;padding:11px 12px;margin-bottom:9px;
+  background:linear-gradient(180deg,#ffffff,#fbfdff);cursor:pointer;transition:.15s}
+.bdrow:active{background:#f2f8fd}
+.bdrow.lv3{border-left:5px solid #e05c5c}
+.bdrow.lv2{border-left:5px solid #e8934a}
+.bdrow.lv1{border-left:5px solid #4aa3d8}
+.bdtop{display:flex;gap:9px;align-items:baseline;margin-bottom:7px}
+.bdnm{flex:1;font-size:13.5px;font-weight:800;line-height:1.45;word-break:break-word}
+.bdpc{flex:0 0 auto;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.bdpc.lv3{color:#d14545}.bdpc.lv2{color:#d97b28}.bdpc.lv1{color:#3d8fc4}
+.bdbar{display:flex;height:9px;border-radius:99px;overflow:hidden;background:#eef3f8}
+.bdbar i{display:block;height:100%}
+.bi-stop{background:linear-gradient(90deg,#e05c5c,#ee7b7b)}
+.bi-lim{background:linear-gradient(90deg,#e8934a,#f2ad7f)}
+.bi-ok{background:linear-gradient(90deg,#5cb98a,#7fcfa4)}
+.bdmeta{display:flex;flex-wrap:wrap;gap:9px;font-size:11.5px;color:var(--ink3);margin-top:7px}
+.bdmeta b{font-variant-numeric:tabular-nums}
+.m-stop{color:#c94a4a}.m-lim{color:#c47a2a}.m-ok{color:#3f9268}
+.bdw{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;
+  padding:2px 8px;border-radius:99px;background:#fdeaea;color:#c33c3c;
+  border:1px solid #f2b8b8;margin-left:7px}
+.bdnote{font-size:12px;line-height:1.75;color:var(--ink2);
+  background:#f0f7fc;border:1px solid #cfe4f4;border-radius:11px;
+  padding:11px 12px;margin-bottom:12px}
+.bdnote b{color:#0a5a97}
+.bdsub{font-size:12px;font-weight:800;color:#c33c3c;padding:10px 3px 7px;
+  border-bottom:1px solid #f2d6d6;margin-bottom:9px}
+.bdcnt{font-size:12px;font-weight:700;color:var(--ink3);
+  background:var(--surface2);border-radius:99px;padding:3px 11px}
+.kwrap{display:flex;gap:5px;margin-bottom:8px}
+.kb2{flex:1;min-height:38px;border-radius:9px;font-size:12.5px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit}
+.kb2[aria-pressed="true"]{background:#e8f4ec;border-color:#8fcaa8;color:#2f7a52}
+.thwrap{background:var(--surface2);border-radius:11px;padding:9px;margin-bottom:11px}
+.bdth{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.thb{flex:1;min-width:74px;min-height:34px;padding:0 6px;border-radius:8px;
+  font-size:11.5px;font-weight:700;background:var(--surface);
+  border:1px solid var(--line);color:var(--ink2);cursor:pointer;font-family:inherit}
+.thb[aria-pressed="true"]{background:#e3f0fa;border-color:#8fc3e8;color:#0a5a97}
+.rngrow{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink2)}
+.rngrow label{white-space:nowrap}
+.rngrow b{color:#0a5a97;font-variant-numeric:tabular-nums}
+#rng{flex:1;min-height:32px;accent-color:#0a68b0}
+/* 上段は高さを決めてスクロールさせ、下段のグラフを常に見せる */
+.bdscroll{max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-right:2px}
+.kbadge{display:inline-flex;align-items:center;justify-content:center;
+  min-width:20px;height:18px;padding:0 5px;border-radius:5px;font-size:10.5px;
+  font-weight:800;margin-left:5px;border:1.5px solid currentColor}
+.kb-nai{color:#2f7a52}
+.kb-gai{color:#a5641d}
+.kb-chu{color:#5b52a8}
+/* 折りたたみ設定 */
+.cfg{border:1px solid var(--line);border-radius:11px;background:var(--surface2);
+  margin-bottom:11px;overflow:hidden}
+.cfg summary{min-height:42px;display:flex;align-items:center;padding:0 12px;
+  font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer;list-style:none}
+.cfg summary::-webkit-details-marker{display:none}
+.cfg summary::before{content:'▸';margin-right:7px;font-size:11px;color:var(--ink3)}
+.cfg[open] summary::before{content:'▾'}
+.cfgin{padding:2px 12px 12px}
+.cfglb{font-size:11px;font-weight:800;color:var(--ink3);margin:9px 0 5px}
+/* お知らせ掲示板 */
+.nwbar{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.nwsort{min-height:34px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit;white-space:nowrap}
+.nwkinds{flex:1;font-size:11px;color:var(--ink3);text-align:right}
+.nwtabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:9px;scrollbar-width:none}
+.nwtabs::-webkit-scrollbar{display:none}
+.nwt{flex:0 0 auto;min-height:34px;padding:0 12px;border-radius:99px;
+  font-size:12px;font-weight:700;background:var(--surface2);
+  border:1px solid var(--line);color:var(--ink2);cursor:pointer;font-family:inherit;
+  white-space:nowrap}
+.nwt[aria-pressed="true"]{background:#0a68b0;border-color:#0a68b0;color:#fff}
+.nwrow{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);
+  cursor:pointer;align-items:flex-start}
+.nwrow:last-child{border-bottom:0}
+.nwic{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:flex;
+  align-items:center;justify-content:center;font-size:14px;font-weight:800}
+.ic-cross{background:#fdecec;color:#c0392b}
+.ic-rise{background:#fff3e2;color:#b5741a}
+.ic-down{background:#f3ecfb;color:#6b3fa0}
+.ic-swing{background:#e7f4f6;color:#1f7d86}
+.nwbody{flex:1;min-width:0}
+.nwtxt{font-size:13px;line-height:1.6;word-break:break-word}
+.nwtxt b{font-weight:800}
+.nwsub{font-size:11px;color:var(--ink3);margin-top:3px}
+.nwtag{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;
+  border-radius:99px;margin-right:6px;vertical-align:1px}
+.tg-cross{background:#fdecec;color:#c0392b}
+.tg-rise{background:#fff3e2;color:#b5741a}
+.tg-down{background:#f3ecfb;color:#6b3fa0}
+.tg-swing{background:#e7f4f6;color:#1f7d86}
+#chsel{width:100%;margin-bottom:10px}
+.fcbar{display:flex;align-items:center;justify-content:space-between;gap:9px;
+  background:#e8f2fb;border:1px solid #b9d8f0;border-radius:10px;
+  padding:8px 11px;margin-bottom:9px;font-size:12px;font-weight:700;color:#0a5a97}
+.fcx{min-height:32px;padding:0 11px;border-radius:8px;background:#fff;
+  border:1px solid #b9d8f0;color:#0a5a97;font-size:11.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;flex:0 0 auto}
+.bdempty{text-align:center;padding:34px 16px;color:var(--ink3);font-size:13.5px;line-height:1.9}
+#chart svg{width:100%;height:auto;display:block}
+.chleg{display:flex;gap:14px;justify-content:center;padding:9px 0 2px;font-size:12px}
+.chleg span{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
+.chkey{width:16px;height:3px;border-radius:2px;flex:0 0 auto}
+.chkey.dash{background-image:repeating-linear-gradient(90deg,
+  currentColor 0 5px,transparent 5px 8px)}
 .smode{display:flex;gap:0;margin-bottom:8px;background:var(--surface2);
   border:1px solid var(--line);border-radius:10px;padding:3px}
 .sm{flex:1;min-height:44px;padding:4px;border:0;border-radius:8px;font-size:13px;font-weight:700;
@@ -122,6 +259,9 @@ header{
   display:flex;justify-content:space-between;align-items:center
 }
 .count b{color:var(--accent);font-size:14px}
+.count.sub{justify-content:flex-start;gap:2px;padding:0 8px;min-height:40px;
+  background:var(--surface)}
+.count.sub .lgbtn{min-height:40px}
 .ordbtn{min-height:44px;padding:0 8px;background:none;border:0;color:var(--ink2);
   font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;
   white-space:nowrap;text-decoration:underline;margin-left:auto}
@@ -140,6 +280,35 @@ header{
   color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
   font-family:inherit;white-space:nowrap;text-decoration:underline}
 /* ---------- 凡例 ---------- */
+#al{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
+#al.on{display:flex}
+.alb{color:var(--warn)!important}
+/* お知らせの1件 */
+.alrow{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:11px 12px;margin-bottom:8px;box-shadow:0 1px 2px rgba(16,32,48,.04);cursor:pointer}
+.alrow.hot{border-left:4px solid var(--stop)}
+.alrow.warnb{border-left:4px solid var(--warn)}
+.alhead{display:flex;gap:9px;align-items:baseline;margin-bottom:6px}
+.alnm{flex:1;font-size:13.5px;font-weight:800;line-height:1.45;word-break:break-word}
+.alpct{flex:0 0 auto;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.alpct.hot{color:var(--stop)}
+.alpct.warnb{color:var(--warn)}
+/* 積み上げ棒 */
+.albar{display:flex;height:16px;border-radius:5px;overflow:hidden;background:var(--surface2);
+  border:1px solid var(--line)}
+.albar i{display:block;height:100%}
+.b-stop{background:var(--stop)}
+.b-lim{background:var(--warn)}
+.b-ok{background:var(--ok);opacity:.55}
+.almeta{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:var(--ink3);margin-top:5px}
+.almeta b{color:var(--ink2)}
+.alw{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:5px;
+  background:var(--stop);color:#fff;margin-left:6px}
+.alnote{font-size:12px;color:var(--ink2);line-height:1.75;
+  background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--warn);
+  border-radius:11px;padding:12px;margin:10px 0 14px}
+.alsec{font-size:12px;font-weight:800;color:var(--ink3);padding:14px 3px 7px;
+  border-bottom:1px solid var(--line);margin-bottom:9px}
 #rv{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
 #rv.on{display:flex}
 /* 逆転一覧 */
@@ -339,6 +508,12 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <span class="date" id="asof"></span>
     <span class="elapsed" id="elapsed"></span>
   </div>
+  <div class="ptabs" role="tablist" aria-label="画面の切り替え">
+    <button class="ptab" role="tab" data-p="search" aria-selected="true">検索</button>
+    <button class="ptab" role="tab" data-p="board" aria-selected="false">
+      お知らせ<span class="ptbadge" id="ptbadge"></span></button>
+  </div>
+  <div id="searchui">
   <div class="smode" id="smode">
     <button class="sm" data-m="n" aria-pressed="true">品名で検索</button>
     <button class="sm" data-m="i" aria-pressed="false">成分名で検索</button>
@@ -382,19 +557,98 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <select id="fpc"><option value="">製品区分：すべて</option></select>
     <select id="fmk"><option value="">製造販売業者：すべて</option></select>
   </div>
+  </div>
 </header>
 <div class="nochg" id="nochg"></div>
 <div class="count">
   <span id="cnt">読み込み中…</span>
   <button class="ordbtn" id="ordbtn" data-o="std">並び順</button>
-  <span class="cbtns">
-    <button class="lgbtn rvb" id="rvbtn" aria-label="後発品が高い薬の一覧">後発品が高い</button>
-    <button class="lgbtn" id="lgbtn" aria-label="バッジの意味を見る">？</button>
-  </span>
+  <button class="lgbtn" id="lgbtn" aria-label="バッジの意味を見る">？</button>
+</div>
+<div class="count sub">
+  <button class="lgbtn rvb" id="rvbtn" aria-label="後発品が高い薬の一覧">後発品が高い</button>
 </div>
 <div id="list"></div>
 <div id="more"></div>
 <button id="top" aria-label="先頭へ戻る">↑</button>
+<div id="board">
+  <div class="bdwrap">
+    <section class="bdsec">
+      <div class="bdhd">
+        <h2>お知らせ掲示板</h2>
+        <span class="bdcnt" id="nwcnt"></span>
+      </div>
+      <div class="nwbar">
+        <button class="nwsort" id="nwsort">高い順</button>
+        <span class="nwkinds" id="nwkinds"></span>
+      </div>
+      <div class="nwtabs" id="nwtabs">
+        <button class="nwt" data-t="" aria-pressed="true">すべて</button>
+        <button class="nwt" data-t="cross">割合の超過</button>
+        <button class="nwt" data-t="rise">逼迫率の上昇</button>
+        <button class="nwt" data-t="down">段階的な悪化</button>
+        <button class="nwt" data-t="swing">不安定</button>
+      </div>
+      <div class="bdscroll" id="nwlist"></div>
+    </section>
+    <section class="bdsec">
+      <div class="bdhd">
+        <h2>出荷状況の推移</h2>
+        <span class="bdcnt" id="chkinds"></span>
+      </div>
+      <select id="chsel"></select>
+      <div id="chart"></div>
+    </section>
+
+    <section class="bdsec">
+      <div class="bdhd">
+        <h2>供給の逼迫が進んでいる成分</h2>
+        <span class="bdcnt" id="bdcnt"></span>
+      </div>
+      <details class="cfg" id="cfg">
+        <summary>表示の設定（剤形・割合）</summary>
+        <div class="cfgin">
+          <div class="cfglb">剤形</div>
+          <div class="kwrap" id="bdk">
+            <button class="kb2" data-k="0" aria-pressed="true">内用薬</button>
+            <button class="kb2" data-k="1" aria-pressed="true">外用薬</button>
+            <button class="kb2" data-k="2" aria-pressed="false">注射薬</button>
+          </div>
+          <div class="cfglb">逼迫の割合</div>
+          <div class="bdth" id="bdth">
+            <button class="thb" data-lo="25" data-hi="50">25〜50%</button>
+            <button class="thb" data-lo="50" data-hi="75">50〜75%</button>
+            <button class="thb" data-lo="75" data-hi="100">75%以上</button>
+            <button class="thb" data-lo="50" data-hi="100" aria-pressed="true">50%以上</button>
+            <button class="thb" data-lo="0" data-hi="100">すべて</button>
+          </div>
+          <div class="rngrow">
+            <label for="rng">下限 <b id="rnglb">50</b>%以上</label>
+            <input type="range" id="rng" min="0" max="100" step="5" value="50">
+          </div>
+          <div class="cfglb">お知らせの条件</div>
+          <div class="rngrow">
+            <label for="rng2">上昇幅 <b id="rng2lb">10</b>ポイント以上</label>
+            <input type="range" id="rng2" min="5" max="50" step="5" value="10">
+          </div>
+        </div>
+      </details>
+      <div class="bdscroll" id="bdlist"></div>
+    </section>
+  </div>
+</div>
+<div id="al" role="dialog" aria-modal="true" aria-labelledby="alt">
+  <div class="ovh">
+    <h2 id="alt">お知らせ</h2>
+    <button id="alx" aria-label="閉じる">×</button>
+  </div>
+  <div class="ovsort" id="alth">
+    <button class="sortb" data-th="50" aria-pressed="true">50%以上</button>
+    <button class="sortb" data-th="75" aria-pressed="false">75%以上</button>
+    <button class="sortb" data-th="100" aria-pressed="false">全品目</button>
+  </div>
+  <div class="lgb" id="albody"></div>
+</div>
 <div id="rv" role="dialog" aria-modal="true" aria-labelledby="rvt">
   <div class="ovh">
     <h2 id="rvt">後発品が高い薬</h2>
