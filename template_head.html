@@ -215,6 +215,7 @@ header{
 .chip.ex[aria-pressed="true"]{background:var(--ink2);border-color:var(--ink2);color:#fff}
 .chip.exn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
 .chip.exo[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
+.chip.sn[aria-pressed="true"]{background:#a85f10;border-color:#a85f10;color:#fff}
 .chip.dc[aria-pressed="true"]{background:#2b3947;border-color:#2b3947;color:#fff}
 .chip.dn[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
 .chip.up[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
@@ -413,6 +414,7 @@ header{
 .sen{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;
   padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
   background:#fdf0e3;color:#a85f10;border:1.5px solid #a85f10}
+.senunit{font-size:11px;color:var(--ink3);margin-bottom:6px}
 .senbox{display:flex;flex-wrap:wrap;gap:6px}
 .senbox>div{flex:1;min-width:118px;background:#fdf7f0;border:1px solid #f0dcc4;
   border-radius:9px;padding:7px 9px;display:flex;flex-direction:column;gap:1px}
@@ -545,6 +547,9 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="chip ex" data-g="ex" data-f="has" aria-pressed="false">対象</button>
     <button class="chip exn" data-g="ex" data-f="near" aria-pressed="false">6か月以内</button>
     <button class="chip exo" data-g="ex" data-f="over" aria-pressed="false">期限切れ</button>
+    <span class="gdiv"></span>
+    <span class="glabel">選定療養</span>
+    <button class="chip sn" data-g="sn" data-f="sen" aria-pressed="false">選定療養対象</button>
     <span class="gdiv"></span>
     <span class="glabel">販売</span>
     <button class="chip dc" data-g="dc" data-f="disc" aria-pressed="false">販売中止</button>

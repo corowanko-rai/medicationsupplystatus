@@ -69,7 +69,7 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
-let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
+let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),sn:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
 function match(r,terms){
@@ -115,6 +115,7 @@ function run(){
     }
     /* 販売グループ */
     if(state.dc.size && !dcOf(r)) return false;
+    if(state.sn.size && !senOf(r)) return false;
     /* 変化グループ: OR */
     if(state.chg.size){
       const v=get(r,'chg');
@@ -267,13 +268,19 @@ function render(){
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
         ${(()=>{const v=senOf(r); if(!v) return '';
           const f=(x)=>x==null?'—':fmtY(x)+'円';
+          const sp=esc(get(r,'sp'));
           return `<div class="row"><dt>選定療養</dt><dd>
+            <div class="senunit">いずれも ${sp} あたり（上の薬価と同じ規格）</div>
             <div class="senbox">
               <div><span>差額分の薬価</span><b>${f(v[0])}</b></div>
               <div><span>選定療養時の薬価</span><b>${f(v[1])}</b></div>
             </div>
-            <div class="sennote">長期収載品を希望された場合、差額分に消費税を加えた額が
-            特別の料金になります。</div></dd></div>`;
+            <div class="sennote">
+              <b>選定療養時の薬価</b>は、長期収載品を希望した場合に<b>保険給付の対象となる額</b>です
+              （通常の薬価より低くなります）。<br>
+              患者の実際の負担は、この額への通常の自己負担（1〜3割）に加えて、
+              <b>差額分に消費税を加えた額</b>を特別の料金として上乗せした金額になります。
+            </div></dd></div>`;
         })()}
         ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
         ${(()=>{const e=get(r,'exp'); if(!e) return '';
@@ -313,8 +320,9 @@ function render(){
         ${get(r,'kb')?`<div class="row"><dt>基礎的</dt><dd>対象${
           get(r,'kc')?'／<b>後発品と同様に変更調剤が可能</b>':
           (KINFO.swap_available?'（変更調剤の対象外）':'')}</dd></div>`:''}
-        ${get(r,'price')!=null?`<div class="row"><dt>薬価</dt><dd><b>${fmtY(get(r,'price'))} 円</b>${
-          PINFO.as_of?` <span style="color:var(--ink3);font-size:11.5px">（${PINFO.as_of.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3')}適用）</span>`:''}</dd></div>`:''}
+        ${get(r,'price')!=null?`<div class="row"><dt>薬価</dt><dd><b>${fmtY(get(r,'price'))} 円</b>
+          <span style="color:var(--ink3);font-size:11.5px">／ ${esc(get(r,'sp'))}</span>${
+          PINFO.as_of?`<br><span style="color:var(--ink3);font-size:11.5px">（${PINFO.as_of.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3')}適用）</span>`:''}</dd></div>`:''}
         <div class="row"><dt>出荷量</dt><dd>${esc(dv(r,'vol')||'—')}</dd></div>
         ${rsn&&rsn!=='－'?`<div class="row"><dt>理由</dt><dd>${esc(rsn)}</dd></div>`:''}
         ${out&&out!=='－'?`<div class="row"><dt>解除見込</dt><dd>${esc(out)}</dd></div>`:''}
@@ -397,12 +405,14 @@ document.getElementById('logic').addEventListener('click',e=>{
 const EX=['normal','limited','stopped'];
 const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
            worse:'悪化',better:'改善',disc:'販売中止',
-           has:'経過措置あり',near:'期限6か月以内',over:'期限切れ'};
+           has:'経過措置あり',near:'期限6か月以内',over:'期限切れ',
+           sen:'選定療養対象'};
 function renderActive(){
   const box=document.getElementById('active');
   const parts=[];
   state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
   state.ex.forEach(v=>parts.push({g:'ex',v,t:LBL[v]}));
+  state.sn.forEach(v=>parts.push({g:'sn',v,t:LBL[v]}));
   state.dc.forEach(v=>parts.push({g:'dc',v,t:LBL[v]}));
   state.chg.forEach(v=>parts.push({g:'chg',v,t:LBL[v]}));
   state.k.forEach(v=>parts.push({g:'k',v,t:v}));
@@ -428,7 +438,7 @@ function renderActive(){
 }
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
-    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear(); state.ex.clear();
+    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear(); state.ex.clear(); state.sn.clear();
     state.cls=''; state.mk=''; state.pc=''; state.fm=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
     document.getElementById('fpc').value='';
@@ -437,7 +447,7 @@ document.getElementById('active').addEventListener('click',e=>{
   }
   const x=e.target.closest('.x'); if(!x) return;
   const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
-  if(g==='st'||g==='k'||g==='chg'||g==='dc'||g==='ex') state[g].delete(v);
+  if(g==='st'||g==='k'||g==='chg'||g==='dc'||g==='ex'||g==='sn') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
   else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
   else if(g==='fm'){ state.fm=''; document.getElementById('ffm').value=''; }
@@ -1230,8 +1240,10 @@ document.getElementById('rvx').addEventListener('click',closeRv);
 
   h+=S_('選定療養');
   h+=R_('<span class="sen">選</span>','長期収載品の選定療養の対象です',
-        'カードを開くと、差額分の薬価と選定療養時の薬価が出ます。'+
-        '差額分に消費税を加えた額が特別の料金になります');
+        'カードを開くと、差額分の薬価と選定療養時の薬価が出ます（同じ規格の単価）。'+
+        '「選定療養時の薬価」は保険給付の対象額で、通常の薬価より低くなります。'+
+        '患者の実費負担には、差額分に消費税を加えた額が別途上乗せされます。'+
+        'チップの「選定療養対象」で絞り込めます。');
 
   h+=S_('販売中止');
   h+=R_(bd('販売中止（一部包装）','bdisc part'),'一部の包装のみ販売中止です',
