@@ -30,6 +30,7 @@ STATE = os.path.join(HERE, "state.json")
 XLSX  = os.path.join(HERE, "latest.xlsx")
 SNAP  = os.path.join(HERE, "snapshot.json")   # 前版の出荷状況（悪化/改善判定用）
 DISC  = os.path.join(HERE, "discontinued.txt") # 販売中止の手動登録
+SENTEI= os.path.join(HERE, "sentei.json")    # 選定療養（fetch_sentei.py が作成）
 KISO  = os.path.join(HERE, "kiso.json")       # 変更調剤可の基礎的医薬品（fetch_kiso.py が作成）
 PRICES= os.path.join(HERE, "prices.json")     # 薬価（fetch_prices.py が作成。無ければ薬価なしで動く）
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
@@ -137,9 +138,10 @@ def rebuild_only():
     # 再生成では悪化/改善の基準を動かさない（スナップショットは書き換えない）
     n = build_html.build(XLSX, OUT, as_of=as_of,
                          source_label=st.get("label", ""), source_url=st.get("url", ""),
-                         prev_snapshot=prev, snapshot_out=None,
+                         prev_snapshot=prev, snapshot_out=None, snapshot_path=SNAP,
                          keep_chg=_load_keep_chg(),
-                         prices_path=PRICES, kiso_path=KISO, disc_path=DISC)
+                         prices_path=PRICES, kiso_path=KISO, disc_path=DISC,
+                         sentei_path=SENTEI)
     log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
     return 0
 
@@ -228,9 +230,10 @@ def main():
             log("  供給Excelは前回と同一のため、前回の変化判定を引き継ぎます")
 
         n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
-                             prev_snapshot=prev, snapshot_out=snap_out, keep_chg=keep,
+                             prev_snapshot=prev, snapshot_out=snap_out, snapshot_path=SNAP,
+                             keep_chg=keep,
                              prices_path=PRICES, kiso_path=KISO,
-                             disc_path=DISC)
+                             disc_path=DISC, sentei_path=SENTEI)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = now_jst().isoformat(timespec="seconds")

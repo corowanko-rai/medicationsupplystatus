@@ -1,0 +1,189 @@
+name: 医薬品供給状況の自動更新
+
+on:
+  # 販売中止の登録ファイルを直接編集した場合、Run workflow なしで反映する
+  push:
+    branches: [main]
+    paths:
+      - 'discontinued.txt'
+  schedule:
+    # UTC 22:00 = JST 翌07:00（毎日）
+    - cron: '0 22 * * *'
+  workflow_dispatch:        # 手動実行も可能
+    inputs:
+      mode:
+        description: '実行モード（既定=local：厚労省へアクセスしない）'
+        type: choice
+        default: 'local'
+        options:
+          - local     # 厚労省へアクセスせず再生成（表示調整・販売中止の登録用）
+          - check     # 厚労省を確認し、更新があれば取得
+          - force     # 厚労省から強制的に再取得
+    # ※毎朝7時の定期実行は inputs が無いため、常に check で動作します
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存パッケージのインストール
+        run: pip install pandas openpyxl
+
+      # 薬価リストの取得。失敗しても供給状況ページの生成は続行する。
+      # local モードでは厚労省へアクセスしない。
+      - name: 薬価基準収載品目リストを取得
+        id: prices
+        continue-on-error: true
+        if: inputs.mode != 'local' && github.event_name != 'push'
+        run: |
+          set +e
+          python fetch_prices.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::薬価リストを更新しました。" ;;
+            10) echo "::notice::薬価リストに変更はありません。" ;;
+            *)  echo "::warning::薬価リストの取得に失敗しました。薬価なしで続行します。" ;;
+          esac
+
+      # 基礎的医薬品（変更調剤可）の一覧。失敗しても続行する。
+      - name: 基礎的医薬品リストを取得
+        id: kiso
+        continue-on-error: true
+        if: inputs.mode != 'local' && github.event_name != 'push'
+        run: |
+          set +e
+          python fetch_kiso.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::基礎的医薬品リストを更新しました。" ;;
+            10) echo "::notice::基礎的医薬品リストに変更はありません。" ;;
+            *)  echo "::warning::基礎的医薬品リストの取得に失敗しました。バッジなしで続行します。" ;;
+          esac
+
+      # 選定療養の対象医薬品リスト。失敗しても続行する。
+      - name: 選定療養リストを取得
+        id: sentei
+        continue-on-error: true
+        if: inputs.mode != 'local' && github.event_name != 'push'
+        run: |
+          set +e
+          python fetch_sentei.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::選定療養リストを更新しました。" ;;
+            10) echo "::notice::選定療養リストに変更はありません。" ;;
+            *)  echo "::warning::選定療養リストの取得に失敗しました。バッジなしで続行します。" ;;
+          esac
+
+      - name: 更新チェックと生成
+        id: run
+        run: |
+          set +e
+          MODE="${{ inputs.mode }}"
+          if [ -z "$MODE" ]; then
+            # discontinued.txt の編集で起動した場合は厚労省へアクセスしない。
+            # 定期実行（schedule）は check。
+            if [ "${{ github.event_name }}" = "push" ]; then MODE="local"; else MODE="check"; fi
+          fi
+
+          if [ "$MODE" = "local" ]; then
+            # 厚労省へは一切アクセスせず、保存済みExcelから作り直すだけ
+            python fetch_update.py --local
+          else
+            EXTRA=""
+            # 薬価や基礎的リストが更新された場合は、供給Excelが同じでも作り直す
+            if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            if [ "${{ steps.sentei.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            # 販売中止の登録が変わった場合も作り直す
+            if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
+              EXTRA="--force"
+            fi
+            if [ "$MODE" = "force" ]; then EXTRA="--force"; fi
+            python fetch_update.py $EXTRA
+          fi
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          if [ $code -eq 1 ]; then
+            echo "::error::更新処理に失敗しました"
+            exit 1
+          fi
+          if [ $code -eq 10 ]; then
+            echo "::notice::変更なし。サイトは更新しません。"
+          fi
+
+      - name: 公開用ディレクトリを準備
+        if: steps.run.outputs.code == '0'
+        run: |
+          mkdir -p public
+          cp 医薬品供給状況_検索.html public/index.html
+
+      - name: 状態ファイルとスナップショットをコミット
+        if: steps.run.outputs.code == '0'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json snapshot.json prices.json kiso.json sentei.json latest.xlsx
+          git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
+          git push
+
+      # GitHubは「リポジトリに60日間更新が無い」と定期実行を自動停止する。
+      # 厚労省の更新が長く途絶えても止まらないよう、
+      # 最終コミットから KEEPALIVE_DAYS 日以上経っていれば空コミットを打つ。
+      - name: 定期実行の自動停止を防ぐ（キープアライブ）
+        if: always()
+        env:
+          KEEPALIVE_DAYS: '20'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash || true
+
+          LAST=$(git log -1 --format=%ct)
+          NOW=$(date +%s)
+          DAYS=$(( (NOW - LAST) / 86400 ))
+          echo "最終コミットから ${DAYS} 日経過（しきい値 ${KEEPALIVE_DAYS} 日）"
+
+          if [ "$DAYS" -ge "$KEEPALIVE_DAYS" ]; then
+            date -u +"last-alive: %Y-%m-%dT%H:%M:%SZ" > .keepalive
+            git add .keepalive
+            git commit -m "keepalive: 定期実行の維持（${DAYS}日ぶり）" || true
+            git push || true
+            echo "::notice::キープアライブのコミットを実行しました。"
+          else
+            echo "コミットは不要です。"
+          fi
+
+      - uses: actions/configure-pages@v5
+        if: steps.run.outputs.code == '0'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.run.outputs.code == '0'
+        with:
+          path: public
+
+      - uses: actions/deploy-pages@v4
+        if: steps.run.outputs.code == '0'

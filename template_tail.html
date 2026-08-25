@@ -1,7 +1,7 @@
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25};
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -188,6 +188,10 @@ function expDays(e){
   const n=new Date(); const t=new Date(n.getFullYear(),n.getMonth(),n.getDate());
   return Math.round((d-t)/86400000);
 }
+/* 選定療養の対象。長期収載品を希望した場合に特別の料金がかかる。 */
+const senOf=(r)=>{const v=get(r,'sen'); return (v&&v!==0)?v:null;};
+const senBadge=(r)=>senOf(r)
+  ? '<span class="sen" title="長期収載品の選定療養の対象">選</span>' : '';
 const dcPkgs=(r)=>{const v=dcOf(r); const a=(v&&v[3])||[];
   return Array.isArray(a)?a.filter(e=>e&&e.p):[];};
 const dcBadge=(r)=>{
@@ -243,7 +247,7 @@ function render(){
     const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
     el.innerHTML=
       `<div class="tags">
-        ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}
+        ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}
         ${dcBadge(r)}
         <span class="badge b${sc}">${esc(st)}</span>
         ${get(r,'new')?'<span class="badge bnew">New</span>':''}
@@ -261,6 +265,16 @@ function render(){
           dv(r,'i')?`<button class="ingbtn" data-ing="${esc(dv(r,'i'))}"
             title="成分名検索に切り替えてこの成分で探す">この成分で検索</button>`:''}</dd></div>
         <div class="row"><dt>薬効分類</dt><dd>${esc(dv(r,'cls'))}</dd></div>
+        ${(()=>{const v=senOf(r); if(!v) return '';
+          const f=(x)=>x==null?'—':fmtY(x)+'円';
+          return `<div class="row"><dt>選定療養</dt><dd>
+            <div class="senbox">
+              <div><span>差額分の薬価</span><b>${f(v[0])}</b></div>
+              <div><span>選定療養時の薬価</span><b>${f(v[1])}</b></div>
+            </div>
+            <div class="sennote">長期収載品を希望された場合、差額分に消費税を加えた額が
+            特別の料金になります。</div></dd></div>`;
+        })()}
         ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
         ${(()=>{const e=get(r,'exp'); if(!e) return '';
           /* 経過措置期限。期限が近い／過ぎたものは色を変える */
@@ -541,7 +555,7 @@ function drawCmp(){
     const sc=get(r,'sc'), me=get(r,'yj')===myYj, pv=get(r,'price');
     html+=`<div class="cmprow s${sc}${me?' me':''}">
       <div class="cmpmain">
-        <div class="cmpnm">${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${dcBadge(r)} ${esc(get(r,'n'))}</div>
+        <div class="cmpnm">${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}${dcBadge(r)} ${esc(get(r,'n'))}</div>
         <div class="cmpsub">${mode==='a'?`<b class="sphl">${esc(get(r,'sp'))}</b>`:esc(get(r,'sp'))}｜${esc(dv(r,'m'))}</div>
         ${mode==='a'?'':`<span class="cmpst b${sc}">${esc(dv(r,'st'))}</span>`}
       </div>
@@ -1214,6 +1228,11 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '後発医薬品と同様に変更調剤が認められます',
         '基のみで変更可が付かない場合は、変更調剤の対象外です');
 
+  h+=S_('選定療養');
+  h+=R_('<span class="sen">選</span>','長期収載品の選定療養の対象です',
+        'カードを開くと、差額分の薬価と選定療養時の薬価が出ます。'+
+        '差額分に消費税を加えた額が特別の料金になります');
+
   h+=S_('販売中止');
   h+=R_(bd('販売中止（一部包装）','bdisc part'),'一部の包装のみ販売中止です',
         '他の包装は継続している場合があります。カードを開くと該当包装が並びます');
@@ -1329,6 +1348,8 @@ document.getElementById('rvx').addEventListener('click',closeRv);
     h+=row('薬価基準収載品目リスト', PINFO.as_of, '');
   if(!PINFO.available)
     h+=row('薬価基準収載品目リスト', '', '（未取得）');
+  if(SRC.sentei) h+=row('選定療養の対象医薬品リスト',
+                        SRC.sentei.date, SRC.sentei.file||'（未取得）');
   if(SRC.kiso) h+=row('変更調剤が認められる基礎的医薬品等',
                       SRC.kiso.date, SRC.kiso.file||'（未取得）');
   h+='<div class="lgnote" style="margin-top:12px">'+

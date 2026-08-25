@@ -487,6 +487,19 @@ def load_discontinued(path, name_index=None):
     return out
 
 
+def load_sentei(path):
+    """選定療養の対象医薬品（薬価基準収載医薬品コード → 金額）を読む。"""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        d = json.load(open(path, encoding="utf-8"))
+        if d.get("items"):
+            return d
+    except Exception:
+        pass
+    return None
+
+
 def load_kiso(path):
     """kiso.json（変更調剤が認められる基礎的医薬品の品名集合）を読む。"""
     if not path or not os.path.exists(path):
@@ -554,7 +567,7 @@ def lookup_price(pr, yj):
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
           prices_path=None, keep_chg=None,
-          kiso_path=None, disc_path=None):
+          kiso_path=None, disc_path=None, sentei_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
@@ -571,6 +584,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
 
     pr = load_prices(prices_path)
     kiso = load_kiso(kiso_path)
+    sentei = load_sentei(sentei_path)
     # 薬剤名 → YJコード の索引（販売中止を名前で登録できるようにするため）
     name_index = {}
     for _, r in df.iterrows():
@@ -585,6 +599,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     n_price = 0
     n_kiso = 0
     n_kchg = 0
+    n_sen = 0
     n_disc = 0
     for _, r in df.iterrows():
         name = clean(r[c[5]])
@@ -609,6 +624,13 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         price = lookup_price(pr, yj)
         exp_raw = lookup_expiry(pr, yj)
         jp = 1 if is_jpharm(pr, yj) else 0
+        # 選定療養の対象。薬価基準収載医薬品コード（＝YJコード）で突合する。
+        sv = 0
+        if sentei:
+            it = (sentei.get("items") or {}).get(yj)
+            if it:
+                n_sen += 1
+                sv = [it.get("h"), it.get("p")]   # 差額分 / 選定療養時の薬価
         exp_iso = wareki_to_iso(exp_raw)
         if price is not None:
             n_price += 1
@@ -651,6 +673,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             idx('fm', form),                    # [23] 細かい剤形
             exp_iso or exp_raw,                 # [24] 経過措置期限
             jp,                                 # [25] 1=日本薬局方収載品
+            sv,                                 # [26] 選定療養 [差額分, 選定療養時薬価] / 0
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -975,6 +998,10 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "supply": {"label": "医療用医薬品供給状況",
                    "date": data["date"],
                    "file": (source_url or "").rsplit("/", 1)[-1]},
+        "sentei": {"label": "選定療養の対象医薬品リスト",
+                   "date": (sentei or {}).get("as_of", ""),
+                   "file": (sentei or {}).get("file", ""),
+                   "fetched": (sentei or {}).get("updated_at", "")},
         "kiso":   {"label": "変更調剤が認められる基礎的医薬品等",
                    "date": kj.get("as_of", ""),
                    "file": kj.get("file", ""),
@@ -982,6 +1009,12 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     }
 
     data["disc"] = {"count": n_disc, "registered": len(disc)}
+    data["sentei"] = {
+        "available": sentei is not None,
+        "count": n_sen,
+        "as_of": (sentei or {}).get("as_of", ""),
+        "file": (sentei or {}).get("file", ""),
+    }
 
     data["kiso"] = {
         "basic": n_kiso,
