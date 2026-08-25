@@ -19,7 +19,6 @@
 失敗しても供給状況ページの生成は続行できる設計。
 """
 import sys, os, re, json, hashlib, datetime, urllib.error
-from html.parser import HTMLParser
 
 import fetch_prices as fp   # HTTP取得とデコードの共通処理を再利用
 
@@ -57,11 +56,22 @@ def _num(s):
     return 0
 
 
+START_RE = re.compile(r"※\s*(令和[^、。\n]*?)から")
+
+
 def start_date(text):
-    """「※令和8年6月1日から」の適用開始日を返す。読めなければ None。"""
-    m = re.search(r"※?\s*(令和[^かま]*?)から", text)
-    if not m:
+    """「※令和8年6月1日から」の適用開始日を返す。読めなければ None。
+
+    1つのウィンドウに複数の「※〜から」が含まれることがある
+    （例: 旧版のブロックが直前に残っている場合）ため、
+    直後のExcelリンクに対応するのは常に最後に出てくるものとみなす。
+    また「※」を必須にして、「令和8年3月31日 事務連絡」のような
+    無関係な日付を誤って拾わないようにする。
+    """
+    ms = list(START_RE.finditer(text))
+    if not ms:
         return None
+    m = ms[-1]
     d = WAREKI.search(m.group(1))
     if not d:
         return None
@@ -72,54 +82,46 @@ def start_date(text):
         return None
 
 
-class Cells(HTMLParser):
-    """表のセルごとに、中の文字列とxlsxリンクを集める"""
-
-    def __init__(self):
-        super().__init__()
-        self.cells = []
-        self._buf = None
-        self._links = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ("td", "th"):
-            self._buf, self._links = [], []
-        elif tag == "a" and self._links is not None:
-            for k, v in attrs:
-                if k == "href" and v and v.lower().endswith(".xlsx"):
-                    self._links.append(fp.absolutize(v))
-
-    def handle_data(self, data):
-        if self._buf is not None:
-            self._buf.append(data)
-
-    def handle_endtag(self, tag):
-        if tag in ("td", "th") and self._buf is not None:
-            self.cells.append(("".join(self._buf), self._links))
-            self._buf, self._links = None, None
-
-
 def find_excel(html):
-    """(適用開始日, URL) のうち、今日すでに始まっている最新のものを返す。"""
-    p = Cells()
-    p.feed(html)
+    """(適用開始日, URL) のうち、今日すでに始まっている最新のものを返す。
+
+    HTMLParserでtd/thのネストを逐一追うのはページの実際のマークアップ
+    （colspan・入れ子span・コメント等）に弱いため、ここでは
+    「.xlsxへのリンク」を基準に、その直前のテキスト（数千字）から
+    直近の適用開始日を逆読みする方式にする。壊れたHTMLでも
+    リンク自体さえ見つかれば日付とセットで拾える。
+    """
     today = now_jst().date()
+
+    # <a ... href="....xlsx" ...>ラベル</a> をすべて拾う（属性順序を問わない）
+    link_re = re.compile(
+        r'<a\b[^>]*?\bhref\s*=\s*(["\'])(?P<href>[^"\']+?\.xlsx)\1[^>]*>',
+        re.IGNORECASE)
+
     cands = []
-    for text, links in p.cells:
-        if not links:
+    for m in link_re.finditer(html):
+        url = fp.absolutize(m.group("href"))
+        if not url:
             continue
-        d = start_date(text)
-        for u in links:
-            cands.append((d, u))
+        # リンクの手前 1500 文字程度をテキスト化して、直近の
+        # 「※令和８年６月１日から」を探す（タグは大まかに除去する）
+        window = html[max(0, m.start() - 1500):m.start()]
+        window = re.sub(r"<[^>]+>", "", window)
+        window = re.sub(r"&nbsp;?", " ", window)
+        d = start_date(window)
+        cands.append((d, url, m.start()))
+
     if not cands:
         return None
-    # 適用開始日が読めて、今日までに始まっているもの
-    started = [(d, u) for d, u in cands if d and d <= today]
+
+    started = [(d, u) for d, u, _ in cands if d and d <= today]
     if started:
         return max(started, key=lambda x: x[0])
-    # 日付が読めない場合は、ページ内で最後に現れたものを採る
-    log("警告: 適用開始日を読み取れませんでした。最後のExcelを使います。")
-    return cands[-1]
+
+    log("警告: 適用開始日を読み取れませんでした。ページ内で最後に"
+        "現れたExcelリンクを使います。")
+    cands.sort(key=lambda x: x[2])
+    return (None, cands[-1][1])
 
 
 def parse_excel(path):
@@ -179,10 +181,21 @@ def main():
     check = "--check" in sys.argv
     try:
         log("選定療養の対象医薬品リストのページを確認中…")
-        html = fp.decode_html(fp.http_get(PAGE))
+        raw = fp.http_get(PAGE)
+        log(f"ページ取得: {len(raw):,} bytes")
+        html = fp.decode_html(raw)
+        n_xlsx = len(re.findall(r'\.xlsx["\']', html, re.IGNORECASE))
+        n_mark = html.count("※")
+        log(f"  .xlsx形式のリンク候補: {n_xlsx} 件 / ※の出現: {n_mark} 件")
         got = find_excel(html)
         if not got:
             log("ERROR: 対象医薬品リストのExcelが見つかりません。")
+            log("  ページの取得自体はできていますが、期待する構造が"
+                "見つかりませんでした。ページの様式が変わった可能性があります。")
+            # 診断用に、最初に見つかった.xlsxリンク周辺を少しログへ出す
+            m = re.search(r'.{80}\.xlsx["\'].{20}', html, re.IGNORECASE | re.S)
+            if m:
+                log(f"  参考（最初の.xlsx付近）: ...{m.group(0)!r}...")
             return 1
         sdate, url = got
         log(f"対象リスト: {url.rsplit('/', 1)[-1]}"
