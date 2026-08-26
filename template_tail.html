@@ -1,3 +1,4 @@
+
 ;
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
@@ -373,7 +374,7 @@ function render(){
         </dl>
         ${(()=>{const yj=get(r,'yj');
           if(!yj||yj.length<12) return '';   /* 未収載品はYJが短く対象外 */
-          const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
+                      const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
           return `<div class="pmda">
             <a class="pmdabtn" href="${u}?user=1" target="_blank" rel="noopener">
               添付文書・IF・RMP を見る（PMDA）</a>
@@ -748,7 +749,7 @@ function drawNews(){
   document.getElementById('nwsort').textContent = nwDesc ? '高い順' : '低い順';
   document.getElementById('nwkinds').textContent =
     [...bdKinds].sort().map(i=>KLABEL[i]).join('・');
-  document.querySelectorAll('#nwtabs .nwt').forEach(b=>
+        document.querySelectorAll('#nwtabs .nwt').forEach(b=>
     b.setAttribute('aria-pressed', (b.dataset.t||'')===nwType));
   document.getElementById('nwcnt').textContent=`${list.length}件`;
   const box=document.getElementById('nwlist');
@@ -1123,6 +1124,7 @@ const REVERSE=(()=>{
     const over=gens.filter(r=>get(r,'price')>=lo)
                    .sort((a,b)=>get(b,'price')-get(a,'price'));
     if(!over.length) return;
+      1495 /mnt/user-data/outputs/template_tail.html
     /* 同額の先発が複数ある場合は品名順で代表を決める */
     const base=brands.filter(r=>get(r,'price')===lo)
                      .sort((a,b)=>get(a,'n').localeCompare(get(b,'n'),'ja'))[0];
