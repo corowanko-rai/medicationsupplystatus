@@ -417,27 +417,24 @@ header{
 .senunit{font-size:11px;color:var(--ink3);margin-bottom:6px}
 /* 凡例内：選定療養の計算式・図解ブロック */
 .sencalc{background:#fdfaf5;border:1px solid #f0dcc4;border-radius:13px;
-  padding:14px 14px 15px;margin:4px 0 16px}
-.sencalc-h{font-size:12.5px;font-weight:800;color:#8a4f08;margin-bottom:2px}
-.sencalc-ex{font-size:11px;color:var(--ink3);margin-bottom:10px}
-.sc-eq{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;line-height:1.6}
-.sc-t{font-weight:800;padding:2px 8px;border-radius:7px;white-space:nowrap}
-.sc-op{color:var(--ink3);font-weight:700;flex:0 0 auto}
-.sc-num{font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums;
-  margin:3px 0 0 2px}
-.sc-price{background:#eef2f7;color:#3a4a5a}
-.sc-gmax{background:#e7f4ec;color:#2f7a52}
-.sc-half{background:#fdecd8;color:#a85f10}
-.sc-sen{background:#fdf0e3;color:#8a4f08}
-.sc-win{background:#e3eff9;color:#0a5a97}
-.sc-ratio{background:#eef2f7;color:#3a4a5a}
-.sc-tax{background:#fdecec;color:#b23c3c}
-.sc-eq-final{margin-top:2px}
-.sc-eq-plus{margin-top:3px;padding-left:4px}
-.sc-plus{font-size:14px}
-.sc-tag{font-size:10px;font-weight:800;color:#b23c3c;background:#fdecec;
-  border:1px solid #f2c2c2;border-radius:99px;padding:1px 8px;margin-left:3px}
-.sc-bar{width:100%;max-width:340px;height:auto;display:block;margin:14px auto 4px}
+  padding:15px 15px 16px;margin:4px 0 16px}
+.sencalc-h{font-size:13px;font-weight:800;color:#8a4f08;margin-bottom:2px}
+.sencalc-ex{font-size:11px;color:var(--ink3);margin-bottom:12px}
+/* シンプルな縦積み：ラベル→数式の2行だけ */
+.sc-step{padding:2px 0}
+.sc-step.sc-final{background:#fff;border:1px solid #f0dcc4;border-radius:10px;
+  padding:11px 12px;margin-top:2px}
+.sc-step.sc-q{background:#eef6fd;border-color:#b9d8f0}
+.sc-step.sc-q .sc-lab{color:#0a5a97}
+.sc-lab{font-size:12.5px;font-weight:800;color:#8a4f08;margin-bottom:3px}
+.sc-num{font-size:13px;color:var(--ink);line-height:1.7}
+.sc-num b{color:#8a4f08}
+.sc-num.sc-plus{color:var(--ink2);margin-top:1px}
+.sc-arrow{text-align:center;color:#d6b077;font-size:15px;line-height:1;margin:6px 0}
+.sc-tag{display:inline-block;font-size:10.5px;font-weight:800;color:#b23c3c;
+  background:#fdecec;border:1px solid #f2c2c2;border-radius:99px;
+  padding:2px 9px;margin-top:7px}
+.sc-bar{width:100%;height:auto;display:block;margin:10px 0 2px}
 .sennote2{font-size:11.5px;line-height:1.75;color:var(--ink2);
   background:var(--surface);border:1px solid var(--line);border-radius:10px;
   padding:10px 11px;margin-top:14px}
@@ -448,6 +445,16 @@ header{
 .senbox span{font-size:10.5px;color:#a07a4a;font-weight:700}
 .senbox b{font-size:14px;color:#8a4f08;font-variant-numeric:tabular-nums}
 .sennote{font-size:11px;color:var(--ink3);line-height:1.6;margin-top:5px}
+/* 選定療養：後発品との差額（カード内の自己負担割合切替） */
+.sendiff{margin-top:9px;background:#eef6fd;border:1px solid #b9d8f0;
+  border-radius:10px;padding:9px 10px}
+.sendiff-h{font-size:11px;font-weight:700;color:#0a5a97;margin-bottom:6px}
+.sdratio{display:flex;gap:5px;margin-bottom:7px}
+.sdb{flex:1;min-height:34px;padding:0;border-radius:8px;font-size:12.5px;font-weight:700;
+  background:#fff;border:1px solid #b9d8f0;color:#0a5a97;cursor:pointer;font-family:inherit}
+.sdb[aria-pressed="true"]{background:#0a68b0;border-color:#0a68b0;color:#fff}
+.sdresult{font-size:13px;color:#0a5a97;line-height:1.6}
+.sdresult b{font-size:15px}
 .kc{display:inline-flex;align-items:center;justify-content:center;height:20px;
   padding:0 6px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
   background:#5f34ab;color:#fff}

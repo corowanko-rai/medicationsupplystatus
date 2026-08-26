@@ -630,7 +630,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             it = (sentei.get("items") or {}).get(yj)
             if it:
                 n_sen += 1
-                sv = [it.get("h"), it.get("p")]   # 差額分 / 選定療養時の薬価
+                sv = [it.get("h"), it.get("p"), it.get("g")]   # 差額分 / 選定療養時 / 後発品最高価格
         exp_iso = wareki_to_iso(exp_raw)
         if price is not None:
             n_price += 1

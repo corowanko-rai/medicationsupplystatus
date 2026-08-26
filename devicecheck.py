@@ -113,6 +113,28 @@ def check_device(browser, p, name, url):
     pg.fill("#q", "")
     pg.wait_for_timeout(250)
 
+    # 選定療養：後発品との差額（自己負担割合の切替）
+    pg.fill("#q", "ヒルドイドソフト軟膏")
+    pg.wait_for_timeout(420)
+    if pg.locator(".card").count():
+        pg.locator(".card").first.click()
+        pg.wait_for_timeout(350)
+        diff = pg.locator(".card.open .sendiff")
+        if diff.count() == 0:
+            fails.append("後発品との差額ブロックが出ない")
+        else:
+            before = diff.locator(".sdresult").inner_text()
+            diff.locator('.sdb[data-r="0.1"]').click()
+            pg.wait_for_timeout(300)
+            if pg.locator(".card.open").count() == 0:
+                fails.append("割合ボタンを押すとカードが閉じる")
+            elif diff.locator(".sdresult").inner_text() == before:
+                fails.append("割合を変えても差額が変わらない")
+            if ovf() != 0:
+                fails.append(f"差額の割合切替で横溢れ {ovf()}px")
+    pg.fill("#q", "")
+    pg.wait_for_timeout(250)
+
     pg.select_option("#ffm", "錠")
     pg.wait_for_timeout(380)
     if ovf() != 0:
