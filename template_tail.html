@@ -1,9 +1,29 @@
-
 ;
+/* 診断用（一時的）：JSエラーを画面に直接表示する。
+   スマホ実機でエラー内容を確認する手段が無いための切り分け用。
+   これはスクリプトの一番先頭に置く必要がある。ここより後のどの行で
+   エラーが起きても、先に登録しておいたこのリスナーが捕まえられる。 */
+window.addEventListener('error', function(e){
+  function show(){
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;'+
+      'background:#fdecec;color:#a12626;padding:14px;font-size:12px;'+
+      'line-height:1.6;white-space:pre-wrap;word-break:break-all;'+
+      'border-bottom:3px solid #a12626;max-height:60vh;overflow:auto';
+    box.textContent = '【診断情報】JSエラーを検出しました\n'+
+      'メッセージ: '+e.message+'\n'+
+      'ファイル: '+(e.filename||'(不明)')+'\n'+
+      '行: '+e.lineno+' 列: '+e.colno+'\n'+
+      (e.error && e.error.stack ? 'スタック:\n'+e.error.stack : '');
+    if(document.body) document.body.prepend(box);
+    else document.addEventListener('DOMContentLoaded', function(){ document.body.prepend(box); });
+  }
+  show();
+});
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-08-26-v4';
+const TPL_VER='2026-08-26-v5-diag';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -374,7 +394,7 @@ function render(){
         </dl>
         ${(()=>{const yj=get(r,'yj');
           if(!yj||yj.length<12) return '';   /* 未収載品はYJが短く対象外 */
-                      const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
+          const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
           return `<div class="pmda">
             <a class="pmdabtn" href="${u}?user=1" target="_blank" rel="noopener">
               添付文書・IF・RMP を見る（PMDA）</a>
@@ -749,7 +769,7 @@ function drawNews(){
   document.getElementById('nwsort').textContent = nwDesc ? '高い順' : '低い順';
   document.getElementById('nwkinds').textContent =
     [...bdKinds].sort().map(i=>KLABEL[i]).join('・');
-        document.querySelectorAll('#nwtabs .nwt').forEach(b=>
+  document.querySelectorAll('#nwtabs .nwt').forEach(b=>
     b.setAttribute('aria-pressed', (b.dataset.t||'')===nwType));
   document.getElementById('nwcnt').textContent=`${list.length}件`;
   const box=document.getElementById('nwlist');
@@ -1124,7 +1144,6 @@ const REVERSE=(()=>{
     const over=gens.filter(r=>get(r,'price')>=lo)
                    .sort((a,b)=>get(b,'price')-get(a,'price'));
     if(!over.length) return;
-      1495 /mnt/user-data/outputs/template_tail.html
     /* 同額の先発が複数ある場合は品名順で代表を決める */
     const base=brands.filter(r=>get(r,'price')===lo)
                      .sort((a,b)=>get(a,'n').localeCompare(get(b,'n'),'ja'))[0];
