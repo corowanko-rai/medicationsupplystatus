@@ -23,8 +23,8 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-08-26-v5-diag';
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26};
+const TPL_VER='2026-08-31-v13';
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -92,6 +92,63 @@ const HIRA=(s)=>s.replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt
 const norm=(s)=>HALF(s).toLowerCase().trim();
 
 /* st/k are Sets: OR within a group, AND across groups */
+/* ---------- フィルターの並び替え ----------
+   グループ単位で順番を入れ替えられるようにする。
+   よく使う条件を左に置けば、横スクロールの手間が減る。 */
+const CHIP_GROUPS = {
+  st:   {label:'状況',     html:
+    '<button class="chip o" data-g="st" data-f="normal" aria-pressed="false">通常出荷</button>'+
+    '<button class="chip w" data-g="st" data-f="limited" aria-pressed="false">限定出荷</button>'+
+    '<button class="chip s" data-g="st" data-f="stopped" aria-pressed="false">供給停止</button>'+
+    '<button class="chip n" data-g="st" data-f="new" aria-pressed="false">今回更新</button>'+
+    '<button class="logic" id="logic" data-mode="or" title="条件の組み合わせ方を切り替え">又は</button>'},
+  ex:   {label:'経過措置', html:
+    '<button class="chip ex" data-g="ex" data-f="has" aria-pressed="false">対象</button>'+
+    '<button class="chip exn" data-g="ex" data-f="near" aria-pressed="false">6か月以内</button>'+
+    '<button class="chip exo" data-g="ex" data-f="over" aria-pressed="false">期限切れ</button>'},
+  cm:   {label:'併売',     html:
+    '<button class="chip cm" data-g="cm" aria-label="併売品の一覧を開く">併売品あり ▸</button>'},
+  sn:   {label:'選定療養', html:
+    '<button class="chip sn" data-g="sn" data-f="sen" aria-pressed="false">選定療養対象</button>'},
+  dc:   {label:'販売',     html:
+    '<button class="chip dc" data-g="dc" data-f="disc" aria-pressed="false">販売中止</button>'},
+  chg:  {label:'変化',     html:
+    '<button class="chip dn" data-g="chg" data-f="worse" aria-pressed="false">悪化</button>'+
+    '<button class="chip up" data-g="chg" data-f="better" aria-pressed="false">改善</button>'},
+  k:    {label:'剤形',     html:
+    '<button class="chip" data-g="k" data-f="内用薬" aria-pressed="false">内用薬</button>'+
+    '<button class="chip" data-g="k" data-f="外用薬" aria-pressed="false">外用薬</button>'+
+    '<button class="chip" data-g="k" data-f="注射薬" aria-pressed="false">注射薬</button>'},
+};
+const CHIP_DEFAULT = ['st','ex','cm','sn','dc','chg','k'];
+let chipOrder = CHIP_DEFAULT.slice();
+
+/* 並び順は端末に覚えさせる（次回開いたときも同じ並びにする） */
+function loadChipOrder(){
+  try{
+    const v=localStorage.getItem('chipOrder');
+    if(!v) return;
+    const a=JSON.parse(v);
+    if(!Array.isArray(a)) return;
+    /* 未知のキーを除き、足りないものは既定の順で末尾に足す */
+    const ok=a.filter(k=>CHIP_GROUPS[k]);
+    CHIP_DEFAULT.forEach(k=>{ if(!ok.includes(k)) ok.push(k); });
+    chipOrder=ok;
+  }catch(e){}
+}
+function saveChipOrder(){
+  try{ localStorage.setItem('chipOrder', JSON.stringify(chipOrder)); }catch(e){}
+}
+function renderChips(){
+  const box=document.getElementById('chips');
+  box.innerHTML = chipOrder.map((k,i)=>{
+    const g=CHIP_GROUPS[k]; if(!g) return '';
+    return (i?'<span class="gdiv"></span>':'')+
+      `<span class="glabel">${g.label}</span>`+g.html;
+  }).join('');
+  syncChips();
+}
+
 let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),sn:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
@@ -217,8 +274,34 @@ const senOf=(r)=>{const v=get(r,'sen'); return (v&&v!==0)?v:null;};
 const senBadge=(r)=>senOf(r)
   ? '<span class="sen" title="長期収載品の選定療養の対象">選</span>' : '';
 
+/* 規格から「課金の単位」だけを取り出す。
+   薬価は「10mg1錠」なら1錠あたり、「1%1g」なら1gあたりの価格なので、
+   末尾の "数字+単位" が実際に金額のかかる単位になる。 */
+const UNIT_RE=/(\d+(?:\.\d+)?)\s*([^\d\s]+)$/;
+function unitOf(r){
+  const z='０１２３４５６７８９．％', h='0123456789.%';
+  const sp=String(get(r,'sp')||'').trim()
+    .replace(/[０-９．％]/g, ch=>h[z.indexOf(ch)]);
+  const m=UNIT_RE.exec(sp);
+  return m ? m[0] : '';
+}
+
 /* 選定療養：後発品を選んだ場合との差額（カードごとに自己負担割合を覚えておく） */
 const senRatio={};   /* {YJコード: 0.1|0.2|0.3} */
+const senQty={};     /* {YJコード: 処方量} */
+
+/* 処方量を入れたときの合計差額。
+   薬価は「1錠あたり」等の単価なので、そのまま処方量を掛ければよい。 */
+function senTotalText(v, ratio, qty, unit, qUnit){
+  if(qty==null || !(qty>0)) return '';
+  const [half, sen, gmax] = v;
+  if(gmax==null || sen==null || half==null) return '';
+  const per = (sen - gmax) * ratio + half * 1.1;
+  const total = per * qty;
+  const r = Math.round(total * 100) / 100;
+  return `この処方量なら <b>${fmtY(r)}円</b> 高くなります`+
+         `<span class="sdcalc">（${fmtY(Math.round(per*100)/100)}円 × ${fmtY(qty)}${esc(qUnit)}）</span>`;
+}
 function senDiffText(v, ratio){
   const [half, sen, gmax] = v;
   if(gmax==null || sen==null || half==null) return '（後発品最高価格が不明のため計算できません）';
@@ -226,6 +309,21 @@ function senDiffText(v, ratio){
   const r = Math.round(diff * 100) / 100;
   return `<b>${fmtY(r)}円</b> 高くなります`;
 }
+document.addEventListener('input', e=>{
+  const q = e.target.closest('.sdq'); if(!q) return;
+  const box = e.target.closest('.sendiff'); if(!box) return;
+  const yj = box.dataset.yj;
+  const val = parseFloat(q.value);
+  senQty[yj] = (q.value.trim()==='' || isNaN(val) || val<0) ? undefined : val;
+  const row = R.find(r=>get(r,'yj')===yj);
+  if(row){
+    const v = senOf(row);
+    const u = unitOf(row);
+    const qUnit = u.replace(/^1/, '') || '個';
+    box.querySelector('.sdtotal').innerHTML =
+      senTotalText(v, senRatio[yj] ?? 0.3, senQty[yj], u, qUnit);
+  }
+});
 document.addEventListener('click', e=>{
   const b = e.target.closest('.sdb'); if(!b) return;
   const box = e.target.closest('.sendiff'); if(!box) return;
@@ -239,8 +337,16 @@ document.addEventListener('click', e=>{
   if(row){
     const v = senOf(row);
     box.querySelector('.sdresult').innerHTML = senDiffText(v, senRatio[yj]);
+    const u = unitOf(row);
+    const qUnit = u.replace(/^1/, '') || '個';
+    const tot = box.querySelector('.sdtotal');
+    if(tot) tot.innerHTML = senTotalText(v, senRatio[yj], senQty[yj], u, qUnit);
   }
 });
+/* 併売品：同じ中身で商品名が違う先発品。供給停止時の代替候補になる。 */
+const cmOf=(r)=>{const v=get(r,'cm'); return (v&&v!==0)?v:null;};
+const cmBadge=(r)=>cmOf(r)
+  ? '<span class="cmb" title="同じ中身で商品名が違う薬があります">併売</span>' : '';
 const dcPkgs=(r)=>{const v=dcOf(r); const a=(v&&v[3])||[];
   return Array.isArray(a)?a.filter(e=>e&&e.p):[];};
 const dcBadge=(r)=>{
@@ -296,7 +402,7 @@ function render(){
     const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
     el.innerHTML=
       `<div class="tags">
-        ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}
+        ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}${cmBadge(r)}
         ${dcBadge(r)}
         <span class="badge b${sc}">${esc(st)}</span>
         ${get(r,'new')?'<span class="badge bnew">New</span>':''}
@@ -321,8 +427,12 @@ function render(){
           const gmax=v[2];
           const ratio=senRatio[yj] ?? 0.3;   /* 既定は3割 */
           const diffTxt = senDiffText(v, ratio);
+          const u = unitOf(r);                  /* 例：1錠、1g、1mL */
+          const qUnit = u.replace(/^1/, '') || '個';   /* 入力欄の単位：錠、g、mL */
+          const qty = senQty[yj];
+          const totalTxt = senTotalText(v, ratio, qty, u, qUnit);
           return `<div class="row"><dt>選定療養</dt><dd>
-            <div class="senunit">いずれも ${sp} あたり（上の薬価と同じ規格）</div>
+            <div class="senunit">いずれも ${u?esc(u):esc(sp)} あたり（上の薬価と同じ規格）</div>
             <div class="senbox">
               <div><span>差額分の薬価</span><b>${f(v[0])}</b></div>
               <div><span>選定療養時の薬価</span><b>${f(v[1])}</b></div>
@@ -334,14 +444,36 @@ function render(){
               <b>差額分に消費税を加えた額</b>を特別の料金として上乗せした金額になります。
             </div>
             ${gmax!=null?`<div class="sendiff" data-yj="${yj}">
-              <div class="sendiff-h">後発品を選んだ場合との差額（1gなど同じ規格あたり）</div>
+              <div class="sendiff-h">後発品を選んだ場合との差額${u?`（${esc(u)}あたり）`:''}</div>
               <div class="sdratio">
                 <button class="sdb" data-r="0.1" aria-pressed="${ratio===0.1}">1割</button>
                 <button class="sdb" data-r="0.2" aria-pressed="${ratio===0.2}">2割</button>
                 <button class="sdb" data-r="0.3" aria-pressed="${ratio===0.3}">3割</button>
               </div>
               <div class="sdresult">${diffTxt}</div>
+              <div class="sdqty">
+                <label>処方量
+                  <input type="number" class="sdq" inputmode="decimal" min="0" step="any"
+                    placeholder="${esc(qUnit)}" value="${qty!=null?qty:''}">
+                  <span class="sdqu">${esc(qUnit)}</span>
+                </label>
+                <div class="sdtotal">${totalTxt}</div>
+              </div>
             </div>`:''}
+          </dd></div>`;
+        })()}
+        ${(()=>{const o=cmOf(r); if(!o) return '';
+          const rows=o.map(i=>R[i]).filter(Boolean);
+          if(!rows.length) return '';
+          return `<div class="row"><dt>併売品</dt><dd>
+            <div class="cmnote">同じ成分・剤形・規格で、商品名が異なる薬です。</div>
+            ${rows.map(x=>{
+              const sc=get(x,'sc');
+              return `<div class="cmitem" data-nm="${esc(get(x,'n'))}">
+                <span class="cmst s${sc}">${esc(dv(x,'st'))}</span>
+                <span class="cmnm">${esc(get(x,'n'))}</span>
+                <span class="cmmk">${esc(dv(x,'m')||'')}</span>
+              </div>`;}).join('')}
           </dd></div>`;
         })()}
         ${dv(r,'fm')?`<div class="row"><dt>剤形</dt><dd>${esc(dv(r,'k'))}／${esc(dv(r,'fm'))}</dd></div>`:''}
@@ -408,6 +540,8 @@ function render(){
       </div>`;
     el.addEventListener('click',(e)=>{
       if(e.target.closest('.sdb')) return;   /* 差額の割合切替は開閉させない */
+      if(e.target.closest('.cmitem')) return; /* 併売品タップは開閉させない */
+      if(e.target.closest('.sdq')) return;    /* 処方量の入力は開閉させない */
       el.classList.toggle('open');
     });
     frag.appendChild(el);
@@ -446,27 +580,76 @@ document.getElementById('smode').addEventListener('click',e=>{
   run(); window.scrollTo({top:0});
 });
 document.getElementById('chips').addEventListener('click',e=>{
+  /* 「又は／かつ」の切り替え（チップと同じ入れ物にあるため一緒に扱う） */
+  if(e.target.closest('#logic')){
+    e.stopPropagation();
+    state.stMode = state.stMode==='and' ? 'or' : 'and';
+    syncChips(); run(); window.scrollTo({top:0});
+    return;
+  }
   const b=e.target.closest('.chip'); if(!b) return;
+  /* 併売品は絞り込みではなく、成分ごとの一覧画面を開く。
+     目的の薬はすでに検索で見つけている前提で、
+     代替候補を成分単位で見渡すほうが実用的なため。 */
+  if(b.dataset.g==='cm'){ openCmv(); return; }
   const set=state[b.dataset.g], v=b.dataset.f;
   if(set.has(v)) set.delete(v); else set.add(v);
   syncChips(); run(); window.scrollTo({top:0});
 });
 function syncChips(){
-  document.querySelectorAll('.chip').forEach(c=>
-    c.setAttribute('aria-pressed', state[c.dataset.g].has(c.dataset.f)));
+  document.querySelectorAll('.chip').forEach(c=>{
+    /* 併売品チップは絞り込みではなく画面を開くボタンなので、
+       状態を持たない（state に対応する集合が無い）。 */
+    const set = state[c.dataset.g];
+    if(!set || !set.has) return;
+    c.setAttribute('aria-pressed', set.has(c.dataset.f));
+  });
   /* the AND/OR toggle only matters with 2+ status conditions */
+  /* チップは並び替えで作り直されるので、無い場合もありうる */
   const lg=document.getElementById('logic');
-  const meaningful = state.st.has('new') && EX.some(v=>state.st.has(v));
-  lg.classList.toggle('on', meaningful);
-  lg.dataset.mode=state.stMode;
-  lg.textContent=state.stMode==='and'?'かつ':'又は';
+  if(lg){
+    const meaningful = state.st.has('new') && EX.some(v=>state.st.has(v));
+    lg.classList.toggle('on', meaningful);
+    lg.dataset.mode=state.stMode;
+    lg.textContent=state.stMode==='and'?'かつ':'又は';
+  }
   renderActive();
 }
-document.getElementById('logic').addEventListener('click',e=>{
-  e.stopPropagation();
-  state.stMode = state.stMode==='and' ? 'or' : 'and';
-  syncChips(); run(); window.scrollTo({top:0});
+/* --- 並び替え画面 --- */
+function drawOrderEdit(){
+  document.getElementById('colist').innerHTML = chipOrder.map((k,i)=>{
+    const g=CHIP_GROUPS[k];
+    return `<div class="coitem" data-k="${k}">
+      <span class="coname">${g.label}</span>
+      <button class="coar" data-act="up" ${i===0?'disabled':''} aria-label="上へ">▲</button>
+      <button class="coar" data-act="down" ${i===chipOrder.length-1?'disabled':''} aria-label="下へ">▼</button>
+    </div>`;
+  }).join('');
+}
+document.getElementById('cobtn').addEventListener('click',()=>{
+  const el=document.getElementById('coedit');
+  const on=el.classList.toggle('on');
+  document.getElementById('cobtn').textContent = on ? '閉じる' : '並び替え';
+  if(on) drawOrderEdit();
 });
+document.getElementById('colist').addEventListener('click',e=>{
+  const b=e.target.closest('.coar'); if(!b) return;
+  const k=e.target.closest('.coitem').dataset.k;
+  const i=chipOrder.indexOf(k);
+  const j=b.dataset.act==='up' ? i-1 : i+1;
+  if(j<0 || j>=chipOrder.length) return;
+  [chipOrder[i], chipOrder[j]] = [chipOrder[j], chipOrder[i]];
+  saveChipOrder(); drawOrderEdit(); renderChips();
+});
+document.getElementById('coreset').addEventListener('click',()=>{
+  chipOrder = CHIP_DEFAULT.slice();
+  saveChipOrder(); drawOrderEdit(); renderChips();
+});
+document.getElementById('codone').addEventListener('click',()=>{
+  document.getElementById('coedit').classList.remove('on');
+  document.getElementById('cobtn').textContent='並び替え';
+});
+
 const EX=['normal','limited','stopped'];
 const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
            worse:'悪化',better:'改善',disc:'販売中止',
@@ -653,6 +836,19 @@ function closeCmp(){
   document.body.style.overflow='';
 }
 document.getElementById('list').addEventListener('click',e=>{
+  /* 併売品をタップしたら、その薬を品名で検索する */
+  const ci=e.target.closest('.cmitem');
+  if(ci){
+    e.stopPropagation();
+    state.qMode='n';
+    document.querySelectorAll('.sm').forEach(x=>
+      x.setAttribute('aria-pressed', x.dataset.m==='n'));
+    qEl.placeholder='薬剤名で検索（スペースでAND）';
+    state.q=ci.dataset.nm; qEl.value=state.q;
+    document.getElementById('clr').classList.add('on');
+    run(); window.scrollTo({top:0});
+    return;
+  }
   /* 成分名検索へワンボタンで切り替える */
   const ib=e.target.closest('.ingbtn');
   if(ib){
@@ -685,9 +881,11 @@ function switchPage(k){
   const tp=document.getElementById('top');
   if(tp && k!=='search') tp.classList.remove('on');
   document.getElementById('board').classList.toggle('on', k==='board');
+  document.getElementById('calc').classList.toggle('on', k==='calc');
   const nc=document.getElementById('nochg');
   if(nc) nc.style.display = k==='search' ? '' : 'none';
   if(k==='board'){ drawNews(); drawBoard(); }
+  if(k==='calc') drawCalc();
   window.scrollTo({top:0});
 }
 document.querySelector('.ptabs').addEventListener('click',e=>{
@@ -897,6 +1095,8 @@ function bdCard(x){
       ${v.lim?`<span class="m-lim">限定出荷 <b>${v.lim}</b></span>`:''}
       ${ok?`<span class="m-ok">通常出荷 <b>${ok}</b></span>`:''}
     </div>
+    ${bdFocus!==null && String(bdFocus)===String(a.i)
+      ? '<div class="bdgo">タップすると、この成分の薬を検索します ▸</div>' : ''}
   </div>`;
 }
 document.getElementById('bdth').addEventListener('click',e=>{
@@ -926,6 +1126,12 @@ document.getElementById('bdk').addEventListener('click',e=>{
 document.getElementById('bdlist').addEventListener('click',e=>{
   const row=e.target.closest('.bdrow'); if(!row) return;
   const i=row.dataset.ing;
+  /* すでにその成分だけを表示している（＝グラフもその成分）なら、
+     もう一度押したときは検索画面へ移動して実際の薬を見せる。 */
+  if(bdFocus!==null && String(bdFocus)===String(i)){
+    toSearchByIng(row.dataset.nm);
+    return;
+  }
   if(SERIES[i]){ chIng=i; document.getElementById('chsel').value=i; drawChart();
     document.getElementById('chart').scrollIntoView({behavior:'smooth',block:'center'}); }
   else{ toSearchByIng(row.dataset.nm); }
@@ -1063,7 +1269,7 @@ function drawAl(){
   h+=`<div class="alsec">逼迫している成分（${alTh===100?'全品目が限定出荷以下':alTh+'%以上'}）</div>`;
   const rest=list.filter(a=>a.w===0);
   if(!rest.length && !worse.length){
-    h+='<div class="rvempty">該当する成分はありません。</div>';
+    h+='<div class="rvempty">該当する成分はありません。<br>剤形の選択を増やしてみてください。</div>';
   }else{
     rest.forEach(a=>{h+=alCard(a);});
   }
@@ -1113,6 +1319,381 @@ document.getElementById('albody').addEventListener('click',e=>{
     x.setAttribute('aria-pressed', x.dataset.m==='i'));
   qEl.placeholder='成分名で検索';
   state.q=row.dataset.ing; qEl.value=state.q;
+  document.getElementById('clr').classList.add('on');
+  run(); window.scrollTo({top:0});
+});
+
+/* ---------- 計算ページ（選定療養の特別の料金） ----------
+   厚労省「長期収載品の処方等又は調剤に係る選定療養における費用の計算方法
+   について」（令和8年3月27日 事務連絡）に沿って計算する。
+
+   要点：
+   ・点数は「所定単位」ごとに算定する（内服薬は1剤1日分、外用薬は1調剤）
+   ・同じ剤に複数の長期収載品があるときは、金額を合算してから点数化する（規定ア）
+   ・剤が複数あるときは、剤ごとに点数を出してから合算する（規定ウ）
+   ・薬剤料の点数換算は「15円以下は1点、15円超は10円で除して五捨五超入」 */
+
+/* 円 → 点（薬剤料の換算規則） */
+function yenToTen(yen){
+  if(yen<=0) return 0;
+  if(yen<=15) return 1;
+  const q=yen/10, i=Math.floor(q), f=q-i;
+  return f<=0.5 ? i : i+1;   /* 五捨五超入：ちょうど0.5は切り捨て */
+}
+
+let caRatio=0.3;
+let caRps=[];      /* [{kind:'内服'|'外用', days:14, drugs:[{yj,name,sp,qty}]}] */
+let caPickTarget=null;   /* 薬を追加する対象の剤 */
+
+function caNewRp(){
+  return {kind:'内服', days:14, drugs:[]};
+}
+function caUnitOf(r){
+  const u=unitOf(r);
+  return u.replace(/^1/,'') || '個';
+}
+
+function drawCalc(){
+  document.querySelectorAll('#caratio .carb').forEach(b=>
+    b.setAttribute('aria-pressed', +b.dataset.r===caRatio));
+
+  const box=document.getElementById('calist');
+  if(!caRps.length){
+    box.innerHTML='<div class="caempty">「＋ 剤（Rp）を追加」から始めてください。'+
+      '<br>用法が違う薬は別の剤として入力します。</div>';
+  }else{
+    box.innerHTML=caRps.map((rp,ri)=>{
+      const isOral = rp.kind==='内服';
+      return `<div class="carp" data-ri="${ri}">
+        <div class="carph">
+          <div class="carpt">Rp${ri+1}</div>
+          <button class="carpx" data-act="delrp">この剤を削除</button>
+        </div>
+        <div class="cakind">
+          <button class="cakb" data-act="kind" data-k="内服" aria-pressed="${isOral}">内服薬</button>
+          <button class="cakb" data-act="kind" data-k="外用" aria-pressed="${!isOral}">外用薬・注射薬</button>
+        </div>
+        ${isOral?`<div class="cadays">
+          <label>日数 <input type="number" class="cadaysin" inputmode="numeric"
+            min="1" step="1" value="${rp.days}"></label>
+          <span>日分</span>
+        </div>`:''}
+        ${rp.drugs.map((d,di)=>{
+          const row=R.find(x=>get(x,'yj')===d.yj);
+          const v=row?senOf(row):null;
+          const u=row?caUnitOf(row):'';
+          return `<div class="cadrug" data-di="${di}">
+            <div class="cadn"><span>${esc(d.name)}</span>
+              <button class="cadx" data-act="deldrug">削除</button></div>
+            <div class="cadq">
+              <label>${isOral?'1日量':'総量（全量）'}
+                <input type="number" class="cadqin" inputmode="decimal"
+                  min="0" step="any" value="${d.qty!=null?d.qty:''}"></label>
+              <span>${esc(u)}</span>
+              ${isOral && d.qty>0 && rp.days>0
+                ? `<span class="catot">合計 ${fmtY(d.qty*rp.days)}${esc(u)}</span>` : ''}
+            </div>
+            ${v?`<div class="cadinfo">差額分 ${fmtY(v[0])}円／${esc(unitOf(row))}　選定療養時 ${fmtY(v[1])}円</div>`:
+              '<div class="cadinfo">選定療養の対象外です</div>'}
+            ${(()=>{
+              const k=d.kind || (row?dv(row,'k'):'');
+              if(!k) return '';
+              const mismatch = isOral ? (k!=='内用薬') : (k==='内用薬');
+              return mismatch
+                ? `<div class="cawarnrow">この薬は<b>${esc(k)}</b>です。`+
+                  `剤の種類が合っていない可能性があります</div>` : '';
+            })()}
+          </div>`;
+        }).join('')}
+        <button class="caadddrug" data-act="adddrug">＋ この剤に薬を追加</button>
+      </div>`;
+    }).join('');
+  }
+  drawCalcResult();
+}
+
+function drawCalcResult(){
+  const box=document.getElementById('cares');
+  const usable = caRps.some(rp=>rp.drugs.some(d=>d.qty>0));
+  if(!usable){ box.innerHTML=''; return; }
+
+  let totalA_ten=0, totalB_ten=0;
+  const lines=[];
+  caRps.forEach((rp,ri)=>{
+    const isOral = rp.kind==='内服';
+    const days = isOral ? (rp.days>0?rp.days:0) : 1;
+    let sumA=0, sumB=0, any=false;
+    rp.drugs.forEach(d=>{
+      const row=R.find(x=>get(x,'yj')===d.yj);
+      if(!row) return;
+      const v=senOf(row);
+      if(!v || !(d.qty>0)) return;
+      any=true;
+      sumA += v[0]*d.qty;   /* 差額分 × 数量 */
+      sumB += v[1]*d.qty;   /* 選定療養時の薬価 × 数量 */
+    });
+    if(!any || !days) return;
+    /* 所定単位ごとに点数化してから日数を掛ける */
+    const aTen = yenToTen(sumA)*days;
+    const bTen = yenToTen(sumB)*days;
+    totalA_ten += aTen; totalB_ten += bTen;
+    lines.push(`Rp${ri+1}（${isOral?days+'日分':'外用・注射'}）：`+
+      `特別の料金 ${yenToTen(sumA)}点${isOral?'×'+days+'日':''}=${aTen}点／`+
+      `保険分 ${yenToTen(sumB)}点${isOral?'×'+days+'日':''}=${bTen}点`);
+  });
+
+  const A = totalA_ten*10*1.1;          /* 特別の料金（消費税込み） */
+  const B = totalB_ten*10;              /* 保険対象となる費用 */
+  const C = B*caRatio;                  /* 患者自己負担 */
+  const E = A + C;                      /* 患者負担の総額 */
+  const r0=(x)=>Math.round(x);
+
+  box.innerHTML=`<div class="caresbox">
+    <div class="carest">計算結果（自己負担 ${Math.round(caRatio*10)}割）</div>
+    <div class="careline"><span class="k">A　特別の料金（消費税込み）</span>
+      <span class="v">${r0(A).toLocaleString()} 円</span></div>
+    <div class="careline"><span class="k">B　保険対象となる費用</span>
+      <span class="v">${r0(B).toLocaleString()} 円</span></div>
+    <div class="careline"><span class="k">C　うち患者自己負担（B×${caRatio}）</span>
+      <span class="v">${r0(C).toLocaleString()} 円</span></div>
+    <div class="caretotal">
+      <div class="careline"><span class="k">患者負担の総額（A＋C）</span>
+        <span class="v">${r0(E).toLocaleString()} 円</span></div>
+    </div>
+    <div class="cadetail">${lines.map(esc).join('<br>')}</div>
+    <div class="cawarn">
+      薬剤料以外（調剤技術料など）は含みません。<br>
+      点数は「15円以下は1点、15円超は10円で割って五捨五超入」で換算しています。
+      端数処理の関係で、実際の請求額と数円ずれる場合があります。
+    </div>
+  </div>`;
+}
+
+/* --- 操作 --- */
+document.getElementById('caratio').addEventListener('click',e=>{
+  const b=e.target.closest('.carb'); if(!b) return;
+  caRatio=+b.dataset.r; drawCalc();
+});
+document.getElementById('caadd').addEventListener('click',()=>{
+  caRps.push(caNewRp()); drawCalc();
+});
+document.getElementById('calist').addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const rpEl=e.target.closest('.carp'); if(!rpEl) return;
+  const ri=+rpEl.dataset.ri;
+  const act=b.dataset.act;
+  if(act==='delrp'){ caRps.splice(ri,1); drawCalc(); }
+  else if(act==='kind'){ caRps[ri].kind=b.dataset.k; drawCalc(); }
+  else if(act==='adddrug'){ caPickTarget=ri; openPick(); }
+  else if(act==='deldrug'){
+    const di=+e.target.closest('.cadrug').dataset.di;
+    caRps[ri].drugs.splice(di,1); drawCalc();
+  }
+});
+/* 入力欄の値を保ったまま、その剤の「合計◯錠」表示だけを更新する。
+   画面全体を描き直すと入力中のカーソルが飛んでしまうため。 */
+function updateTotals(rpEl, ri){
+  const rp=caRps[ri];
+  rpEl.querySelectorAll('.cadrug').forEach(el=>{
+    const di=+el.dataset.di;
+    const d=rp.drugs[di]; if(!d) return;
+    const row=R.find(x=>get(x,'yj')===d.yj);
+    const u=row?caUnitOf(row):'';
+    let tot=el.querySelector('.catot');
+    const show = rp.kind==='内服' && d.qty>0 && rp.days>0;
+    if(show){
+      if(!tot){
+        tot=document.createElement('span');
+        tot.className='catot';
+        el.querySelector('.cadq').appendChild(tot);
+      }
+      tot.textContent='合計 '+fmtY(d.qty*rp.days)+u;
+    }else if(tot){
+      tot.remove();
+    }
+  });
+}
+document.getElementById('calist').addEventListener('input',e=>{
+  const rpEl=e.target.closest('.carp'); if(!rpEl) return;
+  const ri=+rpEl.dataset.ri;
+  if(e.target.classList.contains('cadaysin')){
+    const v=parseInt(e.target.value,10);
+    caRps[ri].days = isNaN(v)||v<1 ? 0 : v;
+    updateTotals(rpEl, ri);
+    drawCalcResult();
+  }else if(e.target.classList.contains('cadqin')){
+    const di=+e.target.closest('.cadrug').dataset.di;
+    const v=parseFloat(e.target.value);
+    caRps[ri].drugs[di].qty = isNaN(v)||v<0 ? 0 : v;
+    updateTotals(rpEl, ri);
+    drawCalcResult();
+  }
+});
+
+/* --- 薬を選ぶ --- */
+function openPick(){
+  document.getElementById('capick').classList.add('on');
+  document.body.style.overflow='hidden';
+  const inp=document.getElementById('capinput');
+  inp.value=''; drawPick(''); setTimeout(()=>inp.focus(),80);
+}
+function closePick(){
+  document.getElementById('capick').classList.remove('on');
+  document.body.style.overflow='';
+}
+function drawPick(q){
+  const terms=norm(q).split(/\s+/).filter(Boolean);
+  /* 選定療養の対象品だけを候補にする */
+  let hits=[];
+  for(let i=0;i<R.length && hits.length<80;i++){
+    const r=R[i];
+    if(!senOf(r)) continue;
+    if(terms.length){
+      const s=get(r,'s');
+      if(!terms.every(t=>s.includes(t))) continue;
+    }
+    hits.push(r);
+  }
+  const box=document.getElementById('capbody');
+  if(!hits.length){
+    box.innerHTML='<div class="caempty">該当する薬がありません。<br>'+
+      '選定療養の対象医薬品のみ選べます。</div>';
+    return;
+  }
+  box.innerHTML=hits.map(r=>{
+    const v=senOf(r);
+    return `<div class="capitem" data-yj="${esc(get(r,'yj'))}">
+      <div class="capnm">${esc(get(r,'n'))}</div>
+      <div class="capsub">${esc(get(r,'sp'))}｜${esc(dv(r,'m'))}　差額分 ${fmtY(v[0])}円</div>
+    </div>`;
+  }).join('');
+}
+document.getElementById('capinput').addEventListener('input',e=>drawPick(e.target.value));
+document.getElementById('capx').addEventListener('click',closePick);
+document.getElementById('capbody').addEventListener('click',e=>{
+  const it=e.target.closest('.capitem'); if(!it) return;
+  const yj=it.dataset.yj;
+  const row=R.find(x=>get(x,'yj')===yj);
+  if(row && caPickTarget!=null){
+    const rp=caRps[caPickTarget];
+    /* 薬の剤形から、この剤が内服か外用かを自動で決める。
+       外用薬を内服薬のまま「1日量×日数」で入れると、
+       総量が日数倍になって桁違いの金額になるため。 */
+    const k=dv(row,'k');                     /* 内用薬 / 外用薬 / 注射薬 */
+    const wantOral = (k==='内用薬');
+    if(rp.drugs.length===0){
+      rp.kind = wantOral ? '内服' : '外用';   /* 最初の1剤で決める */
+    }
+    rp.drugs.push({yj, name:get(row,'n'), qty:null, kind:k});
+  }
+  closePick(); drawCalc();
+});
+
+/* ---------- 併売品の一覧（成分名ごとに折りたたむ） ----------
+   カード内の表示が「今この薬の代わりを探す」用なのに対し、
+   こちらは全体を見渡して棚卸しするための画面。 */
+let cmvFilter='all';
+/* 薬局での用途に合わせ、内用薬・外用薬を既定にする */
+let cmvKinds=new Set(['内用薬','外用薬']);
+function drawCmv(){
+  /* 成分名ごとに、併売品の群をまとめる（選んだ剤形のみ） */
+  const byIng=new Map();
+  R.forEach((r,i)=>{
+    if(!cmOf(r)) return;
+    if(!cmvKinds.has(dv(r,'k'))) return;
+    const ing=dv(r,'i')||'(成分名なし)';
+    if(!byIng.has(ing)) byIng.set(ing,[]);
+    byIng.get(ing).push(i);
+  });
+
+  /* 規格ごとにさらに分けて、同じ規格の併売品同士を並べる */
+  const groups=[];
+  byIng.forEach((idxs,ing)=>{
+    const bySp=new Map();
+    idxs.forEach(i=>{
+      const sp=get(R[i],'sp')||'';
+      if(!bySp.has(sp)) bySp.set(sp,[]);
+      bySp.get(sp).push(i);
+    });
+    /* この成分に、入手できるものとできないものが混在するか */
+    const scs=new Set(idxs.map(i=>get(R[i],'sc')));
+    const split = scs.has(0) && (scs.has(1)||scs.has(2));
+    groups.push({ing, bySp, n:idxs.length, split});
+  });
+  groups.sort((a,b)=> (b.split-a.split) || a.ing.localeCompare(b.ing,'ja'));
+
+  const list = cmvFilter==='split' ? groups.filter(g=>g.split) : groups;
+  document.querySelectorAll('#cmvf .sortb').forEach(b=>
+    b.setAttribute('aria-pressed', b.dataset.f===cmvFilter));
+  document.querySelectorAll('#cmvk .kb2').forEach(b=>
+    b.setAttribute('aria-pressed', cmvKinds.has(b.dataset.k)));
+  document.getElementById('cmvt').innerHTML =
+    `併売品の一覧<span class="sc">${list.length}成分</span>`;
+
+  let h='<div class="lgnote">'+
+    '同じ成分・剤形・規格で<b>商品名が異なる薬</b>を、成分ごとにまとめています。'+
+    '<br>供給が止まったときの<b>代替候補</b>を探すのに使えます。'+
+    '成分名をタップすると中身が開きます。</div>';
+  if(!list.length){
+    h+='<div class="rvempty">該当する成分はありません。<br>剤形の選択を増やしてみてください。</div>';
+  }else{
+    list.forEach(g=>{
+      let inner='';
+      g.bySp.forEach((idxs,sp)=>{
+        inner+=`<div class="cmvsp">${esc(sp||'(規格不明)')}</div>`;
+        idxs.forEach(i=>{
+          const r=R[i], sc=get(r,'sc');
+          inner+=`<div class="cmitem" data-nm="${esc(get(r,'n'))}">
+            <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
+            <span class="cmnm">${esc(get(r,'n'))}</span>
+            <span class="cmmk">${esc(dv(r,'m')||'')}</span>
+          </div>`;
+        });
+      });
+      h+=`<details class="cmvg">
+        <summary>
+          <span class="cmvi">${esc(g.ing)}</span>
+          ${g.split?'<span class="cmvwarn">入手可否が分かれる</span>':''}
+          <span class="cmvn">${g.n}品目</span>
+        </summary>
+        <div class="cmvbody">${inner}</div>
+      </details>`;
+    });
+  }
+  const box=document.getElementById('cmvbody');
+  box.innerHTML=h; box.scrollTop=0;
+}
+function openCmv(){
+  drawCmv();
+  document.getElementById('cmv').classList.add('on');
+  document.body.style.overflow='hidden';
+}
+function closeCmv2(){
+  document.getElementById('cmv').classList.remove('on');
+  document.body.style.overflow='';
+}
+document.getElementById('cmvx').addEventListener('click',closeCmv2);
+document.getElementById('cmvf').addEventListener('click',e=>{
+  const b=e.target.closest('.sortb'); if(!b) return;
+  cmvFilter=b.dataset.f; drawCmv();
+});
+document.getElementById('cmvk').addEventListener('click',e=>{
+  const b=e.target.closest('.kb2'); if(!b) return;
+  const k=b.dataset.k;
+  /* 最低ひとつは残す */
+  if(cmvKinds.has(k)){ if(cmvKinds.size>1) cmvKinds.delete(k); }
+  else cmvKinds.add(k);
+  drawCmv();
+});
+/* 一覧から薬をタップしたら、その薬を検索する */
+document.getElementById('cmvbody').addEventListener('click',e=>{
+  const ci=e.target.closest('.cmitem'); if(!ci) return;
+  closeCmv2();
+  state.qMode='n';
+  document.querySelectorAll('.sm').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.m==='n'));
+  qEl.placeholder='薬剤名で検索（スペースでAND）';
+  state.q=ci.dataset.nm; qEl.value=state.q;
   document.getElementById('clr').classList.add('on');
   run(); window.scrollTo({top:0});
 });
@@ -1303,10 +1884,25 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '後発医薬品と同様に変更調剤が認められます',
         '基のみで変更可が付かない場合は、変更調剤の対象外です');
 
+  h+=S_('併売品');
+  h+=R_('<span class="cmb">併売</span>','同じ中身で商品名が違う薬があります',
+        '成分・剤形・規格が同じで、商品名だけが異なる薬（ノルバスクとアムロジンなど）です。'+
+        'カードを開くと相手の薬と<b>その供給状況</b>が出るので、'+
+        '供給が止まったときの代替候補をすぐ確認できます。タップするとその薬に移ります。'+
+        '<br>チップの<b>「併売品あり ▸」</b>を押すと、成分ごとの一覧が開きます。'+
+        '一覧は<b>内用薬・外用薬</b>が既定で、注射薬はボタンで追加できます。'+
+        '<br><b>判定方法</b>：YJコードの先頭9桁（成分・剤形・規格）が一致し、'+
+        'かつ先発品・準先発品・長期収載品どうしで商品名が異なるものを併売品とみなしています。'+
+        '商品名の判定は文字列の比較によるため、まれに取りこぼしや誤りが生じる可能性があります。');
+
   h+=S_('選定療養');
   h+=R_('<span class="sen">選</span>','長期収載品の選定療養の対象です',
         'カードを開くと、差額分の薬価と選定療養時の薬価が出ます（同じ規格の単価）。'+
         'チップの「選定療養対象」で絞り込めます。'+
+        '<br>金額はすべて<b>その薬の課金単位あたり</b>（1錠・1g・1mLなど）です。'+
+        '<b>処方量</b>を入れると、その量でのおおよその差額が出ます。'+
+        '<br>正確な金額は<b>「計算」タブ</b>をお使いください。'+
+        '厚労省の計算方法どおり、剤（Rp）ごとに点数へ換算して求めます。'+
         '後発品最高価格が分かる薬は、カード内で自己負担割合（1〜3割）を選んで差額も確認できます。');
   /* 3つの金額の関係を図解する。実例（ヒルドイドソフト軟膏0.3%・1gあたり）で数値を入れる */
   h += `<div class="sencalc">
@@ -1426,6 +2022,20 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '<br><b>中段＝出荷状況の推移</b>　<b>下段＝逼迫している成分</b>'+
      '<br>剤形・割合・お知らせの条件は、下段の「表示の設定」で変えられます。'+
      '</div>';
+  h+='<div class="lgnote">'+
+     '<b>「計算」タブ</b>：選定療養の<b>特別の料金と患者負担</b>を計算します。'+
+     '厚労省の計算方法（令和8年3月27日 事務連絡）に沿って求めており、'+
+     '公表されている計算例と一致することを確認しています。'+
+     '<br><b>剤（Rp）ごとに入力</b>してください。用法が違う薬は別の剤になります。'+
+     '薬を追加すると<b>内服薬か外用薬かを自動で判定</b>します。'+
+     '<br>内服薬は<b>1日量と日数</b>、外用薬・注射薬は<b>総量</b>を入れます。'+
+     '内服薬では入力の下に合計量が出るので、桁の取り違えに気づけます。'+
+     '<br><b>点数の求め方</b>：所定単位ごとに「15円以下は1点、15円超は10円で割って'+
+     '五捨五超入」で換算します。内服薬は1剤1日分ごとに点数化して日数を掛け、'+
+     '同じ剤に複数の長期収載品があるときは金額を合算してから点数化します。'+
+     '<br><b>含まれないもの</b>：調剤技術料などの薬剤料以外は計算に入りません。'+
+     '<br><b>限界</b>：端数処理の関係で、実際の請求額と数円ずれる場合があります。'+
+     '</div>';
   h+='<div class="lgnote" style="display:none">'+
      '<b>旧</b>：上段に逼迫している成分、下段にその推移グラフが出ます。'+
      '<br><b>剤形</b>は薬局での用途に合わせ<b>内用薬・外用薬を既定</b>にしています。'+
@@ -1502,8 +2112,10 @@ document.getElementById('lgbtn').addEventListener('click',openLg);
 document.getElementById('lgx').addEventListener('click',closeLg);
 
 document.getElementById('ovx').addEventListener('click',closeCmp);
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); closeAl(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); closeAl(); closeCmv2(); closePick(); } });
 
+loadChipOrder();
+renderChips();
 syncOrd();
 (function(){
   const w=(DATA.alerts||[]).filter(a=>a.w>0).length;

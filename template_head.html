@@ -50,6 +50,97 @@ header{
 .ptbadge.on{display:inline-flex}
 .ptab[aria-selected="true"] .ptbadge{background:rgba(255,255,255,.3)}
 /* ---- お知らせ掲示板 ---- */
+/* ---- 計算ページ ---- */
+#calc{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
+#calc.on{display:block}
+.cawrap{padding:12px 12px 0}
+.canote{font-size:12px;line-height:1.75;color:var(--ink2);
+  background:#f0f7fc;border:1px solid #cfe4f4;border-radius:11px;
+  padding:11px 12px;margin-bottom:12px}
+.canote b{color:#0a5a97}
+.carow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.calbl{font-size:12.5px;font-weight:800;color:var(--ink2);flex:0 0 auto}
+.caratio{display:flex;gap:5px;flex:1}
+.carb{flex:1;min-height:40px;border-radius:9px;font-size:13px;font-weight:700;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit}
+.carb[aria-pressed="true"]{background:#0a68b0;border-color:#0a68b0;color:#fff}
+/* 剤（Rp）のかたまり */
+.carp{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:12px;margin-bottom:11px;box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.carph{display:flex;align-items:center;gap:9px;margin-bottom:10px;flex-wrap:wrap}
+.carpt{font-size:13.5px;font-weight:800;color:var(--ink);flex:1;min-width:80px}
+.carpx{min-height:34px;padding:0 11px;border-radius:8px;background:#fdecec;
+  border:1px solid #f2c2c2;color:#b23c3c;font-size:11.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;flex:0 0 auto}
+.cakind{display:flex;gap:5px;margin-bottom:10px}
+.cakb{flex:1;min-height:36px;border-radius:8px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit}
+.cakb[aria-pressed="true"]{background:#e8f4ec;border-color:#8fcaa8;color:#2f7a52}
+.cadays{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12.5px;
+  font-weight:700;color:var(--ink2);flex-wrap:wrap}
+.cadays input{width:78px;min-height:38px;padding:0 9px;font-size:14px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  color:var(--ink);font-family:inherit;font-variant-numeric:tabular-nums}
+/* 薬の1行 */
+.cadrug{background:#fbfdff;border:1px solid var(--line);border-radius:10px;
+  padding:10px;margin-bottom:8px}
+.cadn{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px;
+  word-break:break-word;display:flex;align-items:flex-start;gap:8px}
+.cadn span{flex:1}
+.cadx{min-height:30px;padding:0 9px;border-radius:7px;background:none;
+  border:1px solid var(--line);color:var(--ink3);font-size:11px;cursor:pointer;
+  font-family:inherit;flex:0 0 auto}
+.cadq{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink2);
+  flex-wrap:wrap}
+.cadq input{width:76px;min-height:36px;padding:0 8px;font-size:14px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  color:var(--ink);font-family:inherit;font-variant-numeric:tabular-nums}
+.cadinfo{font-size:11px;color:var(--ink3);margin-top:5px}
+.cawarnrow{font-size:11px;line-height:1.6;color:#b23c3c;background:#fdecec;
+  border:1px solid #f2c2c2;border-radius:7px;padding:6px 9px;margin-top:6px}
+.catot{font-size:11.5px;font-weight:700;color:#0a5a97;background:#eef6fd;
+  border-radius:7px;padding:3px 9px}
+.caadddrug{width:100%;min-height:42px;border-radius:9px;background:#eef6fd;
+  border:1px dashed #b9d8f0;color:#0a5a97;font-size:12.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;margin-top:2px}
+.caadd{width:100%;min-height:48px;border-radius:11px;background:var(--surface);
+  border:1px dashed var(--line);color:var(--ink2);font-size:13.5px;font-weight:700;
+  cursor:pointer;font-family:inherit;margin-bottom:14px}
+/* 結果 */
+.cares{margin-bottom:20px}
+.caresbox{background:#fdfaf5;border:1px solid #f0dcc4;border-radius:14px;padding:14px}
+.carest{font-size:13px;font-weight:800;color:#8a4f08;margin-bottom:10px}
+.careline{display:flex;justify-content:space-between;align-items:baseline;
+  gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid #f0dcc4}
+.careline:last-child{border-bottom:0}
+.careline .k{color:var(--ink2)}
+.careline .v{font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink)}
+.caretotal{background:#fff;border:1px solid #f0dcc4;border-radius:10px;
+  padding:11px 12px;margin-top:10px}
+.caretotal .careline .v{font-size:17px;color:#8a4f08}
+.cadetail{font-size:11px;color:var(--ink3);line-height:1.8;margin-top:9px;
+  background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+.cawarn{font-size:11.5px;line-height:1.7;color:var(--ink2);background:#fff;
+  border:1px solid var(--line);border-left:4px solid var(--warn);
+  border-radius:9px;padding:10px 11px;margin-top:10px}
+.caempty{text-align:center;padding:26px 16px;color:var(--ink3);font-size:13px;
+  line-height:1.9}
+/* 薬を選ぶ画面 */
+#capick{position:fixed;inset:0;z-index:120;background:var(--bg);display:none;
+  flex-direction:column}
+#capick.on{display:flex}
+.capq{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface)}
+.capq input{width:100%;min-height:44px;padding:0 12px;font-size:15px;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface2);
+  color:var(--ink);font-family:inherit}
+.capbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px}
+.capitem{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:10px 11px;margin-bottom:7px;cursor:pointer}
+.capitem:active{background:var(--surface2)}
+.capnm{font-size:13.5px;font-weight:700;color:var(--ink);word-break:break-word}
+.capsub{font-size:11.5px;color:var(--ink3);margin-top:3px}
 #board{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
 #board.on{display:block}
 .bdwrap{padding:12px 12px 0}
@@ -90,6 +181,9 @@ header{
   background:#f0f7fc;border:1px solid #cfe4f4;border-radius:11px;
   padding:11px 12px;margin-bottom:12px}
 .bdnote b{color:#0a5a97}
+.bdgo{font-size:11.5px;font-weight:700;color:#0a5a97;background:#eef6fd;
+  border:1px solid #b9d8f0;border-radius:8px;padding:7px 10px;margin-top:8px;
+  text-align:center}
 .bdsub{font-size:12px;font-weight:800;color:#c33c3c;padding:10px 3px 7px;
   border-bottom:1px solid #f2d6d6;margin-bottom:9px}
 .bdcnt{font-size:12px;font-weight:700;color:var(--ink3);
@@ -205,6 +299,28 @@ header{
   white-space:nowrap;transition:.15s;display:inline-flex;align-items:center
 }
 .chips{align-items:center}
+/* フィルターの並び替え */
+.chiporder{display:flex;justify-content:flex-end;padding:0 0 8px}
+.cobtn{min-height:32px;padding:0 11px;border-radius:8px;background:none;
+  border:0;color:var(--ink3);font-size:11.5px;font-weight:700;cursor:pointer;
+  font-family:inherit;text-decoration:underline}
+#coedit{display:none;background:var(--surface2);border:1px solid var(--line);
+  border-radius:12px;padding:12px;margin-bottom:10px}
+#coedit.on{display:block}
+.coh{font-size:12.5px;font-weight:800;color:var(--ink);margin-bottom:3px}
+.cohelp{font-size:11px;color:var(--ink3);margin-bottom:9px;line-height:1.6}
+.coitem{display:flex;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-bottom:6px}
+.coname{flex:1;font-size:13px;font-weight:700;color:var(--ink)}
+.coar{min-width:40px;min-height:36px;border-radius:8px;background:var(--surface2);
+  border:1px solid var(--line);color:var(--ink2);font-size:14px;cursor:pointer;
+  font-family:inherit;flex:0 0 auto}
+.coar:disabled{opacity:.35;cursor:default}
+.corow{display:flex;gap:7px;margin-top:9px}
+.cobk{flex:1;min-height:42px;border-radius:9px;background:var(--surface);
+  border:1px solid var(--line);color:var(--ink2);font-size:13px;font-weight:700;
+  cursor:pointer;font-family:inherit}
+.cobk.pri{background:var(--accent);border-color:var(--accent);color:#fff}
 .glabel{flex:0 0 auto;font-size:11px;color:var(--ink3);font-weight:700;padding:0 1px 0 2px;white-space:nowrap}
 .gdiv{flex:0 0 auto;width:1px;height:20px;background:var(--line);margin:0 3px}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -215,6 +331,8 @@ header{
 .chip.ex[aria-pressed="true"]{background:var(--ink2);border-color:var(--ink2);color:#fff}
 .chip.exn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
 .chip.exo[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
+.chip.cm{color:#2a5599;border-color:#a9c2e4}
+.chip.cm:active{background:#e8f0fb}
 .chip.sn[aria-pressed="true"]{background:#a85f10;border-color:#a85f10;color:#fff}
 .chip.dc[aria-pressed="true"]{background:#2b3947;border-color:#2b3947;color:#fff}
 .chip.dn[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:#fff}
@@ -276,6 +394,7 @@ header{
 .rgrp>span:first-child{flex:1;min-width:0}
 .rsub{font-size:11.5px;font-weight:700;color:var(--ink3);
   padding:8px 4px 4px 10px;border-left:2px solid var(--line);margin:4px 0 6px}
+.cmvb{color:#2a5599!important}
 .rvb{color:var(--stop)!important}
 .lgbtn{min-height:44px;padding:0 7px;background:none;border:0;
   color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
@@ -310,6 +429,24 @@ header{
   border-radius:11px;padding:12px;margin:10px 0 14px}
 .alsec{font-size:12px;font-weight:800;color:var(--ink3);padding:14px 3px 7px;
   border-bottom:1px solid var(--line);margin-bottom:9px}
+#cmv{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
+#cmv.on{display:flex}
+.cmvg{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+  margin-bottom:10px;overflow:hidden}
+.cmvg summary{min-height:48px;display:flex;align-items:center;gap:9px;
+  padding:9px 12px;cursor:pointer;list-style:none;flex-wrap:wrap}
+.cmvg summary::-webkit-details-marker{display:none}
+.cmvg summary::before{content:'▸';color:var(--ink3);font-size:12px;flex:0 0 auto}
+.cmvg[open] summary::before{content:'▾'}
+.cmvi{flex:1;min-width:120px;font-size:13.5px;font-weight:800;color:var(--ink);
+  word-break:break-word}
+.cmvn{font-size:11px;color:var(--ink3);background:var(--surface2);
+  border-radius:99px;padding:2px 9px;flex:0 0 auto}
+.cmvwarn{font-size:10.5px;font-weight:800;color:#b23c3c;background:#fdecec;
+  border:1px solid #f2c2c2;border-radius:99px;padding:2px 8px;flex:0 0 auto}
+.cmvbody{padding:0 12px 11px}
+.cmvsp{font-size:11px;font-weight:800;color:var(--ink3);
+  padding:8px 2px 5px;border-bottom:1px solid var(--line);margin-bottom:7px}
 #rv{position:fixed;inset:0;z-index:110;background:var(--bg);display:none;flex-direction:column}
 #rv.on{display:flex}
 /* 逆転一覧 */
@@ -415,6 +552,22 @@ header{
   padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
   background:#fdf0e3;color:#a85f10;border:1.5px solid #a85f10}
 .senunit{font-size:11px;color:var(--ink3);margin-bottom:6px}
+/* 併売品 */
+.cmb{display:inline-flex;align-items:center;justify-content:center;height:20px;
+  padding:0 6px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;
+  flex:0 0 auto;background:#e8f0fb;color:#2a5599;border:1.5px solid #2a5599}
+.cmnote{font-size:11px;color:var(--ink3);margin-bottom:6px;line-height:1.6}
+.cmitem{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:#f4f8fd;border:1px solid #d3e2f3;border-radius:9px;
+  padding:8px 10px;margin-bottom:6px;cursor:pointer}
+.cmitem:active{background:#e7f0fa}
+.cmst{flex:0 0 auto;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px}
+.cmst.s0{background:#e8f5ec;color:#2f7a52}
+.cmst.s1{background:#fdf0e0;color:#a5641d}
+.cmst.s2{background:#fdecec;color:#b23c3c}
+.cmnm{flex:1;min-width:130px;font-size:13px;font-weight:700;color:var(--ink);
+  word-break:break-word}
+.cmmk{font-size:11px;color:var(--ink3)}
 /* 凡例内：選定療養の計算式・図解ブロック */
 .sencalc{background:#fdfaf5;border:1px solid #f0dcc4;border-radius:13px;
   padding:15px 15px 16px;margin:4px 0 16px}
@@ -454,6 +607,16 @@ header{
   background:#fff;border:1px solid #b9d8f0;color:#0a5a97;cursor:pointer;font-family:inherit}
 .sdb[aria-pressed="true"]{background:#0a68b0;border-color:#0a68b0;color:#fff}
 .sdresult{font-size:13px;color:#0a5a97;line-height:1.6}
+.sdqty{margin-top:9px;padding-top:9px;border-top:1px dashed #b9d8f0}
+.sdqty label{display:flex;align-items:center;gap:7px;font-size:12px;
+  font-weight:700;color:#0a5a97;flex-wrap:wrap}
+.sdq{width:96px;min-height:38px;padding:0 9px;font-size:14px;
+  border:1px solid #b9d8f0;border-radius:8px;background:#fff;color:var(--ink);
+  font-family:inherit;font-variant-numeric:tabular-nums}
+.sdqu{font-size:12px;color:#0a5a97;font-weight:700}
+.sdtotal{font-size:13px;color:#0a5a97;line-height:1.7;margin-top:6px}
+.sdtotal b{font-size:15px}
+.sdcalc{display:block;font-size:11px;color:var(--ink3);font-weight:400}
 .sdresult b{font-size:15px}
 .kc{display:inline-flex;align-items:center;justify-content:center;height:20px;
   padding:0 6px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;flex:0 0 auto;
@@ -557,6 +720,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="ptab" role="tab" data-p="search" aria-selected="true">検索</button>
     <button class="ptab" role="tab" data-p="board" aria-selected="false">
       お知らせ<span class="ptbadge" id="ptbadge"></span></button>
+    <button class="ptab" role="tab" data-p="calc" aria-selected="false">計算</button>
   </div>
   <div id="searchui">
   <div class="smode" id="smode">
@@ -569,33 +733,18 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
       placeholder="薬剤名で検索（スペースでAND）" enterkeyhint="search">
     <button id="clr" aria-label="検索条件を消す">×</button>
   </div>
-  <div class="chips" id="chips">
-    <span class="glabel">状況</span>
-    <button class="chip o" data-g="st" data-f="normal" aria-pressed="false">通常出荷</button>
-    <button class="chip w" data-g="st" data-f="limited" aria-pressed="false">限定出荷</button>
-    <button class="chip s" data-g="st" data-f="stopped" aria-pressed="false">供給停止</button>
-    <button class="chip n" data-g="st" data-f="new" aria-pressed="false">今回更新</button>
-    <button class="logic" id="logic" data-mode="or" title="条件の組み合わせ方を切り替え">又は</button>
-    <span class="gdiv"></span>
-    <span class="glabel">経過措置</span>
-    <button class="chip ex" data-g="ex" data-f="has" aria-pressed="false">対象</button>
-    <button class="chip exn" data-g="ex" data-f="near" aria-pressed="false">6か月以内</button>
-    <button class="chip exo" data-g="ex" data-f="over" aria-pressed="false">期限切れ</button>
-    <span class="gdiv"></span>
-    <span class="glabel">選定療養</span>
-    <button class="chip sn" data-g="sn" data-f="sen" aria-pressed="false">選定療養対象</button>
-    <span class="gdiv"></span>
-    <span class="glabel">販売</span>
-    <button class="chip dc" data-g="dc" data-f="disc" aria-pressed="false">販売中止</button>
-    <span class="gdiv"></span>
-    <span class="glabel">変化</span>
-    <button class="chip dn" data-g="chg" data-f="worse" aria-pressed="false">悪化</button>
-    <button class="chip up" data-g="chg" data-f="better" aria-pressed="false">改善</button>
-    <span class="gdiv"></span>
-    <span class="glabel">剤形</span>
-    <button class="chip" data-g="k" data-f="内用薬" aria-pressed="false">内用薬</button>
-    <button class="chip" data-g="k" data-f="外用薬" aria-pressed="false">外用薬</button>
-    <button class="chip" data-g="k" data-f="注射薬" aria-pressed="false">注射薬</button>
+  <div class="chips" id="chips"></div>
+  <div class="chiporder" id="chiporder">
+    <button class="cobtn" id="cobtn">並び替え</button>
+  </div>
+  <div id="coedit">
+    <div class="coh">フィルターの並び順</div>
+    <div class="cohelp">▲▼ で入れ替えます。よく使うものを左に置けます。</div>
+    <div id="colist"></div>
+    <div class="corow">
+      <button class="cobk" id="coreset">既定に戻す</button>
+      <button class="cobk pri" id="codone">完了</button>
+    </div>
   </div>
   <div class="active" id="active"></div>
   <button class="advbtn" id="advbtn">▸ 剤形（詳細）・薬効分類・製品区分・製造販売業者でしぼり込む</button>
@@ -619,6 +768,29 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 <div id="list"></div>
 <div id="more"></div>
 <button id="top" aria-label="先頭へ戻る">↑</button>
+<div id="calc">
+  <div class="cawrap">
+    <div class="canote">
+      処方箋の内容を入力すると、<b>選定療養の特別の料金</b>と患者負担を計算します。<br>
+      厚労省の計算方法（令和8年3月27日 事務連絡）どおり、<b>剤ごとに点数へ換算</b>して求めます。
+    </div>
+
+    <div class="carow">
+      <label class="calbl">自己負担割合</label>
+      <div class="caratio" id="caratio">
+        <button class="carb" data-r="0.1">1割</button>
+        <button class="carb" data-r="0.2">2割</button>
+        <button class="carb" data-r="0.3" aria-pressed="true">3割</button>
+      </div>
+    </div>
+
+    <div id="calist"></div>
+
+    <button class="caadd" id="caadd">＋ 剤（Rp）を追加</button>
+
+    <div class="cares" id="cares"></div>
+  </div>
+</div>
 <div id="board">
   <div class="bdwrap">
     <section class="bdsec">
@@ -696,6 +868,32 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="sortb" data-th="100" aria-pressed="false">全品目</button>
   </div>
   <div class="lgb" id="albody"></div>
+</div>
+<div id="capick" role="dialog" aria-modal="true" aria-labelledby="capt">
+  <div class="ovh">
+    <h2 id="capt">選定療養の対象医薬品を選ぶ</h2>
+    <button id="capx" aria-label="閉じる">×</button>
+  </div>
+  <div class="capq">
+    <input type="search" id="capinput" placeholder="薬剤名で検索" autocomplete="off">
+  </div>
+  <div class="capbody" id="capbody"></div>
+</div>
+<div id="cmv" role="dialog" aria-modal="true" aria-labelledby="cmvt">
+  <div class="ovh">
+    <h2 id="cmvt">併売品の一覧</h2>
+    <button id="cmvx" aria-label="閉じる">×</button>
+  </div>
+  <div class="kwrap" id="cmvk">
+    <button class="kb2" data-k="内用薬" aria-pressed="true">内用薬</button>
+    <button class="kb2" data-k="外用薬" aria-pressed="true">外用薬</button>
+    <button class="kb2" data-k="注射薬" aria-pressed="false">注射薬</button>
+  </div>
+  <div class="ovsort" id="cmvf">
+    <button class="sortb" data-f="all" aria-pressed="true">すべて</button>
+    <button class="sortb" data-f="split">入手できる／できないが分かれる</button>
+  </div>
+  <div class="lgb" id="cmvbody"></div>
 </div>
 <div id="rv" role="dialog" aria-modal="true" aria-labelledby="rvt">
   <div class="ovh">
