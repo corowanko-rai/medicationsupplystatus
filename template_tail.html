@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-01-v16';
+const TPL_VER='2026-09-01-v17';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -758,6 +758,10 @@ document.getElementById('fmk').addEventListener('change',e=>{state.mk=e.target.v
 document.getElementById('fpc').addEventListener('change',e=>{state.pc=e.target.value;renderActive();run()});
 document.getElementById('ffm').addEventListener('change',e=>{state.fm=e.target.value;renderActive();run()});
 window.addEventListener('scroll',()=>{
+  /* 検索画面以外では、結果の追加描画も「上へ」ボタンも不要。
+     タブを切り替えた直後の scrollTo でも発火するため、
+     ここで抜けないと重い render() が空振りして体感が遅くなる。 */
+  if(curPage!=='search') return;
   if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500) render();
   document.getElementById('top').classList.toggle('on',window.scrollY>900);
 },{passive:true});
@@ -916,7 +920,9 @@ document.getElementById('list').addEventListener('click',e=>{
 /* ---------- 画面の切り替え（検索／お知らせ） ---------- */
 const SERIES=DATA.series||{};
 const ALERTS=DATA.alerts||[];
+let curPage='search';   /* 今どの画面か。スクロール処理の空振りを防ぐのに使う */
 function switchPage(k){
+  curPage=k;
   document.querySelectorAll('.ptab').forEach(b=>
     b.setAttribute('aria-selected', b.dataset.p===k));
   document.getElementById('searchui').style.display = k==='search' ? '' : 'none';

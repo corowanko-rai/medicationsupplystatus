@@ -150,6 +150,12 @@ header{
 .capitem:active{background:var(--surface2)}
 .capnm{font-size:13.5px;font-weight:700;color:var(--ink);word-break:break-word}
 .capsub{font-size:11.5px;color:var(--ink3);margin-top:3px}
+/* タブ切り替えを速くするための指定。
+   検索結果は40枚以上のカードを持つため、display の付け外しだけで
+   ページ全体の再レイアウトが起きて100ms以上かかっていた。
+   隠している間はレイアウト計算そのものを省かせる。 */
+#list{content-visibility:auto;contain-intrinsic-size:0 2000px}
+#board,#calc{content-visibility:auto;contain-intrinsic-size:0 1200px}
 #board{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
 #board.on{display:block}
 .bdwrap{padding:12px 12px 0}
