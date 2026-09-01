@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-01-v15';
+const TPL_VER='2026-09-01-v16';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -1095,6 +1095,30 @@ function drawBoard(){
     if(bdFocus===null && (pct<bdLo || (bdHi<100 && pct>=bdHi))) return;
     rows.push({a,v,pct});
   });
+  /* 指定された成分が ALERTS に無いときは、行データから直接その場で集計する。
+     生成側と画面側で収録条件がずれても、掲示板から選んだ成分は必ず出せるようにする。 */
+  if(bdFocus!==null && !rows.length){
+    const k=[[0,0,0],[0,0,0],[0,0,0]];
+    const KI={'内用薬':0,'外用薬':1,'注射薬':2};
+    let worse=0;
+    R.forEach(r=>{
+      if(r[F.i]!==bdFocus) return;
+      const ki=KI[dv(r,'k')];
+      if(ki===undefined) return;
+      k[ki][0]++;
+      const sc=get(r,'sc');
+      if(sc===1) k[ki][1]++;
+      else if(sc===2) k[ki][2]++;
+      if(get(r,'chg')===1) worse++;
+    });
+    const n=k[0][0]+k[1][0]+k[2][0];
+    if(n>0){
+      const lim=k[0][1]+k[1][1]+k[2][1];
+      const stop=k[0][2]+k[1][2]+k[2][2];
+      const a={i:bdFocus, n, lim, stop, r:(lim+stop)/n, w:worse, k};
+      rows.push({a, v:pickAll(a), pct:(lim+stop)/n*100});
+    }
+  }
   rows.sort((x,y)=>(y.a.w-x.a.w)||(y.pct-x.pct)||(y.v.n-x.v.n));
   const worse=rows.filter(x=>x.a.w>0);
   const rest=rows.filter(x=>x.a.w===0);
@@ -1111,11 +1135,15 @@ function drawBoard(){
     h+=`<div class="bdsub">前回版から悪化（${worse.length}成分）</div>`;
     worse.forEach(x=>{h+=bdCard(x);});
   }
+  /* 「悪化」の行はすでに上で出しているので、残りだけを追加する。
+     rows があるのに rest が空（＝全部が悪化）でも空表示にしない。 */
+  rest.forEach(x=>{h+=bdCard(x);});
   if(!rows.length){
-    h+='<div class="bdempty">該当する成分はありません。'+
-       '<br>下限を下げるか、剤形を追加してください。</div>';
-  }else{
-    rest.forEach(x=>{h+=bdCard(x);});
+    h+='<div class="bdempty">'+
+       (bdFocus!==null
+         ? 'この成分の品目が見つかりませんでした。'
+         : '該当する成分はありません。<br>下限を下げるか、剤形を追加してください。')+
+       '</div>';
   }
   document.getElementById('bdlist').innerHTML=h;
 
