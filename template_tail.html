@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-08-31-v13';
+const TPL_VER='2026-08-31-v14';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -286,44 +286,87 @@ function unitOf(r){
   return m ? m[0] : '';
 }
 
-/* 選定療養：後発品を選んだ場合との差額（カードごとに自己負担割合を覚えておく） */
-const senRatio={};   /* {YJコード: 0.1|0.2|0.3} */
-const senQty={};     /* {YJコード: 処方量} */
-
-/* 処方量を入れたときの合計差額。
-   薬価は「1錠あたり」等の単価なので、そのまま処方量を掛ければよい。 */
-function senTotalText(v, ratio, qty, unit, qUnit){
-  if(qty==null || !(qty>0)) return '';
-  const [half, sen, gmax] = v;
-  if(gmax==null || sen==null || half==null) return '';
-  const per = (sen - gmax) * ratio + half * 1.1;
-  const total = per * qty;
-  const r = Math.round(total * 100) / 100;
-  return `この処方量なら <b>${fmtY(r)}円</b> 高くなります`+
-         `<span class="sdcalc">（${fmtY(Math.round(per*100)/100)}円 × ${fmtY(qty)}${esc(qUnit)}）</span>`;
+/* 円 → 点（薬剤料の換算規則）。
+   15円以下は1点、15円超は10円で割って五捨五超入。
+   カード内の差額と「計算」タブの両方でこれを使う。 */
+function yenToTen(yen){
+  if(yen<=0) return 0;
+  if(yen<=15) return 1;
+  const q=yen/10, i=Math.floor(q), f=q-i;
+  return f<=0.5 ? i : i+1;   /* ちょうど0.5は切り捨て */
 }
+
+/* 選定療養：後発品を選んだ場合との差額（カードごとに条件を覚えておく） */
+const senRatio={};   /* {YJコード: 0.1|0.2|0.3} */
+const senQty={};     /* {YJコード: 1日量（内服）または総量（外用）} */
+const senDays={};    /* {YJコード: 日数（内服のみ）} */
+
+/* 「後発品を選んだ場合との差額」を、厚労省の計算方法どおりに求める。
+   単価の引き算では点数への換算が抜けて数円ずれるため、
+   計算タブと同じ yenToTen() を使って正確に出す。
+
+   長期収載品を選んだとき … 特別の料金A ＋ 保険分の自己負担
+   後発品を選んだとき     … 後発品の薬価による自己負担のみ
+   その差が「余分に払う額」になる。 */
+function senExactDiff(v, ratio, qtyPerUnit, days){
+  const [half, sen, gmax] = v;
+  if(gmax==null || sen==null || half==null) return null;
+  if(!(qtyPerUnit>0) || !(days>0)) return null;
+  const A   = yenToTen(half*qtyPerUnit) * days * 10 * 1.1;   /* 特別の料金 */
+  const B   = yenToTen(sen *qtyPerUnit) * days * 10 * ratio; /* 保険分の自己負担 */
+  const gen = yenToTen(gmax*qtyPerUnit) * days * 10 * ratio; /* 後発品なら */
+  return {A, B, gen, diff:(A+B-gen), total:(A+B)};
+}
+
+/* 数量を入れる前に出す「単価あたりの目安」。
+   点数換算は数量が決まらないとできないため、ここは概算と明記する。 */
 function senDiffText(v, ratio){
   const [half, sen, gmax] = v;
   if(gmax==null || sen==null || half==null) return '（後発品最高価格が不明のため計算できません）';
   const diff = (sen - gmax) * ratio + half * 1.1;
   const r = Math.round(diff * 100) / 100;
-  return `<b>${fmtY(r)}円</b> 高くなります`;
+  return `<b>${fmtY(r)}円</b> 高くなります<span class="sdcalc">（1単位あたりの目安）</span>`;
+}
+
+/* 数量が入ったら、点数換算を使った正確な差額を出す */
+function senTotalText(v, ratio, qty, unit, qUnit, days, isOral){
+  if(qty==null || !(qty>0)) return '';
+  if(isOral && !(days>0)) return '<span class="sdcalc">日数を入れると正確な金額が出ます</span>';
+  const r = senExactDiff(v, ratio, qty, isOral ? days : 1);
+  if(!r) return '';
+  const yen=(x)=>Math.round(x).toLocaleString();
+  return `後発品より <b>${yen(r.diff)}円</b> 高くなります`+
+    `<span class="sdcalc">長期収載品 ${yen(r.total)}円 － 後発品 ${yen(r.gen)}円`+
+    `／${isOral?`1日${fmtY(qty)}${esc(qUnit)}×${days}日分`:`総量 ${fmtY(qty)}${esc(qUnit)}`}</span>`;
 }
 document.addEventListener('input', e=>{
-  const q = e.target.closest('.sdq'); if(!q) return;
   const box = e.target.closest('.sendiff'); if(!box) return;
+  const isQty = e.target.classList.contains('sdq');
+  const isDay = e.target.classList.contains('sdday');
+  if(!isQty && !isDay) return;
   const yj = box.dataset.yj;
-  const val = parseFloat(q.value);
-  senQty[yj] = (q.value.trim()==='' || isNaN(val) || val<0) ? undefined : val;
-  const row = R.find(r=>get(r,'yj')===yj);
-  if(row){
-    const v = senOf(row);
-    const u = unitOf(row);
-    const qUnit = u.replace(/^1/, '') || '個';
-    box.querySelector('.sdtotal').innerHTML =
-      senTotalText(v, senRatio[yj] ?? 0.3, senQty[yj], u, qUnit);
-  }
+  const val = parseFloat(e.target.value);
+  const blank = e.target.value.trim()==='' || isNaN(val) || val<0;
+  if(isQty) senQty[yj] = blank ? undefined : val;
+  else      senDays[yj] = blank ? undefined : Math.floor(val);
+  refreshSenDiff(box, yj);
 });
+
+/* カード内の差額表示だけを描き直す（入力中のカーソルを保つため） */
+function refreshSenDiff(box, yj){
+  const row = R.find(r=>get(r,'yj')===yj);
+  if(!row) return;
+  const v = senOf(row);
+  const u = unitOf(row);
+  const qUnit = u.replace(/^1/, '') || '個';
+  const isOral = dv(row,'k')==='内用薬';
+  const ratio = senRatio[yj] ?? 0.3;
+  const res = box.querySelector('.sdresult');
+  if(res) res.innerHTML = senDiffText(v, ratio);
+  const tot = box.querySelector('.sdtotal');
+  if(tot) tot.innerHTML =
+    senTotalText(v, ratio, senQty[yj], u, qUnit, senDays[yj], isOral);
+}
 document.addEventListener('click', e=>{
   const b = e.target.closest('.sdb'); if(!b) return;
   const box = e.target.closest('.sendiff'); if(!box) return;
@@ -336,11 +379,7 @@ document.addEventListener('click', e=>{
   const row = R.find(r=>get(r,'yj')===yj);
   if(row){
     const v = senOf(row);
-    box.querySelector('.sdresult').innerHTML = senDiffText(v, senRatio[yj]);
-    const u = unitOf(row);
-    const qUnit = u.replace(/^1/, '') || '個';
-    const tot = box.querySelector('.sdtotal');
-    if(tot) tot.innerHTML = senTotalText(v, senRatio[yj], senQty[yj], u, qUnit);
+    refreshSenDiff(box, yj);
   }
 });
 /* 併売品：同じ中身で商品名が違う先発品。供給停止時の代替候補になる。 */
@@ -430,7 +469,9 @@ function render(){
           const u = unitOf(r);                  /* 例：1錠、1g、1mL */
           const qUnit = u.replace(/^1/, '') || '個';   /* 入力欄の単位：錠、g、mL */
           const qty = senQty[yj];
-          const totalTxt = senTotalText(v, ratio, qty, u, qUnit);
+          const isOral = dv(r,'k')==='内用薬';
+          const days = senDays[yj];
+          const totalTxt = senTotalText(v, ratio, qty, u, qUnit, days, isOral);
           return `<div class="row"><dt>選定療養</dt><dd>
             <div class="senunit">いずれも ${u?esc(u):esc(sp)} あたり（上の薬価と同じ規格）</div>
             <div class="senbox">
@@ -444,7 +485,7 @@ function render(){
               <b>差額分に消費税を加えた額</b>を特別の料金として上乗せした金額になります。
             </div>
             ${gmax!=null?`<div class="sendiff" data-yj="${yj}">
-              <div class="sendiff-h">後発品を選んだ場合との差額${u?`（${esc(u)}あたり）`:''}</div>
+              <div class="sendiff-h">後発品との差額${u?`（${esc(u)}あたり）`:''}</div>
               <div class="sdratio">
                 <button class="sdb" data-r="0.1" aria-pressed="${ratio===0.1}">1割</button>
                 <button class="sdb" data-r="0.2" aria-pressed="${ratio===0.2}">2割</button>
@@ -452,11 +493,16 @@ function render(){
               </div>
               <div class="sdresult">${diffTxt}</div>
               <div class="sdqty">
-                <label>処方量
+                <label>${isOral?'1日量':'総量'}
                   <input type="number" class="sdq" inputmode="decimal" min="0" step="any"
                     placeholder="${esc(qUnit)}" value="${qty!=null?qty:''}">
                   <span class="sdqu">${esc(qUnit)}</span>
                 </label>
+                ${isOral?`<label class="sdd">日数
+                  <input type="number" class="sdday" inputmode="numeric" min="1" step="1"
+                    placeholder="日" value="${days!=null?days:''}">
+                  <span class="sdqu">日分</span>
+                </label>`:''}
                 <div class="sdtotal">${totalTxt}</div>
               </div>
             </div>`:''}
@@ -542,6 +588,7 @@ function render(){
       if(e.target.closest('.sdb')) return;   /* 差額の割合切替は開閉させない */
       if(e.target.closest('.cmitem')) return; /* 併売品タップは開閉させない */
       if(e.target.closest('.sdq')) return;    /* 処方量の入力は開閉させない */
+      if(e.target.closest('.sdday')) return;  /* 日数の入力も開閉させない */
       el.classList.toggle('open');
     });
     frag.appendChild(el);
@@ -1333,14 +1380,6 @@ document.getElementById('albody').addEventListener('click',e=>{
    ・剤が複数あるときは、剤ごとに点数を出してから合算する（規定ウ）
    ・薬剤料の点数換算は「15円以下は1点、15円超は10円で除して五捨五超入」 */
 
-/* 円 → 点（薬剤料の換算規則） */
-function yenToTen(yen){
-  if(yen<=0) return 0;
-  if(yen<=15) return 1;
-  const q=yen/10, i=Math.floor(q), f=q-i;
-  return f<=0.5 ? i : i+1;   /* 五捨五超入：ちょうど0.5は切り捨て */
-}
-
 let caRatio=0.3;
 let caRps=[];      /* [{kind:'内服'|'外用', days:14, drugs:[{yj,name,sp,qty}]}] */
 let caPickTarget=null;   /* 薬を追加する対象の剤 */
@@ -1417,12 +1456,12 @@ function drawCalcResult(){
   const usable = caRps.some(rp=>rp.drugs.some(d=>d.qty>0));
   if(!usable){ box.innerHTML=''; return; }
 
-  let totalA_ten=0, totalB_ten=0;
+  let totalA_ten=0, totalB_ten=0, totalG_ten=0;
   const lines=[];
   caRps.forEach((rp,ri)=>{
     const isOral = rp.kind==='内服';
     const days = isOral ? (rp.days>0?rp.days:0) : 1;
-    let sumA=0, sumB=0, any=false;
+    let sumA=0, sumB=0, sumG=0, any=false;
     rp.drugs.forEach(d=>{
       const row=R.find(x=>get(x,'yj')===d.yj);
       if(!row) return;
@@ -1431,11 +1470,13 @@ function drawCalcResult(){
       any=true;
       sumA += v[0]*d.qty;   /* 差額分 × 数量 */
       sumB += v[1]*d.qty;   /* 選定療養時の薬価 × 数量 */
+      if(v[2]!=null) sumG += v[2]*d.qty;   /* 後発品最高価格 × 数量 */
     });
     if(!any || !days) return;
     /* 所定単位ごとに点数化してから日数を掛ける */
     const aTen = yenToTen(sumA)*days;
     const bTen = yenToTen(sumB)*days;
+    totalG_ten += yenToTen(sumG)*days;
     totalA_ten += aTen; totalB_ten += bTen;
     lines.push(`Rp${ri+1}（${isOral?days+'日分':'外用・注射'}）：`+
       `特別の料金 ${yenToTen(sumA)}点${isOral?'×'+days+'日':''}=${aTen}点／`+
@@ -1446,6 +1487,7 @@ function drawCalcResult(){
   const B = totalB_ten*10;              /* 保険対象となる費用 */
   const C = B*caRatio;                  /* 患者自己負担 */
   const E = A + C;                      /* 患者負担の総額 */
+  const G = totalG_ten*10*caRatio;      /* すべて後発品にした場合の自己負担 */
   const r0=(x)=>Math.round(x);
 
   box.innerHTML=`<div class="caresbox">
@@ -1460,6 +1502,12 @@ function drawCalcResult(){
       <div class="careline"><span class="k">患者負担の総額（A＋C）</span>
         <span class="v">${r0(E).toLocaleString()} 円</span></div>
     </div>
+    ${totalG_ten>0?`<div class="cagen">
+      <div class="careline"><span class="k">すべて後発品にした場合</span>
+        <span class="v">${r0(G).toLocaleString()} 円</span></div>
+      <div class="careline"><span class="k"><b>その差額</b></span>
+        <span class="v big">${r0(E-G).toLocaleString()} 円</span></div>
+    </div>`:''}
     <div class="cadetail">${lines.map(esc).join('<br>')}</div>
     <div class="cawarn">
       薬剤料以外（調剤技術料など）は含みません。<br>
@@ -1900,7 +1948,9 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         'カードを開くと、差額分の薬価と選定療養時の薬価が出ます（同じ規格の単価）。'+
         'チップの「選定療養対象」で絞り込めます。'+
         '<br>金額はすべて<b>その薬の課金単位あたり</b>（1錠・1g・1mLなど）です。'+
-        '<b>処方量</b>を入れると、その量でのおおよその差額が出ます。'+
+        '<b>処方量</b>（内服薬は1日量と日数）を入れると、'+
+        '<b>後発品を選んだ場合との差額</b>が出ます。'+
+        '計算タブと同じ方法（点数に換算）で求めているので、両者の金額は一致します。'+
         '<br>正確な金額は<b>「計算」タブ</b>をお使いください。'+
         '厚労省の計算方法どおり、剤（Rp）ごとに点数へ換算して求めます。'+
         '後発品最高価格が分かる薬は、カード内で自己負担割合（1〜3割）を選んで差額も確認できます。');
