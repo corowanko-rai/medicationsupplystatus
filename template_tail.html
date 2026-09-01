@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-08-31-v14';
+const TPL_VER='2026-09-01-v15';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -948,6 +948,16 @@ const KLABEL=['内用薬','外用薬','注射薬'];
 const KSHORT=['内','外','注'];
 const KCLS=['kb-nai','kb-gai','kb-chu'];
 
+/* 剤形を問わず全部で数える（掲示板から特定の成分を選んだとき用） */
+function pickAll(a){
+  let n=0,lim=0,stop=0, forms=[];
+  [0,1,2].forEach(i=>{
+    const k=a.k[i];
+    if(k[0]>0) forms.push(i);
+    n+=k[0]; lim+=k[1]; stop+=k[2];
+  });
+  return {n,lim,stop,forms,r:n?(lim+stop)/n:0};
+}
 /* 選んだ剤形だけで数え直す */
 function pick(a){
   let n=0,lim=0,stop=0, forms=[];
@@ -1075,8 +1085,12 @@ function drawBoard(){
   const rows=[];
   ALERTS.forEach(a=>{
     if(bdFocus!==null && a.i!==bdFocus) return;   /* 掲示板から成分を選んだとき */
-    const v=pick(a);
-    if(v.n<2) return;                       /* 選んだ剤形に2品目以上あること */
+    /* 掲示板から特定の成分を選んだときは、剤形も割合も無視して必ず出す。
+       掲示板に載っている＝ユーザーが見たい成分なのに、
+       剤形の選択（既定は内用薬・外用薬）や下限に阻まれて
+       「該当する成分はありません」になるのを防ぐ。 */
+    const v = bdFocus!==null ? pickAll(a) : pick(a);
+    if(bdFocus===null && v.n<2) return;     /* 通常時は選んだ剤形に2品目以上 */
     const pct=v.r*100;
     if(bdFocus===null && (pct<bdLo || (bdHi<100 && pct>=bdHi))) return;
     rows.push({a,v,pct});
