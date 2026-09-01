@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-01-v20';
+const TPL_VER='2026-09-01-v21';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2412,6 +2412,7 @@ document.getElementById('rvx').addEventListener('click',closeRv);
     if(!d) return '—';
     if(/^\d{8}$/.test(d)) return d.replace(/^(\d{4})(\d{2})(\d{2})$/,'$1/$2/$3');
     if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d.replace(/-/g,'/');
+    if(/^\d{6}$/.test(d)) return gDate(d);   /* 一般名処方マスタは6桁（260612） */
     return esc(d);
   };
   h+=S_('データの鮮度');
@@ -2432,16 +2433,20 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   if(SRC.kiso) h+=row('変更調剤が認められる基礎的医薬品等',
                       SRC.kiso.date, SRC.kiso.file||'（未取得）');
   if(SRC.ippan){
+    /* files には区分ごとの「現行版」だけが入る。過去分は past に日付だけ持つ。 */
     const GF=SRC.ippan.files||{};
-    const ks=Object.keys(GF);
-    if(ks.length){
-      /* 現行版を先に、過去分をその後に。日付は新しい順 */
-      ks.sort((a,b)=>(GF[b].current-GF[a].current)||GF[b].date.localeCompare(GF[a].date));
-      ks.forEach(k=>{
-        const f=GF[k];
-        h+=row('一般名処方マスタ'+(f.kind==='バイオ'?'（バイオ後続品）':'')+
-               (f.current?'':'（過去分）'), f.date, f.name);
+    if(Object.keys(GF).length){
+      const past=[];
+      ['通常','バイオ'].forEach(k=>{
+        const f=GF[k]; if(!f) return;
+        h+=row('一般名処方マスタ'+(k==='バイオ'?'（バイオ後続品）':''), f.date, f.name);
+        (f.past||[]).forEach(d=>past.push(d));
       });
+      if(past.length){
+        past.sort().reverse();
+        h+=`<div class="srcf">＋過去 ${past.length}版を統合`+
+           `（${past.map(fmtD).join('・')}）</div>`;
+      }
     }else{
       h+=row('一般名処方マスタ', '', '（未取得）');
     }
