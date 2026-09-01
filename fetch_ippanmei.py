@@ -46,6 +46,7 @@
 失敗しても供給状況ページの生成は続行できる設計。
 """
 import sys, os, re, json, hashlib, datetime, urllib.error
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import fetch_prices as fp   # ページ探索とHTTPの共通処理を再利用
 
@@ -66,13 +67,69 @@ def log(m):
     print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
 
 
-def find_page(html):
+def resolve(href, base):
+    """リンクを絶対URLへ直す。
+
+    まず fetch_prices.absolutize() を使う（薬価・基礎的リストで実績のある
+    処理と同じもの）。それで解決できない相対リンク
+      <a href="dl/ippanmeishohoumaster_260612.xlsx">
+    のような書き方だけを、ページのURLを基準に urljoin で補う。
+    ついでにクエリと # 以下を落として、末尾一致の判定を効かせる。
+    """
+    if not href:
+        return None
+    href = href.strip()
+    if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+        return None
+    u = fp.absolutize(href)          # 既存スクリプトと同じ解決方法
+    if not u:
+        try:
+            u = urljoin(base, href)  # 相対リンクだけここで補う
+        except ValueError:
+            return None
+    if not u.startswith(("http://", "https://")):
+        return None
+    sp = urlsplit(u)
+    return urlunsplit((sp.scheme, sp.netloc, sp.path, "", ""))
+
+
+# <a ... href="..."> を生HTMLから拾う正規表現。
+# fetch_sentei.py と同じ考え方で、壊れたマークアップでもリンクだけは拾える。
+_A_RE = re.compile(r'<a\b[^>]*?\bhref\s*=\s*(["\'])(?P<href>[^"\']+?)\1',
+                   re.IGNORECASE)
+
+
+def _hrefs(html):
+    """ページ内のリンクを集める。
+
+    取り方は既存スクリプトの2つを併用する。
+      ① HTMLParser（fetch_prices.py と同じ）
+      ② 生HTMLの正規表現（fetch_sentei.py と同じ）
+    ②を足しているのは、厚労省のページに入れ子spanやコメントが混ざると
+    HTMLParser 側が取りこぼすことがあるため。順序は保ったまま重複を除く。
+    """
+    out, seen = [], set()
+    try:
+        p = fp.Links(); p.feed(html)
+        got = p.hrefs
+    except Exception:
+        got = []
+    # 正規表現は生の文字列を見るため、コメントアウトされた古いリンクまで
+    # 拾ってしまう。HTMLParser 側は無視するので、条件を揃えて先に落とす。
+    stripped = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    for h in got + [m.group("href") for m in _A_RE.finditer(stripped)]:
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+    return out
+
+
+def find_page(html, base):
     """一般名処方マスタのページURLを返す。/iryouhoken/shohosen_NNNNNN.html 形式のうち
     数字が最大のもの（過去分へのリンクも同じ書式で並んでいるため）。"""
-    p = fp.Links(); p.feed(html)
     best = None
-    for h in p.hrefs:
-        full = fp.absolutize(h)
+    for h in _hrefs(html):
+        full = resolve(h, base)
         if not full:
             continue
         m = re.search(r"/iryouhoken/shohosen_(\d{6})\.html$", full)
@@ -81,7 +138,7 @@ def find_page(html):
     return best
 
 
-def find_masters(html):
+def find_masters(html, base):
     """{"通常": [(日付, URL), …], "バイオ": […]} を日付の昇順で返す。
 
     ファイル名は
@@ -91,10 +148,9 @@ def find_masters(html):
     「ippannmeishohou_sakujo_…」（削除リスト）は master を含まないので当たらない。
     過去分も同じ書式で並ぶので、ここでは全部を集めて古い順に積み上げる。
     """
-    p = fp.Links(); p.feed(html)
     got = {"通常": {}, "バイオ": {}}
-    for h in p.hrefs:
-        full = fp.absolutize(h)
+    for h in _hrefs(html):
+        full = resolve(h, base)
         if not full:
             continue
         m = re.search(r"/ippann?meishohoumaster_(bs_)?(\d{6})[^/]*\.xlsx$",
@@ -251,17 +307,26 @@ def main():
     try:
         log("一般名処方マスタのページを確認中…")
         idx = fp.decode_html(fp.http_get(fp.INDEX))
-        found = find_page(idx)
+        found = find_page(idx, fp.INDEX)
         if not found:
             log("ERROR: 一般名処方マスタのページが見つかりません。")
+            log(f"  一覧ページのリンク数: {len(_hrefs(idx))}")
+            sample = [h for h in _hrefs(idx) if "shohosen" in h.lower()][:3]
+            log(f"  shohosen を含むリンク: {sample or 'なし'}")
             return 1
         _, page_url = found
         log(f"最新ページ: {page_url}")
 
         lst = fp.decode_html(fp.http_get(page_url))
-        masters = find_masters(lst)
+        masters = find_masters(lst, page_url)
         if "通常" not in masters:
             log("ERROR: 一般名処方マスタのExcelが見つかりません。")
+            # 次回の切り分けのため、ページで何が見えていたかを残す
+            hs = _hrefs(lst)
+            xl = [h for h in hs if h.lower().endswith(".xlsx")]
+            log(f"  ページのリンク数: {len(hs)} / .xlsx のリンク: {len(xl)}")
+            log(f"  .xlsx の例: {xl[:3] or 'なし'}")
+            log("  ページの様式が変わった可能性があります。")
             return 1
         for k in sorted(masters):
             names = ", ".join(u.rsplit("/", 1)[-1] for _, u in masters[k])
