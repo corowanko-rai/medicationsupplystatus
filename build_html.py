@@ -328,99 +328,6 @@ def parse_discontinued_text(text):
     return recs
 
 
-# ---- 細かい剤形の判定 --------------------------------------------
-# 供給状況Excelには「内用薬/外用薬/注射薬」の3分類しかないため、
-# 品名のキーワードを優先し、決まらない分だけYJコード8桁目の
-# 剤形記号で補う。記号の意味は剤形区分ごとに異なる点に注意
-# （M＝内用薬ではカプセル、外用薬では軟膏）。
-FORM_RULES = {
-  "内用薬": [
-    ("OD錠", r"OD錠|口腔内崩壊"),
-    ("チュアブル", r"チュアブル|かみ砕|咀嚼"),
-    ("ドライシロップ", r"ドライシロップ|DS\d|ＤＳ"),
-    ("シロップ", r"シロップ"),
-    ("内用液", r"内用液|経口液|内服液|内服ゼリー|経口ゼリー"),
-    ("細粒", r"細粒"),
-    ("顆粒", r"顆粒|グラニュール"),
-    ("散", r"散\b|散剤|散\d|散$|原末|末$"),
-    ("カプセル", r"カプセル"),
-    ("錠", r"錠"),
-  ],
-  "外用薬": [
-    ("眼軟膏", r"眼軟膏"),
-    ("軟膏", r"軟膏"),
-    ("クリーム", r"クリーム"),
-    ("ゲル", r"ゲル|ジェル"),
-    ("ローション", r"ローション|乳液"),
-    ("テープ", r"テープ|パッチ"),
-    ("パップ", r"パップ|湿布"),
-    ("貼付剤", r"貼付"),
-    ("坐剤", r"坐剤|座薬|坐薬|ホスコ"),
-    ("点眼", r"点眼|眼灌流|眼科用"),
-    ("点鼻", r"点鼻"),
-    ("点耳", r"点耳"),
-    ("吸入", r"吸入|エアゾール|ネブライザ|ジェヌエア|ディスカス|タービュヘイラー|レスピマット|エリプタ"),
-    ("うがい", r"うがい|含嗽"),
-    ("浣腸", r"浣腸"),
-    ("スプレー", r"スプレー|フォーム|ミスト|噴霧|エロゾル|エアゾル|ゾル\d|ゾル$"),
-    ("腟錠・腟剤", r"腟|膣"),
-    ("口腔・歯科用", r"歯科用|口腔用|口腔内|トローチ|舌下"),
-    ("パスタ", r"パスタ|ペースト"),
-    ("消毒・外用液", r"消毒|消エタ|消アル|外用液|液$|液\d|液（|チンキ|エタノール|アルコール|イソプロパノール|イソプロ|アンモニア水|ポビドンヨード|オキシドール"),
-    ("原末・その他", r"原末|末$|カンフル|ゴム末"),
-    ("油・その他基剤", r"油$|油\d|油（|油「|石ケン|ワセリン"),
-    ("ワイプ・清拭", r"ワイプ|清拭"),
-  ],
-  "注射薬": [
-    ("キット・シリンジ", r"キット|シリンジ|オートインジェクター"),
-    ("点滴静注", r"点滴|輸液|バッグ"),
-    ("静注", r"静注|静脈内"),
-    ("筋注", r"筋注|筋肉内"),
-    ("皮下注", r"皮下注"),
-    ("注射剤", r".*"),
-  ],
-}
-FORM_SYM = {
-  "内用薬": {"F":"錠","G":"錠","M":"カプセル","N":"カプセル","C":"細粒","D":"顆粒",
-            "A":"散","B":"散","R":"ドライシロップ","Q":"シロップ","S":"内用液","X":"散"},
-  "外用薬": {"M":"軟膏","N":"クリーム","S":"テープ","J":"坐剤","K":"浣腸","R":"点鼻",
-            "Q":"点眼","G":"吸入","Y":"浣腸","F":"うがい","X":"消毒・外用液"},
-  "注射薬": {"A":"注射剤","G":"キット・シリンジ","D":"注射剤","F":"点滴静注",
-            "H":"静注","P":"キット・シリンジ","S":"キット・シリンジ","X":"注射剤"},
-}
-_FORM_CACHE = {}
-
-
-def detect_form(name, kind, yj):
-    """細かい剤形を返す。判定できなければ '' を返す。"""
-    nm = unicodedata.normalize("NFKC", str(name or "")).replace("「", "").replace("」", "")
-    for label, pat in FORM_RULES.get(kind, []):
-        key = (kind, label)
-        rx = _FORM_CACHE.get(key)
-        if rx is None:
-            rx = _FORM_CACHE[key] = re.compile(pat, re.I)
-        if rx.search(nm):
-            return label
-    sym = (str(yj or "")[7:8] or "").upper()
-    return FORM_SYM.get(kind, {}).get(sym, "")
-
-
-# GitHub Actions は UTC で動くため、表示・記録はすべて日本時間に揃える
-JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
-
-
-def now_jst():
-    return datetime.datetime.now(JST)
-
-
-def norm_name(s):
-    """品名の表記揺れを吸収する。全角/半角、カギ括弧、空白を無視して比較する。"""
-    s = unicodedata.normalize("NFKC", str(s))
-    for a, b in (("「", ""), ("」", ""), ("（", "("), ("）", ")"), ("・", "")):
-        s = s.replace(a, b)
-    return re.sub(r"\s+", "", s).lower()
-
-
 def load_discontinued(path, name_index=None):
     """販売中止の登録を読む。DSJPからの貼り付けをそのまま解釈できる。
     同名の品目が複数ある場合は取り違えを防ぐため登録せず警告を出す。"""
@@ -514,6 +421,38 @@ def load_kiso(path):
     return None
 
 
+def load_ippanmei(path):
+    """ippanmei.json（一般名処方マスタ）を読む。無ければ一般名なしで続行する。"""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        d = json.load(open(path, encoding="utf-8"))
+        if d.get("items"):
+            d.setdefault("map9", {})
+            d.setdefault("mapx", {})
+            return d
+    except Exception:
+        pass
+    return None
+
+
+def lookup_gen(ip, yj):
+    """YJコードから一般名の通し番号を引く。該当が無ければ None。
+
+    ① 例外コード品目対照表（12桁の完全一致）を先に見る
+    ② 通常は「上9桁＋ZZZ」なので、上9桁で引く
+    ①を先にするのは、例外コードが「上9桁では区分できない品目」のために
+    作られているものだからで、順序を逆にすると
+    持続性・非持続性の取り違えなどが起こりうる。
+    """
+    if not ip or not yj:
+        return None
+    n = ip["mapx"].get(yj)
+    if n is not None:
+        return n
+    return ip["map9"].get(yj[:9])
+
+
 # 和暦の経過措置期限（例: R9.3.31まで）を西暦へ
 WAREKI = re.compile(
     r"(令和|平成|[RH令平])\s*(\d{1,2})\s*[\.\-/年]\s*(\d{1,2})\s*[\.\-/月]\s*(\d{1,2})")
@@ -567,7 +506,8 @@ def lookup_price(pr, yj):
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
           prices_path=None, keep_chg=None,
-          kiso_path=None, disc_path=None, sentei_path=None):
+          kiso_path=None, disc_path=None, sentei_path=None,
+          ippanmei_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
@@ -585,6 +525,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     pr = load_prices(prices_path)
     kiso = load_kiso(kiso_path)
     sentei = load_sentei(sentei_path)
+    ippan = load_ippanmei(ippanmei_path)
     # 薬剤名 → YJコード の索引（販売中止を名前で登録できるようにするため）
     name_index = {}
     for _, r in df.iterrows():
@@ -601,6 +542,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     n_kchg = 0
     n_sen = 0
     n_disc = 0
+    n_gen = 0
     for _, r in df.iterrows():
         name = clean(r[c[5]])
         if not name: continue
@@ -651,6 +593,12 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                    dc.get("pk", [])]
         else:
             dcv = 0
+        # 一般名処方の標準的な記載（一般名コードで突合）
+        gi = lookup_gen(ippan, yj)
+        if gi is None:
+            gi = -1
+        else:
+            n_gen += 1
         rows.append([
             name, idx('i', ing), idx('m',mk), sp, yj,
             idx('k', strip_prefix(r[c[0]])),
@@ -674,6 +622,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             exp_iso or exp_raw,                 # [24] 経過措置期限
             jp,                                 # [25] 1=日本薬局方収載品
             sv,                                 # [26] 選定療養 [差額分, 選定療養時薬価] / 0
+            0,                                  # [27] 併売品の行番号リスト / 0
+            gi,                                 # [28] 一般名の通し番号 / -1
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -758,22 +708,67 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         if row[18] == 1:                      # 前回版から悪化
             d["worse"] += 1
 
-    # しきい値は画面側で自由に変えられるようにするため、
-    # ここでは 25% 以上（または悪化あり）を広めに拾っておく。
+    # 2品目以上ある成分はすべて収録する。
+    # 逼迫率で足切りすると、お知らせ掲示板（上昇幅5ポイント以上など、
+    # より緩い条件で載る）からタップした成分が下段に存在せず、
+    # 「該当する成分はありません」になってしまうため。
+    # 実際の絞り込みは画面側のスライダーとボタンに任せる。
     alerts = []
     for key, d in ing_stat.items():
         if d["n"] < 2:                        # 1品目だけの成分は比較にならない
             continue
         bad = d["lim"] + d["stop"]
         ratio = bad / d["n"]
-        if ratio < 0.25 and d["worse"] == 0:
-            continue
         alerts.append({
             "i": key, "n": d["n"], "lim": d["lim"], "stop": d["stop"],
             "r": round(ratio, 4), "w": d["worse"], "k": d["k"],
         })
     alerts.sort(key=lambda a: (-a["w"], -a["r"], -a["n"]))
     data["alerts"] = alerts
+
+    # ---- 併売品（同じ中身で商品名が違う先発品どうし） ----
+    # YJコードの先頭9桁は「薬効分類+成分+剤形+規格」を表すので、
+    # ここが一致する＝中身が同じ。ただし後発品も同じ9桁を共有するため、
+    # 先発品・準先発品・長期収載品に限ったうえで、
+    # さらに商品名の語幹が異なるものだけを併売品とみなす。
+    # 剤形を表す語を「まとまり」として区切る。
+    # 文字クラス [錠カプセル…] にすると「カ」「プ」「セ」…と1文字ずつ
+    # 区切ってしまい、「ラクティオン」が「ラ」で切れるなど語幹が壊れる。
+    # 長い語を先に並べて、部分一致で誤って切れないようにする。
+    _FORMS = ["ドライシロップ", "カプセル", "シロップ", "ローション", "クリーム",
+              "細粒", "顆粒", "散剤", "軟膏", "ゲル", "テープ", "パップ",
+              "坐剤", "点眼", "点鼻", "吸入", "配合",
+              "錠", "散", "液", "注"]
+    BRAND_SPLIT = re.compile("(?:" + "|".join(_FORMS) + r"|[０-９0-9])")
+
+    def brand_of(name):
+        return BRAND_SPLIT.split(name)[0].strip()
+
+    ORIG = ("先発品", "準先発品", "長期収載品")
+    by9 = {}
+    for i, row in enumerate(rows):
+        if dict_rev(dicts, "pc", row[17]) not in ORIG:
+            continue
+        yj = row[4]
+        if len(yj) < 9:
+            continue
+        by9.setdefault(yj[:9], []).append(i)
+
+    comarket = {}          # 行番号 → 併売相手の行番号のリスト
+    for key, idxs in by9.items():
+        if len(idxs) < 2:
+            continue
+        brands = {i: brand_of(rows[i][0]) for i in idxs}
+        if len(set(brands.values())) < 2:
+            continue                      # 同じブランドの規格違いにすぎない
+        for i in idxs:
+            others = [j for j in idxs if brands[j] != brands[i]]
+            if others:
+                comarket[i] = others
+
+    for i, others in comarket.items():
+        rows[i][27] = others
+    data["comarket"] = len(comarket)
 
     # ---- 出荷状況の推移（折れ線グラフ用） ----
     # 取得のたびに記録した「変化点」から、各日付での件数を組み立てる。
@@ -1006,6 +1001,10 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                    "date": kj.get("as_of", ""),
                    "file": kj.get("file", ""),
                    "fetched": kj.get("updated_at", "")},
+        "ippan":  {"label": "一般名処方マスタ",
+                   "date": (ippan or {}).get("as_of", ""),
+                   "files": (ippan or {}).get("files", {}),
+                   "fetched": (ippan or {}).get("updated_at", "")},
     }
 
     data["disc"] = {"count": n_disc, "registered": len(disc)}
@@ -1021,6 +1020,35 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         "swap_available": kiso is not None,
         "swap": n_kchg,
     }
+
+    # ---- 一般名処方の標準的な記載 ----
+    # 画面側は行データ[28]の通し番号で items を引く。
+    # どの一般名にどの品目がぶら下がるかは、閲覧時にブラウザ側で組み立てる
+    # （生成時に持たせると同じ情報を二重に抱えることになるため）。
+    if ippan:
+        # cur=1 … 現行版に載っている / cur=0 … 過去の版から引き継いだ記載。
+        # 引き継ぎ分は「一般名処方加算の対象ではなくなったため削除された」
+        # ものなので、画面では加算区分を出さず「旧版」と表示する。
+        gitems, n_old = [], 0
+        for it in ippan["items"]:
+            old = 0 if it.get("cur") else 1
+            n_old += old
+            gitems.append([it["t"], it["k"], it["i"], it["s"],
+                           it["a"], it["p"], it["b"], it["bs"], it["x"],
+                           old, it.get("v", "")])
+        with_items = len({r[28] for r in rows if r[28] >= 0})
+        data["ippan"] = {
+            "available": True,
+            "as_of": ippan.get("as_of", ""),
+            "files": ippan.get("files", {}),
+            "fetched": ippan.get("updated_at", ""),
+            "matched": n_gen,
+            "with_items": with_items,
+            "old": n_old,
+            "items": gitems,
+        }
+    else:
+        data["ippan"] = {"available": False, "items": []}
 
     data["chg"] = {
         "worse":    sum(1 for r in rows if r[18] == 1),

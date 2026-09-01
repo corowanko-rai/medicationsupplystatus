@@ -23,8 +23,8 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-01-v17';
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27};
+const TPL_VER='2026-09-01-v20';
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -152,6 +152,76 @@ function renderChips(){
 let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),sn:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:''}, results=[], shown=0;
 const PAGE=40;
 
+/* ---------- 一般名処方の標準的な記載 ----------
+   一般名コードは「薬価基準収載医薬品コードの上9桁＋ZZZ」で作られるため、
+   生成時にYJコードから引いた通し番号を各行[28]に入れてある。
+   ここでは、その逆引き（一般名 → 品目）を閲覧時に一度だけ組み立てる。 */
+const GINFO=DATA.ippan||{};
+const GEN=GINFO.items||[];
+/* 一般名の項目の並び：
+   [記載, 剤形, 成分名, 規格, 加算, 最低薬価, 備考, バイオ, 例外, 旧版, 版の日付] */
+const G={t:0,k:1,i:2,s:3,a:4,p:5,b:6,bs:7,x:8,o:9,d:10};
+const GKIND=['内用薬','外用薬','注射薬'];
+const GEN_ROWS=(()=>{
+  const m=new Map();
+  R.forEach((r,i)=>{
+    const g=r[F.gen];
+    if(g>=0){ if(!m.has(g)) m.set(g,[]); m.get(g).push(i); }
+  });
+  /* 中は「入手しやすい順 → 安い順」に並べる。実務で上から見ていける並び */
+  m.forEach(v=>v.sort((a,b)=>
+    (get(R[a],'sc')-get(R[b],'sc')) ||
+    ((get(R[a],'price')??Infinity)-(get(R[b],'price')??Infinity)) ||
+    get(R[a],'n').localeCompare(get(R[b],'n'),'ja')));
+  return m;
+})();
+/* 一般名ごとの [通常, 限定, 停止, 総数] */
+const GEN_STAT=(()=>{
+  const m=new Map();
+  GEN_ROWS.forEach((idxs,g)=>{
+    const a=[0,0,0,idxs.length];
+    idxs.forEach(i=>{const s=get(R[i],'sc'); if(s>=0&&s<=2) a[s]++;});
+    m.set(g,a);
+  });
+  return m;
+})();
+const gStat=(g)=>GEN_STAT.get(g)||[0,0,0,0];
+/* マスタの版の日付（260612 → 2026/06/12）。読めなければそのまま返す */
+const gDate=(d)=>/^\d{6}$/.test(d||'')
+  ? `20${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4,6)}` : (d||'');
+/* 検索用に正規化した文字列を先に作っておく（毎回の再計算を避ける）。
+   マスタの記載は「口腔内崩壊錠」だが、実務では「OD錠」と打つほうが多い。
+   引けないと「収載されていない」と誤解されるので、置き換えた別表記も持つ。
+   （末尾に足すだけでは「アムロジピンOD錠」のように続けて打たれたとき
+     一続きの文字列にならず当たらないため、置換した文を別に作る） */
+const GEN_S=GEN.map(g=>{
+  const base=g[G.t]+' '+g[G.i];
+  const out=[norm(base)];
+  if(base.includes('口腔内崩壊')) out.push(norm(base.replace(/口腔内崩壊/g,'OD')));
+  return out;
+});
+function genHit(g,terms){
+  return GEN_S[g].some(h=>{
+    const hk=KATA(h), hh=HIRA(h);
+    return terms.every(t=>h.includes(t)||hk.includes(KATA(t))||hh.includes(HIRA(t)));
+  });
+}
+let genFilter='all';
+let genKinds=new Set([0,1]);   /* 薬局の実務に合わせ、内用薬・外用薬を既定にする */
+/* 現行マスタから外れた記載も既定では出す。
+   「調剤できるか」を知りたい場面では、加算の対象外になっただけの記載も
+   手がかりになるため。区別できるよう、カードには「旧版」と表示する。 */
+let genOld=true;
+const GEN_OLD_N=GEN.filter(g=>g[G.o]).length;
+function syncGob(){
+  const b=document.getElementById('gob');
+  if(!b) return;
+  if(!GEN_OLD_N){ b.style.display='none'; return; }
+  b.style.display='';
+  b.setAttribute('aria-pressed', genOld);
+  b.textContent=`現行マスタから外れた記載も含める（${GEN_OLD_N}件）`;
+}
+
 function match(r,terms){
   if(!terms.length) return true;
   const h=state.qMode==='i' ? get(r,'si') : get(r,'s');
@@ -160,6 +230,7 @@ function match(r,terms){
 }
 
 function run(){
+  if(state.qMode==='g') return runGen();
   const terms=norm(state.q).split(/\s+/).filter(Boolean);
   const S=state.st, K=state.k, AND=state.stMode==='and';
   /* does row r satisfy a single status condition? */
@@ -242,6 +313,111 @@ function run(){
 }
 
 const PINFO=DATA.price||{};
+
+/* ---------- 一般名処方モードの一覧 ---------- */
+function runGen(){
+  const terms=norm(state.q).split(/\s+/).filter(Boolean);
+  results=[];
+  for(let g=0;g<GEN.length;g++){
+    if(!genKinds.has(GEN[g][G.k])) continue;
+    if(!genOld && GEN[g][G.o]) continue;
+    const st=gStat(g);
+    /* 「通常出荷が無い」＝品目はあるのに、通常出荷のものが1件も無い状態。
+       品目そのものが載っていないもの（供給状況Excelに無い）は、
+       入手できないのとは意味が違うのでここには含めない。 */
+    if(genFilter==='risk' && !(st[3]>0 && st[0]===0)) continue;
+    if(terms.length && !genHit(g,terms)) continue;
+    results.push(g);
+  }
+  /* 入手しにくいものを先に。次に記載の五十音順 */
+  results.sort((a,b)=>{
+    const sa=gStat(a), sb=gStat(b);
+    const ra=(sa[3]>0&&sa[0]===0)?0:1, rb=(sb[3]>0&&sb[0]===0)?0:1;
+    return ra-rb || GEN[a][G.t].localeCompare(GEN[b][G.t],'ja');
+  });
+  shown=0;
+  document.getElementById('list').innerHTML='';
+  const n=results.length;
+  document.getElementById('cnt').innerHTML=
+    n?`<b>${n.toLocaleString()}</b> 件`:'該当なし';
+  if(!n){
+    document.getElementById('list').innerHTML=
+      '<div class="empty"><div class="big">🔎</div><b>該当する一般名処方がありません</b>'+
+      (GEN.length?'キーワードを短くするか、剤形の選択を増やしてください。'
+                 :'一般名処方マスタが取得できていません。')+'</div>';
+    document.getElementById('more').textContent='';
+    return;
+  }
+  renderGen();
+}
+
+function renderGen(){
+  const terms=norm(state.q).split(/\s+/).filter(Boolean);
+  const frag=document.createDocumentFragment();
+  const end=Math.min(shown+PAGE,results.length);
+  for(let n=shown;n<end;n++){
+    const g=results[n], gd=GEN[g], idxs=GEN_ROWS.get(g)||[], st=gStat(g);
+    /* 左の色帯は「入手できるか」を表す。
+       通常出荷が1件でもあれば緑、限定だけなら橙、停止だけなら赤、
+       品目が無い（供給状況に載っていない）ときは灰。 */
+    const band = st[3]===0 ? 3 : st[0]>0 ? 0 : st[1]>0 ? 1 : 2;
+    const el=document.createElement('div');
+    el.className='card gcard s'+band;
+    const sum = st[3]===0
+      ? '<span class="gsnone">供給状況の掲載なし</span>'
+      : `<span class="${st[0]?'gsn':'gsnone'}">通常 ${st[0]}</span>`+
+        (st[1]?`<span class="gsl">限定 ${st[1]}</span>`:'')+
+        (st[2]?`<span class="gss">停止 ${st[2]}</span>`:'')+
+        `<span class="gyen">全${st[3]}品目</span>`;
+    const items = idxs.map(i=>{
+      const r=R[i], sc=get(r,'sc');
+      return `<div class="cmitem" data-nm="${esc(get(r,'n'))}">
+        <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
+        <span class="cmnm">${esc(get(r,'n'))}</span>
+        <span class="cmmk">${esc(dv(r,'m')||'')}</span>
+        ${get(r,'price')!=null?`<span class="gyen">¥${fmtY(get(r,'price'))}</span>`:''}
+      </div>`;
+    }).join('');
+    el.innerHTML=
+      `<div class="tags">
+        <span class="kind">${GKIND[gd[G.k]]||''}</span>
+        ${(gd[G.a] && !gd[G.o])?`<span class="gadd">${gd[G.a]===12?'加算1,2':'加算1'}</span>`:''}
+        ${gd[G.bs]?'<span class="gbs">バイオ後続品</span>':''}
+        ${gd[G.o]?`<span class="gold" title="現行のマスタには収載されていません">旧版 ${gDate(gd[G.d])}</span>`:''}
+      </div>
+      <div class="nm">${hl(gd[G.t],terms)}</div>
+      <div class="sub">${esc(gd[G.s]||'')}${
+        gd[G.i]?`<span class="sep">|</span>${hl(gd[G.i],terms)}`:''}</div>
+      <div class="gsum">${sum}</div>
+      <div class="det">
+        ${items||'<div class="hint">供給状況データに該当する品目がありません。</div>'}
+        ${gd[G.b]?`<div class="gwarn">${esc(gd[G.b])}</div>`:''}
+        ${gd[G.o]?`<div class="gwarn"><b>現行の一般名処方マスタには収載されていません。</b>
+          ${gDate(gd[G.d])}版のマスタにあった記載です。
+          マスタから外れたということは、その記載が
+          <b>一般名処方加算の対象ではなくなった</b>ことを意味します。
+          調剤できる品目の目安として残していますが、
+          加算の可否は現行のマスタでご確認ください。</div>`:''}
+        <div class="hint" style="margin-top:8px">
+          薬価基準収載医薬品コードの上9桁で判定しています${
+            gd[G.x]?'（この一般名は<b>例外コード</b>のため、厚労省の対照表に載っている品目だけを出しています）':''}。
+          <span class="gcode">同一剤形・規格内の最低薬価 ${
+            gd[G.p]!=null?fmtY(gd[G.p])+'円':'—'}</span>
+        </div>
+      </div>`;
+    el.addEventListener('click',(e)=>{
+      if(e.target.closest('.cmitem')) return;
+      el.classList.toggle('open');
+    });
+    frag.appendChild(el);
+  }
+  document.getElementById('list').appendChild(frag);
+  shown=end;
+  document.getElementById('more').textContent=
+    shown<results.length?`スクロールでさらに表示（残り ${(results.length-shown).toLocaleString()} 件）`:
+    (results.length>PAGE?'— 全件表示しました —':'');
+}
+
 /* 製品区分の略称バッジ */
 const PCAB={'先発品':['先','pc-sen'],'後発品':['後','pc-kou'],'準先発品':['準先','pc-jun'],
   '長期収載品':['長期','pc-cho'],'その他医薬品':['他','pc-hoka'],'未収載医薬品':['未','pc-mi']};
@@ -619,11 +795,50 @@ document.getElementById('ordbtn').addEventListener('click',()=>{
   state.order = state.order==='std' ? 'grp' : state.order==='grp' ? 'name' : 'std';
   syncOrd(); run(); window.scrollTo({top:0});
 });
+/* 一般名処方モードでは、品目ごとの絞り込み（状況チップ・詳細しぼり込み・
+   並び順）は意味が変わってしまうので隠し、専用の操作だけを出す。 */
+function syncMode(){
+  const g = state.qMode==='g';
+  document.getElementById('chiprow').style.display = g ? 'none' : '';
+  document.getElementById('active').style.display  = g ? 'none' : '';
+  document.getElementById('advbtn').style.display  = g ? 'none' : '';
+  document.getElementById('adv').style.display     = g ? 'none' : '';
+  document.getElementById('coedit').classList.remove('on');
+  coLabel(false);
+  document.getElementById('ordbtn').style.display  = g ? 'none' : '';
+  /* 「後発品が高い」は行ごと隠す。ボタンだけ消すと空の帯が残るため */
+  document.getElementById('rvrow').style.display   = g ? 'none' : '';
+  document.getElementById('genbar').classList.toggle('on', g);
+  if(g) syncGob();
+  qEl.placeholder = g ? '一般名処方の記載で検索（例：アムロジピン）'
+    : state.qMode==='i' ? '成分名で検索' : '薬剤名で検索（スペースでAND）';
+  document.querySelectorAll('.sm').forEach(x=>
+    x.setAttribute('aria-pressed', x.dataset.m===state.qMode));
+}
 document.getElementById('smode').addEventListener('click',e=>{
   const b=e.target.closest('.sm'); if(!b) return;
   state.qMode=b.dataset.m;
-  document.querySelectorAll('.sm').forEach(x=>x.setAttribute('aria-pressed',x===b));
-  qEl.placeholder = state.qMode==='i' ? '成分名で検索' : '薬剤名で検索';
+  syncMode();
+  run(); window.scrollTo({top:0});
+});
+document.getElementById('genbar').addEventListener('click',e=>{
+  const f=e.target.closest('.gfb');
+  if(f){
+    genFilter=f.dataset.g;
+    document.querySelectorAll('#genbar .gfb').forEach(x=>
+      x.setAttribute('aria-pressed', x.dataset.g===genFilter));
+    run(); window.scrollTo({top:0});
+    return;
+  }
+  const ob=e.target.closest('#gob');
+  if(ob){ genOld=!genOld; syncGob(); run(); window.scrollTo({top:0}); return; }
+  const k=e.target.closest('#genk .kb2'); if(!k) return;
+  const v=Number(k.dataset.gk);
+  /* 最低ひとつは残す（すべて外すと必ず0件になり、操作の意味が無くなる） */
+  if(genKinds.has(v)){ if(genKinds.size>1) genKinds.delete(v); }
+  else genKinds.add(v);
+  document.querySelectorAll('#genk .kb2').forEach(x=>
+    x.setAttribute('aria-pressed', genKinds.has(Number(x.dataset.gk))));
   run(); window.scrollTo({top:0});
 });
 document.getElementById('chips').addEventListener('click',e=>{
@@ -673,10 +888,17 @@ function drawOrderEdit(){
     </div>`;
   }).join('');
 }
+/* ボタンは chips 行の右端に置くため、幅を詰めて2行で描く。
+   textContent で書き換えると span が消えるので、必ずこの関数を通す。 */
+function coLabel(on){
+  document.getElementById('cobtn').innerHTML = on
+    ? '<span class="cow">閉じる</span>'
+    : '<span class="cow">並び</span><span class="cow">替え</span>';
+}
 document.getElementById('cobtn').addEventListener('click',()=>{
   const el=document.getElementById('coedit');
   const on=el.classList.toggle('on');
-  document.getElementById('cobtn').textContent = on ? '閉じる' : '並び替え';
+  coLabel(on);
   if(on) drawOrderEdit();
 });
 document.getElementById('colist').addEventListener('click',e=>{
@@ -694,7 +916,7 @@ document.getElementById('coreset').addEventListener('click',()=>{
 });
 document.getElementById('codone').addEventListener('click',()=>{
   document.getElementById('coedit').classList.remove('on');
-  document.getElementById('cobtn').textContent='並び替え';
+  coLabel(false);
 });
 
 const EX=['normal','limited','stopped'];
@@ -762,7 +984,8 @@ window.addEventListener('scroll',()=>{
      タブを切り替えた直後の scrollTo でも発火するため、
      ここで抜けないと重い render() が空振りして体感が遅くなる。 */
   if(curPage!=='search') return;
-  if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500) render();
+  if(shown<results.length&&window.innerHeight+window.scrollY>document.body.offsetHeight-500)
+    (state.qMode==='g'?renderGen:render)();
   document.getElementById('top').classList.toggle('on',window.scrollY>900);
 },{passive:true});
 document.getElementById('top').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
@@ -891,10 +1114,7 @@ document.getElementById('list').addEventListener('click',e=>{
   const ci=e.target.closest('.cmitem');
   if(ci){
     e.stopPropagation();
-    state.qMode='n';
-    document.querySelectorAll('.sm').forEach(x=>
-      x.setAttribute('aria-pressed', x.dataset.m==='n'));
-    qEl.placeholder='薬剤名で検索（スペースでAND）';
+    state.qMode='n'; syncMode();
     state.q=ci.dataset.nm; qEl.value=state.q;
     document.getElementById('clr').classList.add('on');
     run(); window.scrollTo({top:0});
@@ -904,10 +1124,7 @@ document.getElementById('list').addEventListener('click',e=>{
   const ib=e.target.closest('.ingbtn');
   if(ib){
     e.stopPropagation();
-    state.qMode='i';
-    document.querySelectorAll('.sm').forEach(x=>
-      x.setAttribute('aria-pressed', x.dataset.m==='i'));
-    qEl.placeholder='成分名で検索';
+    state.qMode='i'; syncMode();
     state.q=ib.dataset.ing; qEl.value=state.q;
     document.getElementById('clr').classList.add('on');
     run(); window.scrollTo({top:0});
@@ -1236,10 +1453,7 @@ document.getElementById('chsel').addEventListener('change',e=>{
 });
 function toSearchByIng(nm){
   switchPage('search');
-  state.qMode='i';
-  document.querySelectorAll('.sm').forEach(x=>
-    x.setAttribute('aria-pressed', x.dataset.m==='i'));
-  qEl.placeholder='成分名で検索';
+  state.qMode='i'; syncMode();
   state.q=nm; qEl.value=nm;
   document.getElementById('clr').classList.add('on');
   run(); window.scrollTo({top:0});
@@ -1409,10 +1623,7 @@ document.getElementById('alth').addEventListener('click',e=>{
 document.getElementById('albody').addEventListener('click',e=>{
   const row=e.target.closest('.alrow'); if(!row) return;
   closeAl();
-  state.qMode='i';
-  document.querySelectorAll('.sm').forEach(x=>
-    x.setAttribute('aria-pressed', x.dataset.m==='i'));
-  qEl.placeholder='成分名で検索';
+  state.qMode='i'; syncMode();
   state.q=row.dataset.ing; qEl.value=state.q;
   document.getElementById('clr').classList.add('on');
   run(); window.scrollTo({top:0});
@@ -1785,10 +1996,7 @@ document.getElementById('cmvk').addEventListener('click',e=>{
 document.getElementById('cmvbody').addEventListener('click',e=>{
   const ci=e.target.closest('.cmitem'); if(!ci) return;
   closeCmv2();
-  state.qMode='n';
-  document.querySelectorAll('.sm').forEach(x=>
-    x.setAttribute('aria-pressed', x.dataset.m==='n'));
-  qEl.placeholder='薬剤名で検索（スペースでAND）';
+  state.qMode='n'; syncMode();
   state.q=ci.dataset.nm; qEl.value=state.q;
   document.getElementById('clr').classList.add('on');
   run(); window.scrollTo({top:0});
@@ -1979,6 +2187,41 @@ document.getElementById('rvx').addEventListener('click',closeRv);
   h+=R_('<span class="kc">変更可</span>',
         '後発医薬品と同様に変更調剤が認められます',
         '基のみで変更可が付かない場合は、変更調剤の対象外です');
+
+  h+=S_('一般名処方');
+  h+=R_('<span class="gadd">【般】一般名</span>',
+        '一般名処方の記載から、調剤できる薬を探せます',
+        '検索窓の上で<b>「【般】一般名」</b>に切り替えると、'+
+        '厚労省の<b>一般名処方マスタ</b>に載っている「標準的な記載」が一覧になります。'+
+        'カードを押すと、<b>その記載で調剤できる品名</b>が'+
+        '<b>入手しやすい順・安い順</b>に並びます。'+
+        'さらに品名を押すと、その薬の詳細に移ります。'+
+        '<br>左の色帯は<b>通常出荷の品目があるか</b>を表します。'+
+        '緑＝通常出荷あり／橙＝限定出荷のみ／赤＝供給停止のみ／灰＝供給状況データに無い。'+
+        '<b>「通常出荷が無い」</b>を押すと、'+
+        '<b>その記載では通常出荷の薬が1つも無い</b>ものだけに絞れます。'+
+        '<br><b>判定方法</b>：一般名コードは'+
+        '「薬価基準収載医薬品コードの上9桁＋ZZZ」で作られるため、'+
+        'YJコードの上9桁で結び付けています。'+
+        '上9桁では区別できない品目（持続時間の違うものなど）は'+
+        '<b>例外コード</b>として厚労省が対照表を用意しているので、'+
+        'そちらは12桁の完全一致で結んでいます。'+
+        '<br>マスタの記載は「口腔内崩壊錠」ですが、<b>「OD錠」でも引けます</b>。'+
+        '<br><b>過去の版もまとめています</b>：マスタは改訂のたびに'+
+        '品目が入れ替わり、<b>減ることもあります</b>'+
+        '（例：アムロジピン錠２．５ｍｇ・５ｍｇは令和7年12月版にありましたが、'+
+        '現行版では収載されていません）。'+
+        'そこで<b>同じ一般名コードは新しい版で上書きし、'+
+        '新しい版に無いものは残す</b>ようにしています。'+
+        '現行版に無いものには<b><span class="gold">旧版</span></b>と'+
+        'その版の日付を付けて区別しています。'+
+        'マスタから外れたということは'+
+        '<b>一般名処方加算の対象ではなくなった</b>ということなので、'+
+        '<b>加算の可否は現行のマスタでご確認ください</b>。'+
+        '絞り込みのチェックを外すと現行版だけになります。'+
+        '<br><b>ご注意</b>：この一覧は一般名処方加算の対象品目について'+
+        '標準的な記載を示すもので、一般名処方の可否や記載方法を定めるものではありません。'+
+        'マスタに無い記載で処方されることもあります。');
 
   h+=S_('併売品');
   h+=R_('<span class="cmb">併売</span>','同じ中身で商品名が違う薬があります',
@@ -2188,6 +2431,21 @@ document.getElementById('rvx').addEventListener('click',closeRv);
                         SRC.sentei.date, SRC.sentei.file||'（未取得）');
   if(SRC.kiso) h+=row('変更調剤が認められる基礎的医薬品等',
                       SRC.kiso.date, SRC.kiso.file||'（未取得）');
+  if(SRC.ippan){
+    const GF=SRC.ippan.files||{};
+    const ks=Object.keys(GF);
+    if(ks.length){
+      /* 現行版を先に、過去分をその後に。日付は新しい順 */
+      ks.sort((a,b)=>(GF[b].current-GF[a].current)||GF[b].date.localeCompare(GF[a].date));
+      ks.forEach(k=>{
+        const f=GF[k];
+        h+=row('一般名処方マスタ'+(f.kind==='バイオ'?'（バイオ後続品）':'')+
+               (f.current?'':'（過去分）'), f.date, f.name);
+      });
+    }else{
+      h+=row('一般名処方マスタ', '', '（未取得）');
+    }
+  }
   h+='<div class="lgnote" style="margin-top:12px">'+
      '厚労省の各ファイルを<b>毎朝7時に自動確認</b>し、更新があった分だけ取得します。'+
      '日付はそのファイルが適用・作成された日です。'+
@@ -2220,6 +2478,14 @@ syncOrd();
   const b=document.getElementById('ptbadge');
   if(w){ b.textContent=w; b.classList.add('on'); }
 })();
+/* 一般名処方マスタが取得できていない版では、モードごと隠す。
+   押しても空の一覧しか出ないボタンを残しておくほうが分かりにくいため。 */
+if(!GEN.length){
+  const g=document.querySelector('.sm[data-m="g"]');
+  if(g) g.style.display='none';
+  if(state.qMode==='g') state.qMode='n';
+}
+syncMode();
 run();
 </script>
 </body>
