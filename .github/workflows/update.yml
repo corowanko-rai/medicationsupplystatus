@@ -97,6 +97,25 @@ jobs:
             *)  echo "::warning::選定療養リストの取得に失敗しました。バッジなしで続行します。" ;;
           esac
 
+      # 一般名処方マスタ。失敗しても続行する。
+      # 現行版だけでなくページに並ぶ過去分もまとめて取り込み、
+      # 古い記載を消さずに積み上げる（fetch_ippanmei.py の説明を参照）。
+      - name: 一般名処方マスタを取得
+        id: ippan
+        continue-on-error: true
+        if: inputs.mode != 'local' && github.event_name != 'push'
+        run: |
+          set +e
+          python fetch_ippanmei.py
+          code=$?
+          set -e
+          echo "code=$code" >> $GITHUB_OUTPUT
+          case $code in
+            0)  echo "::notice::一般名処方マスタを更新しました。" ;;
+            10) echo "::notice::一般名処方マスタに変更はありません。" ;;
+            *)  echo "::warning::一般名処方マスタの取得に失敗しました。一般名検索なしで続行します。" ;;
+          esac
+
       - name: 更新チェックと生成
         id: run
         run: |
@@ -117,6 +136,7 @@ jobs:
             if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             if [ "${{ steps.sentei.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
+            if [ "${{ steps.ippan.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             # 販売中止の登録が変わった場合も作り直す
             if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
               EXTRA="--force"
@@ -146,7 +166,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json snapshot.json prices.json kiso.json sentei.json latest.xlsx
+          git add state.json snapshot.json prices.json kiso.json sentei.json \
+                  ippanmei.json latest.xlsx
           git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
           git push
 
