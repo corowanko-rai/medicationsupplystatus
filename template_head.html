@@ -648,15 +648,21 @@ header{
   padding:0 6px;border-radius:5px;font-size:11px;font-weight:800;white-space:nowrap;
   flex:0 0 auto;background:#e8f0fb;color:#2a5599;border:1.5px solid #2a5599}
 .cmnote{font-size:11px;color:var(--ink3);margin-bottom:6px;line-height:1.6}
-.cmitem{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+/* 品目の1行。1行目＝状況と品名、2行目＝メーカーと薬価で固定する。
+   以前は全部を1つの flex に入れて折り返させていたため、
+   品名の長さによってメーカーが1行目に残ったり2行目へ回ったりして、
+   カードごとに並びが違って見えていた。 */
+.cmitem{display:block;
   background:#f4f8fd;border:1px solid #d3e2f3;border-radius:9px;
   padding:8px 10px;margin-bottom:6px;cursor:pointer}
+.cmr1{display:flex;align-items:flex-start;gap:8px}
+.cmr2{display:flex;align-items:baseline;gap:8px;margin-top:5px}
 .cmitem:active{background:#e7f0fa}
-.cmst{flex:0 0 auto;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px}
+.cmst{flex:0 0 auto;margin-top:1px;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:5px}
 .cmst.s0{background:#e8f5ec;color:#2f7a52}
 .cmst.s1{background:#fdf0e0;color:#a5641d}
 .cmst.s2{background:#fdecec;color:#b23c3c}
-.cmnm{flex:1;min-width:130px;font-size:13px;font-weight:700;color:var(--ink);
+.cmnm{flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--ink);
   word-break:break-word}
 .cmmk{font-size:11px;color:var(--ink3)}
 /* 凡例内：選定療養の計算式・図解ブロック */

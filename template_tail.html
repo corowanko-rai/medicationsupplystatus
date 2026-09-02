@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-02-v28';
+const TPL_VER='2026-09-02-v29';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -371,11 +371,19 @@ function renderGen(){
         `<span class="gyen">全${st[3]}品目</span>`;
     const items = idxs.map(i=>{
       const r=R[i], sc=get(r,'sc');
+      const mk=dv(r,'m')||'', pr=get(r,'price');
+      /* 1行目＝状況と品名、2行目＝メーカーと薬価。
+         1行のまま折り返させると、品名の長さで折り返し位置が変わり、
+         カードごとに並びが違って見えるため、行を分けて固定する。 */
       return `<div class="cmitem" data-nm="${esc(get(r,'n'))}">
-        <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
-        <span class="cmnm">${esc(get(r,'n'))}</span>
-        <span class="cmmk">${esc(dv(r,'m')||'')}</span>
-        ${get(r,'price')!=null?`<span class="gyen">¥${fmtY(get(r,'price'))}</span>`:''}
+        <div class="cmr1">
+          <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
+          <span class="cmnm">${esc(get(r,'n'))}</span>
+        </div>${(mk||pr!=null)?`
+        <div class="cmr2">
+          <span class="cmmk">${esc(mk)}</span>
+          ${pr!=null?`<span class="gyen">¥${fmtY(pr)}</span>`:''}
+        </div>`:''}
       </div>`;
     }).join('');
     el.innerHTML=
@@ -691,10 +699,13 @@ function render(){
             <div class="cmnote">同じ成分・剤形・規格で、商品名が異なる薬です。</div>
             ${rows.map(x=>{
               const sc=get(x,'sc');
+              const mk=dv(x,'m')||'';
               return `<div class="cmitem" data-nm="${esc(get(x,'n'))}">
-                <span class="cmst s${sc}">${esc(dv(x,'st'))}</span>
-                <span class="cmnm">${esc(get(x,'n'))}</span>
-                <span class="cmmk">${esc(dv(x,'m')||'')}</span>
+                <div class="cmr1">
+                  <span class="cmst s${sc}">${esc(dv(x,'st'))}</span>
+                  <span class="cmnm">${esc(get(x,'n'))}</span>
+                </div>${mk?`
+                <div class="cmr2"><span class="cmmk">${esc(mk)}</span></div>`:''}
               </div>`;}).join('')}
           </dd></div>`;
         })()}
@@ -1950,10 +1961,13 @@ function drawCmv(){
         inner+=`<div class="cmvsp">${esc(sp||'(規格不明)')}</div>`;
         idxs.forEach(i=>{
           const r=R[i], sc=get(r,'sc');
+          const mk=dv(r,'m')||'';
           inner+=`<div class="cmitem" data-nm="${esc(get(r,'n'))}">
-            <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
-            <span class="cmnm">${esc(get(r,'n'))}</span>
-            <span class="cmmk">${esc(dv(r,'m')||'')}</span>
+            <div class="cmr1">
+              <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
+              <span class="cmnm">${esc(get(r,'n'))}</span>
+            </div>${mk?`
+            <div class="cmr2"><span class="cmmk">${esc(mk)}</span></div>`:''}
           </div>`;
         });
       });
