@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-02-v24';
+const TPL_VER='2026-09-02-v25';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -398,11 +398,11 @@ function renderGen(){
           <b>一般名処方加算の対象ではなくなった</b>ことを意味します。
           調剤できる品目の目安として残していますが、
           加算の可否は現行のマスタでご確認ください。</div>`:''}
-        <div class="hint" style="margin-top:8px">
-          薬価基準収載医薬品コードの上9桁で判定しています${
-            gd[G.x]?'（この一般名は<b>例外コード</b>のため、厚労省の対照表に載っている品目だけを出しています）':''}。
-          <span class="gcode">同一剤形・規格内の最低薬価 ${
-            gd[G.p]!=null?fmtY(gd[G.p])+'円':'—'}</span>
+        <div class="hint gnote">
+          <div>薬価基準収載医薬品コードの上9桁で判定しています${
+            gd[G.x]?'（この一般名は<b>例外コード</b>のため、厚労省の対照表に載っている品目だけを出しています）':''}。</div>
+          <div class="gcode">同一剤形・規格内の最低薬価 ${
+            gd[G.p]!=null?fmtY(gd[G.p])+'円':'—'}</div>
         </div>
       </div>`;
     el.addEventListener('click',(e)=>{
