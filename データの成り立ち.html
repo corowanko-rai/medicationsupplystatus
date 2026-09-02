@@ -79,6 +79,44 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   font-size:11px;font-weight:800;background:#fdf0e3;color:#a85f10;border:1.5px solid #a85f10;white-space:nowrap}
 .b-cm{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:5px;
   font-size:11px;font-weight:800;background:#e8f0fb;color:#2a5599;border:1.5px solid #2a5599;white-space:nowrap}
+/* ---- コードの桁の意味 ----
+   12桁を1文字ずつ枠に入れる。桁位置の目盛りと必ず縦がそろう。 */
+.dg{border:1px solid var(--line);border-radius:11px;background:var(--surface);
+  padding:12px;margin:0 0 16px}
+.dgrow{display:grid;grid-template-columns:repeat(12,1fr);gap:2px}
+.dgc{display:flex;align-items:center;justify-content:center;height:30px;
+  border-radius:5px;font-size:14px;font-weight:800;color:#fff;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.dgnum{margin-top:3px}
+.dgnum .dgc{height:auto;background:none;color:var(--ink3);
+  font-size:10px;font-weight:600}
+.g1{background:#2a5599}.g2{background:#2f7a52}.g3{background:#8a5510}
+.g4{background:#a5372f}.g5{background:#5f34ab}.g6{background:#7d8fa1}
+.dgl{list-style:none;margin:11px 0 0;padding:0;display:grid;
+  grid-template-columns:1fr 1fr;gap:4px 10px;font-size:11.5px;color:var(--ink2)}
+.dgl li{display:flex;align-items:center;gap:5px}
+.dgl i{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.dgnote{margin:11px 0 0;font-size:12.5px}
+
+/* ---- コードを見比べる表 ----
+   同じ桁が縦にそろうよう、コードを独立した列に置く。
+   文章の長さでコードの開始位置が動かない。 */
+.cgrid{display:grid;grid-template-columns:max-content max-content;
+  gap:4px 14px;align-items:baseline;border:1px solid var(--line);
+  border-radius:11px;background:var(--surface);padding:12px 13px;margin:0 0 16px}
+.cgh{font-size:11px;font-weight:800;color:var(--ink3)}
+.cgc{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP",monospace;
+  font-size:13px;letter-spacing:.04em;color:var(--ink2);white-space:nowrap}
+.cgc b{background:#dcebfa;color:#0a4d80;border-radius:3px;padding:1px 2px;font-weight:800}
+.cgrid2{border:0;background:none;padding:0;margin:6px 0 0;
+  grid-template-columns:1fr max-content;gap:3px 10px}
+.cgt{font-size:12.5px;color:var(--ink2)}
+.cgn{grid-column:1/-1;font-size:12px;color:var(--ink2);margin:0 0 6px}
+@media (max-width:360px){
+  .cgrid{gap:3px 8px;padding:10px}
+  .cgc{font-size:11.5px;letter-spacing:0}
+  .dgl{grid-template-columns:1fr}
+}
 /* ---- コードの対応を示す図 ----
    以前は「└──┬──┘」を文字で描いて桁を指していたが、
    日本語と英数字の幅の比率はフォントによって変わるため、
@@ -244,7 +282,7 @@ li{margin-bottom:5px}
     <tr><td>局バッジ</td><td><span class="src s-price">薬価</span></td><td>同上。「局」欄の有無</td></tr>
     <tr><td>経過措置期限</td><td><span class="src s-price">薬価</span></td><td>YJコード完全一致のみ</td></tr>
     <tr><td>変更可バッジ</td><td><span class="src s-kiso">基礎</span></td><td><b>薬剤名</b>で結合（コードが無いため）</td></tr>
-    <tr><td>選バッジ／差額分・選定療養時の薬価</td><td><span class="src s-sen">選定</span></td><td>薬価基準収載医薬品コードで完全一致</td></tr>
+    <tr><td>選バッジ／差額分・選定療養時の薬価</td><td><span class="src s-sen">選定</span></td><td>薬価基準収載医薬品コードで完全一致（対象は銘柄別収載品なのでYJコードと同じ12桁）</td></tr>
     <tr><td>販売中止バッジ</td><td><span class="src s-manual">手動</span></td><td>薬剤名→YJコードに変換して結合</td></tr>
     <tr><td>【般】一般名処方で検索／調剤可能な品名</td><td><span class="src s-gen">一般</span></td><td>一般名コード（YJ先頭9桁＋例外は12桁）で結合</td></tr>
     <tr><td>併売バッジ／併売品の一覧</td><td><span class="src s-calc">計算</span></td><td>YJ先頭9桁＋製品区分＋商品名で判定</td></tr>
@@ -303,13 +341,51 @@ li{margin-bottom:5px}
 
   <h2>結合キーの使い分け</h2>
 
-  <h3>① 薬価・局方 ── YJコードの2段階照合</h3>
-  <p>12桁の完全一致だけでは<b>3分の2しか当たりません</b>。統一名収載品は薬価リスト側でコードの下3桁が異なるためです。</p>
-  <div class="flow"><pre>① 2233002Q1108 → 2233002Q1108   完全一致 … 65.5%
-② 2233002Q1108 → 2233002Q1019   先頭9桁で一致 … +29.3%
-   ※ 太字部分が先頭9桁。②は統一名収載品で下3桁が異なる
+  <h3>コードの桁の意味</h3>
+  <p>このシステムの突合はすべて、12桁のコードの<b>どこまでが一致するか</b>で決めています。
+  まず各桁が何を表すのかを示します（例：ユーロジン錠２ｍｇ）。</p>
 
-合計 94.8%（残り5.2%＝852品目のうち824品目は
+  <div class="dg">
+    <div class="dgrow">
+      <span class="dgc g1">1</span><span class="dgc g1">1</span><span class="dgc g1">2</span><span class="dgc g1">4</span
+      ><span class="dgc g2">0</span><span class="dgc g2">0</span><span class="dgc g2">1</span
+      ><span class="dgc g3">F</span><span class="dgc g4">2</span
+      ><span class="dgc g5">0</span><span class="dgc g5">3</span><span class="dgc g6">9</span>
+    </div>
+    <div class="dgrow dgnum">
+      <span class="dgc">1</span><span class="dgc">2</span><span class="dgc">3</span><span class="dgc">4</span
+      ><span class="dgc">5</span><span class="dgc">6</span><span class="dgc">7</span
+      ><span class="dgc">8</span><span class="dgc">9</span
+      ><span class="dgc">10</span><span class="dgc">11</span><span class="dgc">12</span>
+    </div>
+    <ul class="dgl">
+      <li><i class="g1"></i>1〜4桁　薬効分類</li>
+      <li><i class="g2"></i>5〜7桁　投与経路・成分</li>
+      <li><i class="g3"></i>8桁目　剤形</li>
+      <li><i class="g4"></i>9桁目　規格単位</li>
+      <li><i class="g5"></i>10〜11桁　同一規格内の番号</li>
+      <li><i class="g6"></i>12桁目　チェックデジット</li>
+    </ul>
+    <p class="dgnote">つまり<b>上9桁が一致すれば、成分・剤形・規格が同じ</b>ということです。
+    このシステムが上9桁を多用しているのは、この構造によります。</p>
+  </div>
+
+  <h3>① 薬価・局方 ── YJコードの2段階照合</h3>
+  <p>12桁の完全一致だけでは<b>3分の2しか当たりません</b>。統一名収載品は、
+  薬価基準収載医薬品コードが<b>一般名に1つだけ</b>付くのに対し、
+  YJコードは<b>商品ごとに</b>付くため、10〜12桁目が食い違うからです。</p>
+
+  <div class="cgrid">
+    <div class="cgh">供給状況のYJコード</div><div class="cgh">薬価リスト側</div>
+    <code class="cgc"><b>2233002Q1</b>108</code>
+    <code class="cgc"><b>2233002Q1</b>108</code>
+    <div class="cgn">① 12桁が完全一致 …………… 65.5%</div>
+    <code class="cgc"><b>2233002Q1</b>108</code>
+    <code class="cgc"><b>2233002Q1</b>019</code>
+    <div class="cgn">② 上9桁で一致（統一名収載品）… ＋29.3%</div>
+  </div>
+
+  <div class="flow"><pre>合計 94.8%（残り5.2%＝852品目のうち824品目は
 未収載医薬品で、そもそも薬価が存在しない）
 未収載医薬品を除いた突合率は 99.8%</pre></div>
   <div class="card note">
@@ -322,10 +398,21 @@ li{margin-bottom:5px}
   </div>
 
   <h3>③ 選定療養 ── コードで完全一致</h3>
-  <p>対象医薬品リストには薬価基準収載医薬品コード（＝YJコード）があるため、<b>照合率100%</b>です。適用開始日は「※令和8年6月1日から」という記載を読み取り、<b>今日すでに始まっているもののうち最新版</b>を選びます。将来分が先に公表されても、開始日が来るまでは採用しません。</p>
+  <p>対象医薬品リストが持つのは<b>薬価基準収載医薬品コード</b>で、供給状況データの
+  <b>YJコード</b>とは本来別のコードです。ただし選定療養の対象は長期収載品で、
+  いずれも<b>銘柄別収載</b>（商品名で薬価収載）のため両者の12桁は一致します。
+  実測でも <b>776件すべてが12桁で一致</b>しました。</p>
+
+  <div class="card note">
+    <p style="margin-bottom:0">この一致は<b>対象が銘柄別収載品だからこそ</b>成り立ちます。
+    仮に統一名収載品が対象に入れば、①の薬価と同じく下3桁がずれて当たらなくなります。
+    そのときは上9桁の照合を足す必要があります。</p>
+  </div>
+
+  <p>適用開始日は「※令和8年6月1日から」という記載を読み取り、<b>今日すでに始まっているもののうち最新版</b>を選びます。将来分が先に公表されても、開始日が来るまでは採用しません。</p>
 
   <h3>④ 併売品 ── 3つの条件の組み合わせ</h3>
-  <p>YJコードの先頭9桁は「薬効分類＋成分＋剤形＋規格」を表します。ただし<b>これだけでは後発品も同じ9桁を共有する</b>ため、条件を重ねています。</p>
+  <p>上9桁が一致すれば成分・剤形・規格は同じですが、<b>それだけでは後発品も同じ9桁を共有します</b>。そのため条件を重ねています。</p>
   <div class="flow"><pre>条件1  YJ先頭9桁が一致 …………………… 中身が同じ
 条件2  先発品・準先発品・長期収載品に限る … 後発品を除く
 条件3  商品名の語幹が異なる ……………………… 規格違いを除く
@@ -359,16 +446,25 @@ YJコードごとに前回と比較
   <h3>⑦ 一般名処方 ── 上9桁＋ZZZ、例外だけ12桁</h3>
   <p>一般名コードは<b>薬価基準収載医薬品コードの上9桁に「ZZZ」を付けた12桁</b>です。
   つまり上9桁が共通する医薬品が、その一般名処方で調剤できる範囲になります。</p>
+  <p>供給状況データが持つのは<b>YJコード</b>ですが、
+  上9桁は薬価基準収載医薬品コードと共通（食い違うのは10〜12桁目だけ）なので、
+  <b>上9桁で引く限りは同じ結果</b>になります。
+  例外コードだけは12桁の完全一致で引くため、
+  厚労省の対照表に載っている薬価基準収載医薬品コードと、
+  YJコードが一致する品目に限られます。</p>
   <div class="cdx">
     <div class="cdl"><span class="cdn">【般】エスタゾラム錠２ｍｇ</span>
       <code class="cdc"><b>1124001F2</b>ZZZ</code></div>
     <div class="cdm">色を付けた<b>上9桁</b>が一致する品目を集める</div>
     <div class="cda">↓</div>
-    <ul class="cdu">
-      <li>ユーロジン錠２ｍｇ<code class="cdc"><b>1124001F2</b>039</code></li>
-      <li>エスタゾラム錠２ｍｇ「アメル」<code class="cdc"><b>1124001F2</b>071</code></li>
-      <li class="cdmore">…など</li>
-    </ul>
+    <div class="cgrid cgrid2">
+      <div class="cgh">品名</div><div class="cgh">YJコード</div>
+      <div class="cgt">ユーロジン錠２ｍｇ</div>
+      <code class="cgc"><b>1124001F2</b>039</code>
+      <div class="cgt">エスタゾラム錠２ｍｇ「アメル」</div>
+      <code class="cgc"><b>1124001F2</b>071</code>
+      <div class="cgt cdmore">…など</div><div></div>
+    </div>
   </div>
 
   <div class="card note">
