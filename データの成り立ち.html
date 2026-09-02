@@ -79,6 +79,31 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   font-size:11px;font-weight:800;background:#fdf0e3;color:#a85f10;border:1.5px solid #a85f10;white-space:nowrap}
 .b-cm{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:5px;
   font-size:11px;font-weight:800;background:#e8f0fb;color:#2a5599;border:1.5px solid #2a5599;white-space:nowrap}
+/* ---- コードの対応を示す図 ----
+   以前は「└──┬──┘」を文字で描いて桁を指していたが、
+   日本語と英数字の幅の比率はフォントによって変わるため、
+   端末によって指す位置がずれた。
+   罫線をやめ、該当の桁そのものに色を付けて示す。 */
+.cdx{border:1px solid var(--line);border-radius:11px;background:var(--surface);
+  padding:12px 13px;margin:0 0 18px;font-size:13px;line-height:1.85}
+.cdl{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.cdn{font-weight:700}
+/* コード列は「桁の途中」で折り返すと読み違えるので、
+   1件ずつを塊にして、区切りでだけ折り返す。 */
+.cdlist{display:inline-flex;flex-wrap:wrap;gap:3px 10px;vertical-align:top}
+.cdlist .cdc{white-space:nowrap;word-break:normal;margin-left:0}
+.cdc{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP",monospace;
+  font-size:12.5px;letter-spacing:.02em;color:var(--ink2);word-break:break-all}
+.cdc b{background:#dcebfa;color:#0a4d80;border-radius:3px;padding:1px 2px;font-weight:800}
+.cdc b.cdw{background:#f7e3c0;color:#8a5510}
+.cdm{margin-top:7px;font-size:12.5px;color:var(--ink2)}
+.cda{text-align:center;color:#8fa2b3;line-height:1;margin:5px 0}
+.cdu{margin:6px 0 0;padding-left:19px;font-size:12.5px;line-height:1.95}
+.cdu li{margin:0}
+.cdu .cdc{margin-left:6px}
+.cdmore{color:var(--ink3)}
+.cdng{color:#a53b3b;list-style:none;margin-left:-19px}
+.cdng::before{content:"× ";font-weight:800}
 /* ---- データの流れの図 ----
    以前は罫線を文字（│─→）で描いていたが、日本語と英数字の
    文字幅の比率はフォントによって変わるため、端末によって縦線がずれた。
@@ -280,9 +305,9 @@ li{margin-bottom:5px}
 
   <h3>① 薬価・局方 ── YJコードの2段階照合</h3>
   <p>12桁の完全一致だけでは<b>3分の2しか当たりません</b>。統一名収載品は薬価リスト側でコードの下3桁が異なるためです。</p>
-  <div class="flow"><pre>2233002Q1108 ──①──→ 2233002Q1108   完全一致 … 65.5%
-2233002Q1108 ──②──→ 2233002Q1019   先頭9桁で一致 … +29.3%
- └ 先頭9桁 ─────────┘（統一名収載品）
+  <div class="flow"><pre>① 2233002Q1108 → 2233002Q1108   完全一致 … 65.5%
+② 2233002Q1108 → 2233002Q1019   先頭9桁で一致 … +29.3%
+   ※ 太字部分が先頭9桁。②は統一名収載品で下3桁が異なる
 
 合計 94.8%（残り5.2%＝852品目のうち824品目は
 未収載医薬品で、そもそも薬価が存在しない）
@@ -301,14 +326,14 @@ li{margin-bottom:5px}
 
   <h3>④ 併売品 ── 3つの条件の組み合わせ</h3>
   <p>YJコードの先頭9桁は「薬効分類＋成分＋剤形＋規格」を表します。ただし<b>これだけでは後発品も同じ9桁を共有する</b>ため、条件を重ねています。</p>
-  <div class="flow"><pre>条件1  YJ先頭9桁が一致                  … 中身が同じ
+  <div class="flow"><pre>条件1  YJ先頭9桁が一致 …………………… 中身が同じ
 条件2  先発品・準先発品・長期収載品に限る … 後発品を除く
-条件3  商品名の語幹が異なる              … 規格違いを除く
+条件3  商品名の語幹が異なる ……………………… 規格違いを除く
 
-例）2171022F1
-    ノルバスク錠2.5mg（長期収載品）┐
-    アムロジン錠2.5mg（長期収載品）┘ ← 併売品
-    アムロジピン錠2.5mg「〇〇」×21件（後発品）← 条件2で除外</pre></div>
+例）先頭9桁 2171022F1 を共有する品目
+    ○ ノルバスク錠2.5mg（長期収載品）  ← 併売品
+    ○ アムロジン錠2.5mg（長期収載品）  ← 併売品
+    × アムロジピン錠2.5mg「〇〇」×21件（後発品）… 条件2で除外</pre></div>
   <div class="card note">
     <p style="margin-bottom:0"><b>条件3は文字列の比較</b>です。剤形を表す語（錠・カプセル・パップ等）の前までを商品名とみなしています。まれに取りこぼしや誤りが生じる可能性があります。</p>
   </div>
@@ -334,12 +359,17 @@ YJコードごとに前回と比較
   <h3>⑦ 一般名処方 ── 上9桁＋ZZZ、例外だけ12桁</h3>
   <p>一般名コードは<b>薬価基準収載医薬品コードの上9桁に「ZZZ」を付けた12桁</b>です。
   つまり上9桁が共通する医薬品が、その一般名処方で調剤できる範囲になります。</p>
-  <div class="flow"><pre>【般】エスタゾラム錠２ｍｇ = 1124001F2ZZZ
-                             └───┬───┘
-                            この9桁が一致する品目を集める
-                                 ↓
-        ユーロジン錠２ｍｇ … 1124001F2039
-        エスタゾラム錠２ｍｇ「アメル」… 1124001F2071  …など</pre></div>
+  <div class="cdx">
+    <div class="cdl"><span class="cdn">【般】エスタゾラム錠２ｍｇ</span>
+      <code class="cdc"><b>1124001F2</b>ZZZ</code></div>
+    <div class="cdm">色を付けた<b>上9桁</b>が一致する品目を集める</div>
+    <div class="cda">↓</div>
+    <ul class="cdu">
+      <li>ユーロジン錠２ｍｇ<code class="cdc"><b>1124001F2</b>039</code></li>
+      <li>エスタゾラム錠２ｍｇ「アメル」<code class="cdc"><b>1124001F2</b>071</code></li>
+      <li class="cdmore">…など</li>
+    </ul>
+  </div>
 
   <div class="card note">
     <p><b>例外コードがある点に注意</b></p>
@@ -350,12 +380,21 @@ YJコードごとに前回と比較
     そのため例外コードは<b>12桁の完全一致</b>で結び、上9桁の照合より先に引いています。</p>
   </div>
 
-  <div class="flow"><pre>【般】チモロール点眼液０．２５％（持続性） = 1319702QAZZZ
-                                              └┬┘
-                                   9桁目がA（例外コード）
-      → 上9桁では当たらないので、対照表の12桁で結ぶ
-        1319702Q3010 / Q3037 / Q3045 / Q3061 / Q3088 / Q5021 の6品目のみ
-      → 持続性でない チモプトール点眼液０．２５％ は含まれない</pre></div>
+  <div class="cdx">
+    <div class="cdl"><span class="cdn">【般】チモロール点眼液０．２５％（持続性）</span>
+      <code class="cdc">1319702Q<b class="cdw">A</b>ZZZ</code></div>
+    <div class="cdm">9桁目が<b>A</b>＝例外コード（上9桁では当たらない）</div>
+    <div class="cda">↓</div>
+    <div class="cdm">対照表の<b>12桁</b>で結ぶ</div>
+    <ul class="cdu">
+      <li><span class="cdlist"><code class="cdc">1319702Q3010</code><code
+        class="cdc">Q3037</code><code class="cdc">Q3045</code><code
+        class="cdc">Q3061</code><code class="cdc">Q3088</code><code
+        class="cdc">Q5021</code></span>
+        <span class="cdmore">の6品目のみ</span></li>
+      <li class="cdng">持続性でない <b>チモプトール点眼液０．２５％</b> は含まれない</li>
+    </ul>
+  </div>
 
   <p>実測では一般名<b>1,433件</b>（現行版1,257件＋過去の版から176件）、
   9桁の索引1,386件・例外の12桁索引150件で、
@@ -376,9 +415,9 @@ YJコードごとに前回と比較
     <div class="flow"><pre>同じ一般名コードがある  → 新しい版で上書き
 新しい版に無い記載      → そのまま残す（「旧版」と表示）
 
-  R7.12.5版 1,381件 ─┐
-  R8.6.12版 1,230件 ─┼─→ 統合 1,433件
-  バイオ版     27件 ─┘     （うち現行版に無いもの 176件）</pre></div>
+  R7.12.5版 1,381件
+  R8.6.12版 1,230件   →  統合 1,433件
+  バイオ版     27件       （うち現行版に無いもの 176件）</pre></div>
     <p style="margin-bottom:0">過去分のリンクはいずれページから消えるため、
     前回の <code>ippanmei.json</code> も統合の材料にしています。
     一度取り込んだ記載は以後も残ります。</p>
