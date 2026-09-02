@@ -485,6 +485,34 @@ def _scope_css(css, scope):
     return "".join(out)
 
 
+def resolve_jp_path(path):
+    """日本語ファイル名を、濁点の表し方の違いを越えて見つける。
+
+    macOS はファイル名を NFD（「デ」＝「テ」＋濁点の2文字）で扱うため、
+    Macからアップロードすると、リポジトリにも NFD の名前で登録される。
+    一方このプログラム中の文字列は NFC（「デ」1文字）なので、
+    Linux（GitHub Actions）ではバイト列が一致せず、
+    見た目が同じ名前なのにファイルが見つからない。
+
+    そこで、そのままの名前で見つからなければ、同じフォルダを走査し、
+    正規化して一致するものを採る。どちらの形で置かれていても動く。
+    """
+    if not path:
+        return None
+    if os.path.exists(path):
+        return path
+    folder = os.path.dirname(path) or "."
+    want = unicodedata.normalize("NFC", os.path.basename(path))
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return None
+    for n in names:
+        if unicodedata.normalize("NFC", n) == want:
+            return os.path.join(folder, n)
+    return None
+
+
 def load_datadoc(path, scope="#lgdoc"):
     """「データの成り立ち.html」を凡例へ埋め込める形にして返す。
 
@@ -492,7 +520,8 @@ def load_datadoc(path, scope="#lgdoc"):
     そのまま取り込む（差し替えれば両方に反映される）。
     見つからない場合は None を返し、タブごと出さない。
     """
-    if not path or not os.path.exists(path):
+    path = resolve_jp_path(path)
+    if not path:
         return None
     try:
         src = open(path, encoding="utf-8").read()
