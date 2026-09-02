@@ -34,6 +34,7 @@ SENTEI= os.path.join(HERE, "sentei.json")    # 選定療養（fetch_sentei.py �
 KISO  = os.path.join(HERE, "kiso.json")       # 変更調剤可の基礎的医薬品（fetch_kiso.py が作成）
 PRICES= os.path.join(HERE, "prices.json")     # 薬価（fetch_prices.py が作成。無ければ薬価なしで動く）
 IPPAN = os.path.join(HERE, "ippanmei.json")   # 一般名処方マスタ（fetch_ippanmei.py が作成）
+DOC   = os.path.join(HERE, "データの成り立ち.html")  # 凡例の2つ目のタブに埋め込む資料
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
 
 def log(m): print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
@@ -142,7 +143,8 @@ def rebuild_only():
                          prev_snapshot=prev, snapshot_out=None, snapshot_path=SNAP,
                          keep_chg=_load_keep_chg(),
                          prices_path=PRICES, kiso_path=KISO, disc_path=DISC,
-                         sentei_path=SENTEI, ippanmei_path=IPPAN)
+                         sentei_path=SENTEI, ippanmei_path=IPPAN,
+                         datadoc_path=DOC)
     log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
     return 0
 
@@ -235,7 +237,7 @@ def main():
                              keep_chg=keep,
                              prices_path=PRICES, kiso_path=KISO,
                              disc_path=DISC, sentei_path=SENTEI,
-                             ippanmei_path=IPPAN)
+                             ippanmei_path=IPPAN, datadoc_path=DOC)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = now_jst().isoformat(timespec="seconds")

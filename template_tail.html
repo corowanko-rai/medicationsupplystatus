@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-01-v21';
+const TPL_VER='2026-09-02-v23';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2460,9 +2460,48 @@ document.getElementById('rvx').addEventListener('click',closeRv);
 
   document.getElementById('lgbody').innerHTML=h;
 })();
-function openLg(){
+/* ---------- 凡例の2枚を切り替える ----------
+   1枚目＝バッジと表示の意味（この画面で組み立てている）
+   2枚目＝データの成り立ち（資料のHTMLを生成時に取り込んでいる）
+   資料が無い版では2枚目のタブごと隠し、1枚目だけを出す。 */
+const HASDOC = !!DATA.doc && !!document.querySelector('#lgdoc section');
+let lgPage='badge';
+function setLgPage(p){
+  if(p==='doc' && !HASDOC) p='badge';
+  lgPage=p;
+  document.getElementById('lgbody').classList.toggle('off', p!=='badge');
+  document.getElementById('lgdoc').classList.toggle('on', p==='doc');
+  document.querySelectorAll('#lgtabs .lgtb').forEach(b=>
+    b.setAttribute('aria-selected', b.dataset.p===p));
+  const el=document.getElementById(p==='doc'?'lgdoc':'lgbody');
+  el.scrollTop=0;
+}
+document.getElementById('lgtabs').addEventListener('click',e=>{
+  const b=e.target.closest('.lgtb'); if(!b) return;
+  setLgPage(b.dataset.p);
+});
+/* 資料の中の4つの見出し（区分の関係／出典の対応／結合の仕組み／計算の根拠）。
+   資料側のスクリプトは取り込み時に外してあるので、ここで動かす。 */
+(function(){
+  if(!HASDOC) return;
+  const tabs=[...document.querySelectorAll('#lgdoc .tab')];
+  const secs=[...document.querySelectorAll('#lgdoc section')];
+  tabs.forEach(t=>t.addEventListener('click',()=>{
+    const k=t.dataset.t;
+    tabs.forEach(x=>x.setAttribute('aria-selected', x===t));
+    secs.forEach(el=>el.classList.toggle('on', el.id===k));
+    document.getElementById('lgdoc').scrollTop=0;
+  }));
+})();
+if(!HASDOC){
+  const b=document.querySelector('#lgtabs .lgtb[data-p="doc"]');
+  if(b) b.style.display='none';
+  document.getElementById('lgtabs').style.display='none';
+}
+
+function openLg(page){
   document.getElementById('lg').classList.add('on');
-  document.getElementById('lgbody').scrollTop=0;
+  setLgPage(typeof page==='string' ? page : lgPage);
   document.body.style.overflow='hidden';
 }
 function closeLg(){

@@ -18,7 +18,10 @@
 html,body{margin:0;padding:0}
 body{
   background:var(--bg); color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;
+  /* 日本語（かな・カナ・漢字）を確実に日本語字形で出すための順序。
+     Noto Sans CJK JP を generic の前に置くのは、端末の言語設定によって
+     sans-serif が中国語・韓国語のCJKフォントへ落ちるのを避けるため。 */
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo","Noto Sans CJK JP","Noto Sans JP",sans-serif;
   font-size:15px; line-height:1.6; overscroll-behavior-y:none;
 }
 /* ---------- Header ---------- */
@@ -339,7 +342,7 @@ header{
 .gss{font-weight:800;padding:2px 7px;border-radius:5px;background:#fdecec;color:#b23c3c}
 .gsnone{font-weight:700;padding:2px 7px;border-radius:5px;
   background:var(--surface2);color:var(--ink3)}
-.gcode{font-size:11px;color:var(--ink3);font-family:ui-monospace,monospace}
+.gcode{font-size:11px;color:var(--ink3);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP","BIZ UDGothic",monospace}
 .gwarn{margin-top:8px;padding:8px 10px;border-radius:9px;background:#fdf6e8;
   border:1px solid #ecd9a8;color:#7a5a17;font-size:11.5px;line-height:1.7}
 .gyen{font-size:11px;color:var(--ink3);margin-left:auto;white-space:nowrap}
@@ -546,6 +549,26 @@ header{
 #lg.on{display:flex}
 .lgb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:4px 14px calc(env(safe-area-inset-bottom) + 30px)}
+/* 凡例の2枚（バッジの説明／データの成り立ち）を切り替える */
+.lgtabs{display:flex;gap:5px;padding:0 14px 8px;flex:0 0 auto}
+.lgtb{flex:1;min-height:42px;border-radius:9px;font-size:13px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit;white-space:nowrap}
+.lgtb[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+#lgdoc{display:none}
+#lgdoc.on{display:block}
+#lgbody.off{display:none}
+/*__DOCCSS__*/
+/* ここから下は、取り込んだ資料の見た目を凡例に合わせる調整。
+   資料側のCSSより後ろに置かないと、同じ強さの指定に負けてしまう。 */
+#lgdoc main{padding:0}
+#lgdoc section{margin:0}
+/* 資料の4つの切り替えは、単体表示だと横スクロールで4つ目が隠れる。
+   凡例の中では画面幅に収める（隠れたタブは押されないため）。 */
+#lgdoc .tabs{gap:4px;overflow-x:visible;margin-bottom:10px}
+#lgdoc .tab{flex:1 1 0;min-width:0;padding:6px 3px;font-size:12px;
+  letter-spacing:-.03em;white-space:nowrap}
+@media (max-width:340px){ #lgdoc .tab{font-size:10.5px} }
 .lgsec{font-size:12px;font-weight:800;color:var(--ink3);padding:16px 0 7px;
   border-bottom:1px solid var(--line);margin-bottom:9px}
 .lgrow{display:flex;gap:11px;align-items:flex-start;padding:6px 0}
@@ -1000,10 +1023,15 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 </div>
 <div id="lg" role="dialog" aria-modal="true" aria-labelledby="lgt">
   <div class="ovh">
-    <h2 id="lgt">バッジと表示の意味</h2>
+    <h2 id="lgt">このページについて</h2>
     <button id="lgx" aria-label="閉じる">×</button>
   </div>
+  <div class="lgtabs" id="lgtabs" role="tablist">
+    <button class="lgtb" data-p="badge" role="tab" aria-selected="true">バッジと表示</button>
+    <button class="lgtb" data-p="doc" role="tab" aria-selected="false">データの成り立ち</button>
+  </div>
   <div class="lgb" id="lgbody"></div>
+  <div class="lgb" id="lgdoc"><!--__DOCHTML__--></div>
 </div>
 <div id="ov" role="dialog" aria-modal="true" aria-labelledby="ovt">
   <div class="ovh">

@@ -421,6 +421,106 @@ def load_kiso(path):
     return None
 
 
+def _scope_css(css, scope):
+    """スタイルの全セレクタを scope の下に閉じ込める。
+
+    「データの成り立ち.html」は単体で開く前提の資料なので、
+    body・p・table・.card といった広いセレクタを使っている。
+    そのままページへ入れるとアプリ側の見た目を壊すため、
+    すべて "#lgdoc ..." に書き換えてから入れる。
+    """
+    out, i, n = [], 0, len(css)
+    while i < n:
+        # 規則の切れ目には改行や空白が入るので、先に読み飛ばす。
+        # ここを飛ばさないと @media が普通のセレクタとして扱われてしまう。
+        while i < n and css[i] in " \t\r\n":
+            i += 1
+        if i >= n:
+            break
+        # @media などのブロックは、中身を再帰的に処理する
+        if css[i] == "@":
+            j = css.find("{", i)
+            if j < 0:
+                out.append(css[i:])
+                break
+            at = css[i:j].strip()
+            depth, k = 1, j + 1
+            while k < n and depth:
+                if css[k] == "{":
+                    depth += 1
+                elif css[k] == "}":
+                    depth -= 1
+                k += 1
+            inner = css[j + 1:k - 1]
+            if at.lower().startswith(("@media", "@supports")):
+                out.append(f"{at}{{{_scope_css(inner, scope)}}}")
+            else:
+                out.append(css[i:k])       # @font-face などはそのまま
+            i = k
+            continue
+        j = css.find("{", i)
+        if j < 0:
+            break
+        sel = css[i:j].strip()
+        k = css.find("}", j)
+        if k < 0:
+            break
+        body = css[j + 1:k]
+        if not sel:
+            i = k + 1
+            continue
+        parts = []
+        for one in sel.split(","):
+            one = one.strip()
+            if not one:
+                continue
+            if one in (":root", "html", "body"):
+                parts.append(scope)          # 資料の土台は入れ物そのもの
+            elif one == "*":
+                parts.append(f"{scope} *")
+            else:
+                parts.append(f"{scope} {one}")
+        out.append(f"{','.join(parts)}{{{body}}}")
+        i = k + 1
+    return "".join(out)
+
+
+def load_datadoc(path, scope="#lgdoc"):
+    """「データの成り立ち.html」を凡例へ埋め込める形にして返す。
+
+    資料とページで説明が食い違わないよう、資料のファイルを
+    そのまま取り込む（差し替えれば両方に反映される）。
+    見つからない場合は None を返し、タブごと出さない。
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        src = open(path, encoding="utf-8").read()
+    except Exception:
+        return None
+    m = re.search(r"<style[^>]*>(.*?)</style>", src, re.S)
+    css = _scope_css(m.group(1), scope) if m else ""
+    m = re.search(r"<body[^>]*>(.*?)</body>", src, re.S)
+    if not m:
+        return None
+    html = m.group(1)
+    html = re.sub(r"<script.*?</script>", "", html, flags=re.S)  # 動作は本体側で持つ
+    # 表題は凡例のタブ名と重複するので外す。ただし header の中にある
+    # 4つの切り替えボタン（区分の関係／出典の対応／…）は残す必要がある。
+    def _header(mo):
+        tabs = re.search(r'<div class="tabs".*?</div>', mo.group(0), re.S)
+        return tabs.group(0) if tabs else ""
+    html = re.sub(r"<header.*?</header>", _header, html, flags=re.S)
+    # 資料側の id（venn/map/join/calc）はページ側の id と衝突する
+    # （calc は「計算」タブと同名）。同じ id が2つあると、
+    # ページ側の動作が壊れるので接頭辞を付けて避ける。
+    html = re.sub(r'(<section[^>]*\bid=")(\w+)"', r'\1doc-\2"', html)
+    html = re.sub(r'(\bdata-t=")(\w+)"', r'\1doc-\2"', html)
+    if "<section" not in html:
+        return None
+    return {"css": css, "html": html.strip()}
+
+
 def load_ippanmei(path):
     """ippanmei.json（一般名処方マスタ）を読む。無ければ一般名なしで続行する。"""
     if not path or not os.path.exists(path):
@@ -507,7 +607,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
           prices_path=None, keep_chg=None,
           kiso_path=None, disc_path=None, sentei_path=None,
-          ippanmei_path=None):
+          ippanmei_path=None, datadoc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
@@ -1059,6 +1159,17 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
 
     head = open(TEMPLATE_HEAD, encoding="utf-8").read()
     tail = open(TEMPLATE_TAIL, encoding="utf-8").read()
+
+    # 「データの成り立ち」を凡例の2つ目のタブとして埋め込む。
+    # 資料の側を直せばページにも反映されるので、説明が二重管理にならない。
+    doc = load_datadoc(datadoc_path)
+    head = head.replace("/*__DOCCSS__*/", doc["css"] if doc else "")
+    head = head.replace("<!--__DOCHTML__-->", doc["html"] if doc else "")
+    data["doc"] = bool(doc)
+    if doc:
+        print(f"  データの成り立ち: 取り込みました（{len(doc['html']):,}字）")
+    else:
+        print("  データの成り立ち: 見つからないため、凡例のタブは出しません")
 
     # JSONを <script> 内に埋め込むため、HTMLとして解釈されうる文字列を無害化する。
     # 特に "</script>" が本文（薬剤名・包装名など）に含まれると

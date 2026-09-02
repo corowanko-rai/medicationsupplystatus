@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>データの成り立ち｜医薬品供給状況 検索</title>
+<style>
+:root{
+  --bg:#f7f9fb;--surface:#ffffff;--surface2:#eef2f7;--line:#dde5ee;
+  --ink:#16202b;--ink2:#4d6070;--ink3:#7d8fa1;
+  --accent:#0a68b0;--ok:#0a6b40;--warn:#855400;--stop:#b52424;
+  --mhlw:#0a68b0;--price:#0a6b40;--kiso:#5f34ab;--sen:#a85f10;
+  --manual:#2b3947;--calc:#b5651d;--browser:#7d8fa1;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.85;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo","Noto Sans CJK JP","Noto Sans JP",sans-serif;
+  word-break:break-word}
+header{position:sticky;top:0;z-index:60;background:rgba(255,255,255,.96);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 0;
+  box-shadow:0 1px 3px rgba(16,32,48,.05)}
+header h1{font-size:16.5px;margin:0 0 3px;font-weight:800}
+header p{font-size:11.5px;color:var(--ink3);margin:0 0 10px}
+.tabs{display:flex;gap:5px;padding-bottom:10px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;min-height:44px;padding:6px 13px;border-radius:10px;font-size:13px;
+  font-weight:700;background:var(--surface);border:1px solid var(--line);
+  color:var(--ink2);cursor:pointer;font-family:inherit;white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+main{padding:16px 14px calc(env(safe-area-inset-bottom) + 60px);max-width:860px;margin:0 auto}
+section{display:none}section.on{display:block}
+h2{font-size:17px;margin:28px 0 12px;padding-left:11px;border-left:4px solid var(--accent);line-height:1.5}
+h2:first-child{margin-top:2px}
+h3{font-size:14.5px;margin:20px 0 8px;color:var(--ink)}
+p{margin:0 0 13px}
+.lead{color:var(--ink2);font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:14px;margin:0 0 13px;box-shadow:0 1px 2px rgba(16,32,48,.04)}
+.note{border-left:4px solid var(--warn);background:#fdf6e8}
+.warn{border-left:4px solid var(--stop);background:#fdeded}
+.good{border-left:4px solid var(--ok);background:#eaf7f0}
+.card b{color:var(--ink)}
+.card p:last-child{margin-bottom:0}
+.src{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;
+  border-radius:5px;white-space:nowrap;color:#fff}
+.s-mhlw{background:var(--mhlw)}.s-price{background:var(--price)}
+.s-kiso{background:var(--kiso)}.s-sen{background:var(--sen)}
+.s-manual{background:var(--manual)}.s-calc{background:var(--calc)}
+.s-browser{background:var(--browser)}
+.s-gen{background:#5b46a5}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:420px}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface2);font-size:11.5px;color:var(--ink2);white-space:nowrap;
+  position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:14px;margin-bottom:14px;overflow-x:auto}
+.flow pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP","BIZ UDGothic",monospace;
+  font-size:11.5px;line-height:1.75;white-space:pre;color:var(--ink)}
+.venn{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:10px;margin-bottom:14px;text-align:center}
+.venn svg{max-width:100%;height:auto}
+.pcb{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:20px;
+  padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;
+  border:1.5px solid currentColor;white-space:nowrap}
+.pc-sen{color:#0a68b0}.pc-kou{color:#c2185b}.pc-jun{color:#00838f}
+.pc-cho{color:#5f34ab}.pc-hoka{color:#7d8fa1}.pc-mi{color:#855400}
+.b-kb{display:inline-flex;align-items:center;height:20px;padding:0 5px;border-radius:5px;
+  font-size:11px;font-weight:800;background:#e8f1e9;color:#2f6b3a;border:1.5px solid #2f6b3a}
+.b-kc{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:5px;
+  font-size:11px;font-weight:800;background:#5f34ab;color:#fff}
+.b-sen{display:inline-flex;align-items:center;height:20px;padding:0 5px;border-radius:5px;
+  font-size:11px;font-weight:800;background:#fdf0e3;color:#a85f10;border:1.5px solid #a85f10}
+.b-cm{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:5px;
+  font-size:11px;font-weight:800;background:#e8f0fb;color:#2a5599;border:1.5px solid #2a5599}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.small{font-size:12px;color:var(--ink3)}
+ul{margin:0 0 13px;padding-left:22px}
+li{margin-bottom:5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>データの成り立ち</h1>
+  <p>医薬品供給状況 検索システム ／ 2026年9月時点</p>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-t="venn" aria-selected="true">区分の関係</button>
+    <button class="tab" role="tab" data-t="map" aria-selected="false">出典の対応</button>
+    <button class="tab" role="tab" data-t="join" aria-selected="false">結合の仕組み</button>
+    <button class="tab" role="tab" data-t="calc" aria-selected="false">計算の根拠</button>
+  </div>
+</header>
+<main>
+
+<!-- ============ 区分の関係 ============ -->
+<section id="venn" class="on">
+  <h2>区分どうしの関係</h2>
+  <p class="lead">全16,393品目（2026年9月1日版）での実測値です。</p>
+
+  <h3>1. 製品区分は互いに重ならない</h3>
+  <p>6つの区分は、<b>1品目につき必ず1つだけ</b>が割り当てられ、合計すると全品目になります。</p>
+  <div class="tw"><table>
+    <tr><th>製品区分</th><th class="n">品目数</th><th class="n">割合</th><th>バッジ</th></tr>
+    <tr><td>後発品</td><td class="n">7,239</td><td class="n">44.2%</td><td><span class="pcb pc-kou">後</span></td></tr>
+    <tr><td>その他医薬品</td><td class="n">4,073</td><td class="n">24.8%</td><td><span class="pcb pc-hoka">他</span></td></tr>
+    <tr><td>先発品</td><td class="n">2,903</td><td class="n">17.7%</td><td><span class="pcb pc-sen">先</span></td></tr>
+    <tr><td>長期収載品</td><td class="n">1,254</td><td class="n">7.6%</td><td><span class="pcb pc-cho">長期</span></td></tr>
+    <tr><td>未収載医薬品</td><td class="n">824</td><td class="n">5.0%</td><td><span class="pcb pc-mi">未</span></td></tr>
+    <tr><td>準先発品</td><td class="n">100</td><td class="n">0.6%</td><td><span class="pcb pc-jun">準先</span></td></tr>
+    <tr><td><b>合計</b></td><td class="n"><b>16,393</b></td><td class="n">100%</td><td></td></tr>
+  </table></div>
+
+  <h3>2. 局方品・基礎的医薬品は製品区分と独立</h3>
+  <p>この2つは製品区分の<b>上に重なる属性</b>で、どの区分の薬にも付きえます。</p>
+  <div class="venn">
+    <svg viewBox="0 0 620 400" role="img" aria-label="局方品と基礎的医薬品の重なり">
+      <ellipse cx="240" cy="200" rx="175" ry="130" fill="#0a68b0" fill-opacity=".14" stroke="#0a68b0" stroke-width="2"/>
+      <ellipse cx="390" cy="200" rx="150" ry="115" fill="#0a6b40" fill-opacity=".14" stroke="#0a6b40" stroke-width="2"/>
+      <text x="150" y="90" font-size="15" font-weight="800" fill="#0a68b0">局方品</text>
+      <text x="150" y="112" font-size="14" fill="#0a68b0">4,383</text>
+      <text x="470" y="90" font-size="15" font-weight="800" fill="#0a6b40">基礎的医薬品</text>
+      <text x="470" y="112" font-size="14" fill="#0a6b40">2,267</text>
+      <text x="150" y="205" font-size="19" font-weight="800" fill="#16202b">3,059</text>
+      <text x="150" y="228" font-size="11.5" fill="#4d6070">局方のみ</text>
+      <text x="292" y="205" font-size="19" font-weight="800" fill="#16202b">1,324</text>
+      <text x="288" y="228" font-size="11.5" fill="#4d6070">両方</text>
+      <text x="440" y="205" font-size="19" font-weight="800" fill="#16202b">943</text>
+      <text x="435" y="228" font-size="11.5" fill="#4d6070">基礎的のみ</text>
+      <text x="310" y="368" font-size="12" fill="#7d8fa1" text-anchor="middle">どちらでもない 11,067品目（全16,393中）</text>
+    </svg>
+  </div>
+
+  <h3>3. 「基」と「変更可」は別の制度</h3>
+  <div class="card warn">
+    <p><b>変更調剤の可否は「変更可」バッジだけで判断してください。</b></p>
+    <p style="margin-bottom:0">「基」の有無は関係ありません。厚労省の一覧の正式名称が「後発医薬品と同様に変更調剤が認められる<b>基礎的医薬品等</b>の一覧」で、この<b>「等」に基礎的医薬品でないものが含まれる</b>ためです。</p>
+  </div>
+  <div class="tw"><table>
+    <tr><th>パターン</th><th>バッジ</th><th>意味</th></tr>
+    <tr><td>基のみ</td><td><span class="b-kb">基</span></td><td>基礎的医薬品だが<b>変更調剤は不可</b></td></tr>
+    <tr><td>基＋変更可</td><td><span class="b-kb">基</span> <span class="b-kc">変更可</span></td><td>基礎的医薬品で<b>変更調剤も可</b></td></tr>
+    <tr><td>変更可のみ</td><td><span class="b-kc">変更可</span></td><td>基礎的医薬品ではないが<b>変更調剤は可</b></td></tr>
+  </table></div>
+
+  <h3>4. 選定療養と併売品</h3>
+  <p>後から追加した2つの属性です。いずれも製品区分とは独立しています。</p>
+  <div class="tw"><table>
+    <tr><th>バッジ</th><th class="n">品目数</th><th>意味</th></tr>
+    <tr><td><span class="b-sen">選</span></td><td class="n">776</td>
+        <td>長期収載品の選定療養の対象。長期収載品を中心に、準先発品・先発品・その他医薬品にもまたがります</td></tr>
+    <tr><td><span class="b-cm">併売</span></td><td class="n">280</td>
+        <td>同じ成分・剤形・規格で商品名が異なる薬（ノルバスクとアムロジンなど）</td></tr>
+  </table></div>
+  <p class="small">併売品は61成分・280品目です（内用薬・外用薬の場合。注射薬を含めると68成分）。うち入手可否が分かれるのは8成分で、供給停止時の代替候補を探すのに使えます。</p>
+</section>
+
+<!-- ============ 出典の対応 ============ -->
+<section id="map">
+  <h2>どの表示が、どこから来ているか</h2>
+
+  <div class="card">
+    <p><b>出典の記号</b></p>
+    <p style="margin-bottom:0">
+      <span class="src s-mhlw">供給</span> 医療用医薬品供給状況（厚労省・毎日確認）<br>
+      <span class="src s-price">薬価</span> 薬価基準収載品目リスト（厚労省・毎日確認）<br>
+      <span class="src s-kiso">基礎</span> 変更調剤が認められる基礎的医薬品等（厚労省・毎日確認）<br>
+      <span class="src s-sen">選定</span> 選定療養の対象医薬品リスト（厚労省・毎日確認）<br>
+      <span class="src s-gen">一般</span> 一般名処方マスタ（厚労省・毎日確認）<br>
+      <span class="src s-manual">手動</span> discontinued.txt（利用者が登録）<br>
+      <span class="src s-calc">計算</span> 生成時に算出（複数データの突合・前回との比較）<br>
+      <span class="src s-browser">端末</span> 閲覧時にブラウザで計算
+    </p>
+  </div>
+
+  <h3>単一データから直接出る項目</h3>
+  <div class="tw"><table>
+    <tr><th>表示</th><th>出典</th><th>元の項目</th></tr>
+    <tr><td>薬剤名／規格／製造販売業者</td><td><span class="src s-mhlw">供給</span></td><td>⑥④⑦</td></tr>
+    <tr><td>供給状況（通常／限定／停止）</td><td><span class="src s-mhlw">供給</span></td><td>⑫出荷対応の状況</td></tr>
+    <tr><td>剤形タグ（内用／外用／注射）</td><td><span class="src s-mhlw">供給</span></td><td>①薬剤区分</td></tr>
+    <tr><td>製品区分バッジ</td><td><span class="src s-mhlw">供給</span></td><td>⑧製品区分</td></tr>
+    <tr><td>基バッジ</td><td><span class="src s-mhlw">供給</span></td><td>⑨基礎的医薬品</td></tr>
+    <tr><td>成分名／薬効分類／YJコード</td><td><span class="src s-mhlw">供給</span></td><td>③②⑤</td></tr>
+    <tr><td>理由／解除見込／備考／出荷量</td><td><span class="src s-mhlw">供給</span></td><td>⑭⑮⑯⑰</td></tr>
+  </table></div>
+
+  <h3>複数のデータを突合している項目</h3>
+  <div class="tw"><table>
+    <tr><th>表示</th><th>出典</th><th>結び方</th></tr>
+    <tr><td>薬価</td><td><span class="src s-price">薬価</span></td><td>YJコードで結合（2段階／後述）</td></tr>
+    <tr><td>局バッジ</td><td><span class="src s-price">薬価</span></td><td>同上。「局」欄の有無</td></tr>
+    <tr><td>経過措置期限</td><td><span class="src s-price">薬価</span></td><td>YJコード完全一致のみ</td></tr>
+    <tr><td>変更可バッジ</td><td><span class="src s-kiso">基礎</span></td><td><b>薬剤名</b>で結合（コードが無いため）</td></tr>
+    <tr><td>選バッジ／差額分・選定療養時の薬価</td><td><span class="src s-sen">選定</span></td><td>薬価基準収載医薬品コードで完全一致</td></tr>
+    <tr><td>販売中止バッジ</td><td><span class="src s-manual">手動</span></td><td>薬剤名→YJコードに変換して結合</td></tr>
+    <tr><td>【般】一般名処方で検索／調剤可能な品名</td><td><span class="src s-gen">一般</span></td><td>一般名コード（YJ先頭9桁＋例外は12桁）で結合</td></tr>
+    <tr><td>併売バッジ／併売品の一覧</td><td><span class="src s-calc">計算</span></td><td>YJ先頭9桁＋製品区分＋商品名で判定</td></tr>
+    <tr><td>悪化／改善</td><td><span class="src s-calc">計算</span></td><td>前回版の供給状況と比較</td></tr>
+    <tr><td>剤形（詳細）</td><td><span class="src s-calc">計算</span></td><td>品名＋YJコード8桁目から判定</td></tr>
+    <tr><td>「後発品が高い」一覧</td><td><span class="src s-calc">計算</span></td><td>YJ先頭9桁で群化し薬価を比較</td></tr>
+    <tr><td>お知らせ掲示板／推移グラフ</td><td><span class="src s-calc">計算</span></td><td>過去の版の履歴から算出</td></tr>
+  </table></div>
+
+  <h3>閲覧時にブラウザで計算する項目</h3>
+  <div class="tw"><table>
+    <tr><th>表示</th><th>内容</th></tr>
+    <tr><td>「◯日前の版」</td><td>供給データの日付と端末の今日の差</td></tr>
+    <tr><td>経過措置の残り日数・色</td><td>期限と端末の今日の差</td></tr>
+    <tr><td>後発品との差額（カード内）</td><td>点数換算を含む正確な計算（計算タブと同じ）</td></tr>
+    <tr><td>「計算」タブの金額</td><td>入力内容から点数を算出</td></tr>
+    <tr><td>フィルターの並び順</td><td>端末に保存され、次回も同じ並びになります</td></tr>
+  </table></div>
+  <p class="small">上の2つは端末の日付で毎回計算するため、ページを作り直さなくても日数が進みます。端末の日付がずれていると表示もずれます。</p>
+
+  <h3>外部に委ねている項目</h3>
+  <div class="card good">
+    <p style="margin-bottom:0"><b>添付文書・IF・RMP のボタン</b>は、YJコードからPMDAのURLを組み立てているだけで、<b>内容は一切保持していません</b>。最新版の判定はPMDA側が行うため、改訂があっても自動的に最新が開きます。</p>
+  </div>
+</section>
+
+<!-- ============ 結合の仕組み ============ -->
+<section id="join">
+  <h2>データの流れ</h2>
+  <div class="flow"><pre>【毎朝7時・自動】
+
+  厚労省                        このシステム
+  ──────────────                ──────────────────────
+  供給状況Excel      ──┐
+  (16,393品目)         │
+                       ├─→  ハッシュ比較 ─→ 変化があれば取得
+  薬価リスト×3        │        │
+  基礎的リスト        │        ↓
+  選定療養リスト       │     コードや名前で突合
+  一般名処方マスタ   ──┘        │
+                                │
+                                ↓
+                            前回版と比較（悪化/改善・履歴の蓄積）
+  discontinued.txt ─────────────→ │
+  (手動登録)                      ↓
+                            HTMLを生成 → GitHub Pages で公開</pre></div>
+
+  <h2>結合キーの使い分け</h2>
+
+  <h3>① 薬価・局方 ── YJコードの2段階照合</h3>
+  <p>12桁の完全一致だけでは<b>3分の2しか当たりません</b>。統一名収載品は薬価リスト側でコードの下3桁が異なるためです。</p>
+  <div class="flow"><pre>2233002Q1108 ──①──→ 2233002Q1108   完全一致 … 65.5%
+2233002Q1108 ──②──→ 2233002Q1019   先頭9桁で一致 … +29.3%
+ └ 先頭9桁 ─────────┘（統一名収載品）
+
+合計 94.8%（残り5.2%＝852品目のうち824品目は
+未収載医薬品で、そもそも薬価が存在しない）
+未収載医薬品を除いた突合率は 99.8%</pre></div>
+  <div class="card note">
+    <p style="margin-bottom:0"><b>経過措置期限だけは①のみ</b>です。期限は品目ごとに個別設定されるため、統一名から継承すると誤りになります。</p>
+  </div>
+
+  <h3>② 変更調剤可 ── 薬剤名での照合</h3>
+  <div class="card warn">
+    <p style="margin-bottom:0">厚労省の変更調剤可リストには<b>コードが一切入っていません</b>。そのため<b>薬剤名の完全一致</b>で突合しています。全角・半角やカギ括弧は吸収しますが、コード照合より脆い点にご留意ください。</p>
+  </div>
+
+  <h3>③ 選定療養 ── コードで完全一致</h3>
+  <p>対象医薬品リストには薬価基準収載医薬品コード（＝YJコード）があるため、<b>照合率100%</b>です。適用開始日は「※令和8年6月1日から」という記載を読み取り、<b>今日すでに始まっているもののうち最新版</b>を選びます。将来分が先に公表されても、開始日が来るまでは採用しません。</p>
+
+  <h3>④ 併売品 ── 3つの条件の組み合わせ</h3>
+  <p>YJコードの先頭9桁は「薬効分類＋成分＋剤形＋規格」を表します。ただし<b>これだけでは後発品も同じ9桁を共有する</b>ため、条件を重ねています。</p>
+  <div class="flow"><pre>条件1  YJ先頭9桁が一致                  … 中身が同じ
+条件2  先発品・準先発品・長期収載品に限る … 後発品を除く
+条件3  商品名の語幹が異なる              … 規格違いを除く
+
+例）2171022F1
+    ノルバスク錠2.5mg（長期収載品）┐
+    アムロジン錠2.5mg（長期収載品）┘ ← 併売品
+    アムロジピン錠2.5mg「〇〇」×21件（後発品）← 条件2で除外</pre></div>
+  <div class="card note">
+    <p style="margin-bottom:0"><b>条件3は文字列の比較</b>です。剤形を表す語（錠・カプセル・パップ等）の前までを商品名とみなしています。まれに取りこぼしや誤りが生じる可能性があります。</p>
+  </div>
+
+  <h3>⑤ 悪化／改善と履歴</h3>
+  <div class="flow"><pre>取得のたびに、状態が変わった日だけを記録
+  ↓
+YJコードごとに前回と比較
+  通常出荷(0) → 限定出荷(1) → 供給停止(2)
+  数値が上がった＝悪化 ／ 下がった＝改善
+  ↓
+この履歴から、お知らせ掲示板と推移グラフを作る</pre></div>
+  <p class="small">初回導入時は比較対象が無いため0件です。2回目の更新以降に機能します。</p>
+
+  <h3>⑥ 「後発品が高い」 ── 群化してから比較</h3>
+  <div class="flow"><pre>YJ先頭9桁で群化
+  ↓
+先発品・長期収載品の最安 と 後発品の最安 を比較
+  ↓
+先発 ≦ 後発の最安 のとき該当（後発に変えても安くならない）</pre></div>
+
+  <hr>
+  <h3>⑦ 一般名処方 ── 上9桁＋ZZZ、例外だけ12桁</h3>
+  <p>一般名コードは<b>薬価基準収載医薬品コードの上9桁に「ZZZ」を付けた12桁</b>です。
+  つまり上9桁が共通する医薬品が、その一般名処方で調剤できる範囲になります。</p>
+  <div class="flow"><pre>【般】エスタゾラム錠２ｍｇ = 1124001F2ZZZ
+                             └───┬───┘
+                            この9桁が一致する品目を集める
+                                 ↓
+        ユーロジン錠２ｍｇ … 1124001F2039
+        エスタゾラム錠２ｍｇ「アメル」… 1124001F2071  …など</pre></div>
+
+  <div class="card note">
+    <p><b>例外コードがある点に注意</b></p>
+    <p style="margin-bottom:0">上9桁では区別できない品目については、厚労省が
+    <b>9桁目をアルファベットに置き換えた「例外コード」</b>を割り当て、
+    マスタに<b>対照表</b>を添付しています。放出制御型製剤などがこれにあたり、
+    ここを取り違えると<b>持続時間の違う薬を調剤してしまいます</b>。
+    そのため例外コードは<b>12桁の完全一致</b>で結び、上9桁の照合より先に引いています。</p>
+  </div>
+
+  <div class="flow"><pre>【般】チモロール点眼液０．２５％（持続性） = 1319702QAZZZ
+                                              └┬┘
+                                   9桁目がA（例外コード）
+      → 上9桁では当たらないので、対照表の12桁で結ぶ
+        1319702Q3010 / Q3037 / Q3045 / Q3061 / Q3088 / Q5021 の6品目のみ
+      → 持続性でない チモプトール点眼液０．２５％ は含まれない</pre></div>
+
+  <p>実測では一般名<b>1,433件</b>（現行版1,257件＋過去の版から176件）、
+  9桁の索引1,386件・例外の12桁索引150件で、
+  <b>両者の衝突はありません</b>。供給状況データ側では6,852品目に一般名が付き、
+  品目が1件以上ある一般名は1,412件です。</p>
+
+  <div class="card">
+    <p style="margin-bottom:0"><b>言い換えについて</b>：マスタの記載は「口腔内崩壊錠」ですが、
+    画面では<b>「OD錠」でも引けるように</b>しています。表記の違いだけで
+    「収載されていない」と誤解されるのを防ぐためです。</p>
+  </div>
+
+  <div class="card note">
+    <p><b>版をまたいで積み上げています</b></p>
+    <p>マスタは改訂のたびに品目が入れ替わり、<b>減ることもあります</b>。
+    実測では R7.12.5版の1,381件が R8.6.12版では1,230件になっており、
+    【般】アムロジピン錠２．５ｍｇ・５ｍｇなどが現行版から外れています。</p>
+    <div class="flow"><pre>同じ一般名コードがある  → 新しい版で上書き
+新しい版に無い記載      → そのまま残す（「旧版」と表示）
+
+  R7.12.5版 1,381件 ─┐
+  R8.6.12版 1,230件 ─┼─→ 統合 1,433件
+  バイオ版     27件 ─┘     （うち現行版に無いもの 176件）</pre></div>
+    <p style="margin-bottom:0">過去分のリンクはいずれページから消えるため、
+    前回の <code>ippanmei.json</code> も統合の材料にしています。
+    一度取り込んだ記載は以後も残ります。</p>
+  </div>
+
+  <div class="card warn">
+    <p style="margin-bottom:0"><b>「旧版」の意味にご注意ください。</b>
+    マスタから外れたということは、その記載が
+    <b>一般名処方加算の対象ではなくなった</b>ことを意味します。
+    調剤できる品目の目安として残していますが、
+    <b>加算の可否は現行のマスタでご確認ください</b>。
+    絞り込みのチェックを外すと現行版だけになります。</p>
+  </div>
+
+  <h2>このシステムの限界</h2>
+  <div class="card">
+    <p><b>データの正確性は厚労省の公表内容に依存します。</b>公表データを整形・突合して表示するもので、独自の判断は加えていません。</p>
+    <p>ただし次の項目は<b>推定や近似を含みます</b>。</p>
+    <ul style="margin-bottom:0">
+      <li><b>剤形（詳細）</b> … 品名とYJコードからの判定。未収載品の一部は「その他」になります</li>
+      <li><b>変更可</b> … 薬剤名での突合のため、表記が変わると外れる可能性があります</li>
+      <li><b>併売品</b> … 商品名の文字列比較を含みます</li>
+      <li><b>販売中止</b> … 手動登録。登録漏れや包装単位の取りこぼしが生じえます</li>
+      <li><b>一般名処方</b> … 一般名処方加算の対象品目についての標準的な記載であり、一般名処方の可否や記載方法を定めるものではありません。マスタに無い記載で処方されることもあります</li>
+    </ul>
+  </div>
+  <div class="card warn">
+    <p style="margin-bottom:0">処方判断など正式な用途では、必ず<b>厚労省の原本およびPMDAの電子添文</b>をご確認ください。</p>
+  </div>
+</section>
+
+<!-- ============ 計算の根拠 ============ -->
+<section id="calc">
+  <h2>選定療養の計算根拠</h2>
+  <p class="lead">「計算」タブの金額は、厚労省の事務連絡に沿って算出しています。</p>
+
+  <div class="card good">
+    <p style="margin-bottom:0"><b>根拠</b>：厚生労働省「長期収載品の処方等又は調剤に係る選定療養における費用の計算方法について」（令和8年3月27日 事務連絡）</p>
+  </div>
+
+  <h3>1. 3つの金額の関係</h3>
+  <div class="flow"><pre>① 差額分の薬価     = （薬価 − 後発医薬品最高価格）÷ 2
+② 選定療養時の薬価 = 薬価 − 差額分の薬価
+
+例）ヒルドイドソフト軟膏0.3%（1gあたり）
+   ① (17.7 − 6.3) ÷ 2 = 5.7円
+   ② 17.7 − 5.7 = 12円</pre></div>
+  <div class="card note">
+    <p style="margin-bottom:0"><b>2026年6月1日から「4分の1」→「2分の1」に引き上げられました。</b>解説記事の多くは導入当初（2024年10月）の4分の1のままなのでご注意ください。このシステムは厚労省の対象医薬品リストの値をそのまま使うため、改定があれば自動で追随します。</p>
+  </div>
+
+  <h3>2. 点数への換算</h3>
+  <p>金額はそのまま足すのではなく、<b>薬剤料と同じ方法で点数に換算</b>します。</p>
+  <div class="flow"><pre>所定単位あたりの金額が
+  15円以下      → 1点
+  15円を超える  → 10円で割って五捨五超入
+                 （ちょうど0.5は切り捨て、0.5超で切り上げ）</pre></div>
+  <div class="card warn">
+    <p style="margin-bottom:0"><b>この規則があるため、単純な掛け算とは大きくずれます。</b>差額分1.25円の薬を1日1錠・5日分なら、単純計算では約7円ですが、実際は<b>55円</b>（1点×5日×10円×1.1）です。内服薬は最低でも1日あたり11円が発生します。</p>
+  </div>
+
+  <h3>3. 所定単位は剤形で異なる</h3>
+  <div class="tw"><table>
+    <tr><th>剤形</th><th>所定単位</th><th>計算</th></tr>
+    <tr><td>内服薬</td><td>1剤1日分</td><td>1日量で点数化 → 日数を掛ける</td></tr>
+    <tr><td>外用薬・注射薬</td><td>1調剤</td><td>総量で点数化</td></tr>
+  </table></div>
+  <div class="card good">
+    <p style="margin-bottom:0"><b>薬剤カード内の差額も、同じ計算方法を使っています。</b>内服薬は1日量と日数、外用薬・注射薬は総量を入れると、計算タブと同じ金額が出ます。</p>
+  </div>
+  <div class="card note">
+    <p style="margin-bottom:0">「計算」タブでは、薬を追加すると<b>剤形を自動で判定</b>して入力欄を切り替えます。外用薬を内服薬として日数を掛けてしまう誤りを防ぐためです。内服薬では入力欄の横に合計量が出るので、桁の取り違えにも気づけます。</p>
+  </div>
+
+  <h3>4. 剤（Rp）のまとめ方で金額が変わります</h3>
+  <p>事務連絡には次の定めがあります。</p>
+  <ul>
+    <li><b>同じ剤に複数の長期収載品</b>があるときは、金額を<b>合算してから</b>点数化する</li>
+    <li><b>剤が複数</b>あるときは、剤ごとに点数を出してから合算する</li>
+  </ul>
+  <div class="card warn">
+    <p style="margin-bottom:0">このため、<b>同じ処方箋でも剤の立て方によって金額が変わります。</b>差額分1円の薬を2つ処方した場合（14日分）、別々の剤なら308円、同じ剤なら154円になります。これは端数処理に由来するもので、薬剤料の計算方法そのものの性質です。</p>
+  </div>
+
+  <h3>5. 患者負担の求め方</h3>
+  <div class="flow"><pre>A 特別の料金 ＝ 差額分の点数 × 10円 × 1.1（消費税）
+B 保険対象   ＝ 選定療養時の薬価の点数 × 10円
+C 自己負担   ＝ B × 負担割合（1〜3割）
+
+患者負担の総額 ＝ A ＋ C</pre></div>
+
+  <h3>6. 公式の計算例との照合</h3>
+  <p>事務連絡の計算例（別添2）と突き合わせ、<b>完全に一致すること</b>を確認しています。</p>
+  <div class="tw"><table>
+    <tr><th>項目</th><th class="n">公式</th><th class="n">このシステム</th></tr>
+    <tr><td>1日分の点数（特別／保険）</td><td class="n">5点／15点</td><td class="n">5点／15点</td></tr>
+    <tr><td>A 特別の料金</td><td class="n">1,650円</td><td class="n">1,650円</td></tr>
+    <tr><td>B 保険対象となる費用</td><td class="n">4,500円</td><td class="n">4,500円</td></tr>
+    <tr><td>C 患者自己負担</td><td class="n">1,350円</td><td class="n">1,350円</td></tr>
+    <tr><td>患者負担の総額</td><td class="n">3,000円</td><td class="n">3,000円</td></tr>
+  </table></div>
+  <p class="small">条件：内服薬・1日2錠・30日分・3割負担、差額分25.35円／選定療養時74.65円</p>
+
+  <h3>7. 計算に含まれないもの</h3>
+  <div class="card warn">
+    <p style="margin-bottom:0">
+      <b>薬剤料以外は含みません。</b>調剤技術料・薬学管理料などは計算対象外です。<br>
+      また端数処理の関係で、実際の請求額と数円ずれる場合があります。
+    </p>
+  </div>
+</section>
+
+</main>
+<script>
+const tabs=[...document.querySelectorAll('.tab')];
+const secs={};
+['venn','map','join','calc'].forEach(k=>secs[k]=document.getElementById(k));
+tabs.forEach(t=>t.addEventListener('click',()=>{
+  const k=t.dataset.t;
+  tabs.forEach(x=>x.setAttribute('aria-selected',x===t));
+  Object.entries(secs).forEach(([n,el])=>el.classList.toggle('on',n===k));
+  window.scrollTo({top:0});
+}));
+</script>
+</body>
+</html>
