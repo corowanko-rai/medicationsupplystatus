@@ -170,7 +170,8 @@ jobs:
           # git add に無いファイルを渡すと exit 128 で止まるため、
           # あるものだけを対象にする。
           for f in state.json snapshot.json prices.json kiso.json \
-                   sentei.json ippanmei.json latest.xlsx; do
+                   sentei.json ippanmei.json latest.xlsx \
+                   データの成り立ち_値入り.html; do
             [ -f "$f" ] && git add "$f"
           done
           git diff --staged --quiet || git commit -m "更新: $(date -u +%Y-%m-%d)"
