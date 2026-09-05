@@ -186,19 +186,19 @@ li{margin-bottom:5px}
 <!-- ============ 区分の関係 ============ -->
 <section id="venn" class="on">
   <h2>区分どうしの関係</h2>
-  <p class="lead">全16,393品目（2026年9月1日版）での実測値です。</p>
+  <p class="lead">全{{n_items}}品目（{{as_of_ja}}版）での実測値です。</p>
 
   <h3>1. 製品区分は互いに重ならない</h3>
   <p>6つの区分は、<b>1品目につき必ず1つだけ</b>が割り当てられ、合計すると全品目になります。</p>
   <div class="tw"><table>
     <tr><th>製品区分</th><th class="n">品目数</th><th class="n">割合</th><th>バッジ</th></tr>
-    <tr><td>後発品</td><td class="n">7,239</td><td class="n">44.2%</td><td><span class="pcb pc-kou">後</span></td></tr>
-    <tr><td>その他医薬品</td><td class="n">4,073</td><td class="n">24.8%</td><td><span class="pcb pc-hoka">他</span></td></tr>
-    <tr><td>先発品</td><td class="n">2,903</td><td class="n">17.7%</td><td><span class="pcb pc-sen">先</span></td></tr>
-    <tr><td>長期収載品</td><td class="n">1,254</td><td class="n">7.6%</td><td><span class="pcb pc-cho">長期</span></td></tr>
-    <tr><td>未収載医薬品</td><td class="n">824</td><td class="n">5.0%</td><td><span class="pcb pc-mi">未</span></td></tr>
-    <tr><td>準先発品</td><td class="n">100</td><td class="n">0.6%</td><td><span class="pcb pc-jun">準先</span></td></tr>
-    <tr><td><b>合計</b></td><td class="n"><b>16,393</b></td><td class="n">100%</td><td></td></tr>
+    <tr><td>後発品</td><td class="n">{{pc_後発品}}</td><td class="n">{{pcp_後発品}}</td><td><span class="pcb pc-kou">後</span></td></tr>
+    <tr><td>その他医薬品</td><td class="n">{{pc_その他医薬品}}</td><td class="n">{{pcp_その他医薬品}}</td><td><span class="pcb pc-hoka">他</span></td></tr>
+    <tr><td>先発品</td><td class="n">{{pc_先発品}}</td><td class="n">{{pcp_先発品}}</td><td><span class="pcb pc-sen">先</span></td></tr>
+    <tr><td>長期収載品</td><td class="n">{{pc_長期収載品}}</td><td class="n">{{pcp_長期収載品}}</td><td><span class="pcb pc-cho">長期</span></td></tr>
+    <tr><td>未収載医薬品</td><td class="n">{{pc_未収載医薬品}}</td><td class="n">{{pcp_未収載医薬品}}</td><td><span class="pcb pc-mi">未</span></td></tr>
+    <tr><td>準先発品</td><td class="n">{{pc_準先発品}}</td><td class="n">{{pcp_準先発品}}</td><td><span class="pcb pc-jun">準先</span></td></tr>
+    <tr><td><b>合計</b></td><td class="n"><b>{{n_items}}</b></td><td class="n">100%</td><td></td></tr>
   </table></div>
 
   <h3>2. 局方品・基礎的医薬品は製品区分と独立</h3>
@@ -208,16 +208,16 @@ li{margin-bottom:5px}
       <ellipse cx="240" cy="200" rx="175" ry="130" fill="#0a68b0" fill-opacity=".14" stroke="#0a68b0" stroke-width="2"/>
       <ellipse cx="390" cy="200" rx="150" ry="115" fill="#0a6b40" fill-opacity=".14" stroke="#0a6b40" stroke-width="2"/>
       <text x="150" y="90" font-size="15" font-weight="800" fill="#0a68b0">局方品</text>
-      <text x="150" y="112" font-size="14" fill="#0a68b0">4,383</text>
+      <text x="150" y="112" font-size="14" fill="#0a68b0">{{n_jp}}</text>
       <text x="470" y="90" font-size="15" font-weight="800" fill="#0a6b40">基礎的医薬品</text>
-      <text x="470" y="112" font-size="14" fill="#0a6b40">2,267</text>
-      <text x="150" y="205" font-size="19" font-weight="800" fill="#16202b">3,059</text>
+      <text x="470" y="112" font-size="14" fill="#0a6b40">{{n_kiso}}</text>
+      <text x="150" y="205" font-size="19" font-weight="800" fill="#16202b">{{n_jp_only}}</text>
       <text x="150" y="228" font-size="11.5" fill="#4d6070">局方のみ</text>
-      <text x="292" y="205" font-size="19" font-weight="800" fill="#16202b">1,324</text>
+      <text x="292" y="205" font-size="19" font-weight="800" fill="#16202b">{{n_both}}</text>
       <text x="288" y="228" font-size="11.5" fill="#4d6070">両方</text>
-      <text x="440" y="205" font-size="19" font-weight="800" fill="#16202b">943</text>
+      <text x="440" y="205" font-size="19" font-weight="800" fill="#16202b">{{n_kiso_only}}</text>
       <text x="435" y="228" font-size="11.5" fill="#4d6070">基礎的のみ</text>
-      <text x="310" y="368" font-size="12" fill="#7d8fa1" text-anchor="middle">どちらでもない 11,067品目（全16,393中）</text>
+      <text x="310" y="368" font-size="12" fill="#7d8fa1" text-anchor="middle">どちらでもない {{n_neither}}品目（全{{n_items}}中）</text>
     </svg>
   </div>
 
@@ -237,12 +237,12 @@ li{margin-bottom:5px}
   <p>後から追加した2つの属性です。いずれも製品区分とは独立しています。</p>
   <div class="tw"><table>
     <tr><th>バッジ</th><th class="n">品目数</th><th>意味</th></tr>
-    <tr><td><span class="b-sen">選</span></td><td class="n">776</td>
+    <tr><td><span class="b-sen">選</span></td><td class="n">{{n_sentei}}</td>
         <td>長期収載品の選定療養の対象。長期収載品を中心に、準先発品・先発品・その他医薬品にもまたがります</td></tr>
     <tr><td><span class="b-cm">併売</span></td><td class="n">280</td>
         <td>同じ成分・剤形・規格で商品名が異なる薬（ノルバスクとアムロジンなど）</td></tr>
   </table></div>
-  <p class="small">併売品は61成分・280品目です（内用薬・外用薬の場合。注射薬を含めると68成分）。うち入手可否が分かれるのは8成分で、供給停止時の代替候補を探すのに使えます。</p>
+  <p class="small">併売品は{{cm_ing_io}}成分・{{cm_items}}品目です（内用薬・外用薬の場合。注射薬を含めると{{cm_ing_all}}成分）。うち入手可否が分かれるのは{{cm_split}}成分で、供給停止時の代替候補を探すのに使えます。</p>
 </section>
 
 <!-- ============ 出典の対応 ============ -->
@@ -318,7 +318,7 @@ li{margin-bottom:5px}
     <div class="dfbox dfsrc">
       <div class="dft">厚労省から取得</div>
       <ul class="dfl">
-        <li>供給状況Excel<span class="dfs">16,393品目</span></li>
+        <li>供給状況Excel<span class="dfs">{{n_items}}品目</span></li>
         <li>薬価基準収載品目リスト<span class="dfs">内用・注射・外用</span></li>
         <li>変更調剤が認められる基礎的医薬品等</li>
         <li>選定療養の対象医薬品リスト</li>
@@ -379,15 +379,15 @@ li{margin-bottom:5px}
     <div class="cgh">供給状況のYJコード</div><div class="cgh">薬価リスト側</div>
     <code class="cgc"><b>2233002Q1</b>108</code>
     <code class="cgc"><b>2233002Q1</b>108</code>
-    <div class="cgn">① 12桁が完全一致 …………… 65.5%</div>
+    <div class="cgn">① 12桁が完全一致 …………… {{pr_exact}}</div>
     <code class="cgc"><b>2233002Q1</b>108</code>
     <code class="cgc"><b>2233002Q1</b>019</code>
-    <div class="cgn">② 上9桁で一致（統一名収載品）… ＋29.3%</div>
+    <div class="cgn">② 上9桁で一致（統一名収載品）… ＋{{pr_uni}}</div>
   </div>
 
-  <div class="flow"><pre>合計 94.8%（残り5.2%＝852品目のうち824品目は
+  <div class="flow"><pre>合計 {{pr_total}}（残り{{pr_rest_p}}＝{{pr_rest}}品目のうち{{pr_rest_mishusai}}品目は
 未収載医薬品で、そもそも薬価が存在しない）
-未収載医薬品を除いた突合率は 99.8%</pre></div>
+未収載医薬品を除いた突合率は {{pr_ex}}</pre></div>
   <div class="card note">
     <p style="margin-bottom:0"><b>経過措置期限だけは①のみ</b>です。期限は品目ごとに個別設定されるため、統一名から継承すると誤りになります。</p>
   </div>
@@ -401,7 +401,7 @@ li{margin-bottom:5px}
   <p>対象医薬品リストが持つのは<b>薬価基準収載医薬品コード</b>で、供給状況データの
   <b>YJコード</b>とは本来別のコードです。ただし選定療養の対象は長期収載品で、
   いずれも<b>銘柄別収載</b>（商品名で薬価収載）のため両者の12桁は一致します。
-  実測でも <b>776件すべてが12桁で一致</b>しました。</p>
+  実測でも <b>{{n_sentei}}件すべてが12桁で一致</b>しました。</p>
 
   <div class="card note">
     <p style="margin-bottom:0">この一致は<b>対象が銘柄別収載品だからこそ</b>成り立ちます。
@@ -492,10 +492,10 @@ YJコードごとに前回と比較
     </ul>
   </div>
 
-  <p>実測では一般名<b>1,433件</b>（現行版1,257件＋過去の版から176件）、
-  9桁の索引1,386件・例外の12桁索引150件で、
-  <b>両者の衝突はありません</b>。供給状況データ側では6,852品目に一般名が付き、
-  品目が1件以上ある一般名は1,412件です。</p>
+  <p>実測では一般名<b>{{gen_all}}件</b>（現行版{{gen_cur}}件＋過去の版から{{gen_old}}件）、
+  9桁の索引{{gen_map9}}件・例外の12桁索引{{gen_mapx}}件で、
+  <b>両者の衝突はありません</b>。供給状況データ側では{{gen_matched}}品目に一般名が付き、
+  品目が1件以上ある一般名は{{gen_with_items}}件です。</p>
 
   <div class="card">
     <p style="margin-bottom:0"><b>言い換えについて</b>：マスタの記載は「口腔内崩壊錠」ですが、
@@ -506,14 +506,14 @@ YJコードごとに前回と比較
   <div class="card note">
     <p><b>版をまたいで積み上げています</b></p>
     <p>マスタは改訂のたびに品目が入れ替わり、<b>減ることもあります</b>。
-    実測では R7.12.5版の1,381件が R8.6.12版では1,230件になっており、
+    実測では{{ip_prev_label}}の{{ip_prev_n}}件が{{ip_cur_label}}では{{ip_cur_n}}件になっており、
     【般】アムロジピン錠２．５ｍｇ・５ｍｇなどが現行版から外れています。</p>
     <div class="flow"><pre>同じ一般名コードがある  → 新しい版で上書き
 新しい版に無い記載      → そのまま残す（「旧版」と表示）
 
-  R7.12.5版 1,381件
-  R8.6.12版 1,230件   →  統合 1,433件
-  バイオ版     27件       （うち現行版に無いもの 176件）</pre></div>
+  {{ip_prev_label}} {{ip_prev_n}}件
+  {{ip_cur_label}} {{ip_cur_n}}件   →  統合 {{gen_all}}件
+  バイオ版 {{ip_bs_n}}件       （うち現行版に無いもの {{gen_old}}件）</pre></div>
     <p style="margin-bottom:0">過去分のリンクはいずれページから消えるため、
     前回の <code>ippanmei.json</code> も統合の材料にしています。
     一度取り込んだ記載は以後も残ります。</p>

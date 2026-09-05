@@ -513,6 +513,124 @@ def resolve_jp_path(path):
     return None
 
 
+# 資料「データの成り立ち」に載せる実測値を、生成時に差し込む。
+# 資料は説明文だけを人が書き、数値は機械が入れる。
+# 数値を手で書くと、厚労省のデータが更新されるたびに古くなるため。
+JA_ERA_BASE = 2018   # 令和1年 = 2019年
+
+
+def _ja_date(iso):
+    """2026-09-01 → 2026年9月1日"""
+    try:
+        y, m, d = iso.split("-")
+        return f"{int(y)}年{int(m)}月{int(d)}日"
+    except Exception:
+        return iso
+
+
+def _ja_master(kind, ymd):
+    """通常 260612 → R8.6.12版 ／ バイオ → バイオ版"""
+    if kind == "バイオ":
+        return "バイオ版"
+    try:
+        y = 2000 + int(ymd[0:2])
+        return f"R{y - JA_ERA_BASE}.{int(ymd[2:4])}.{int(ymd[4:6])}版"
+    except Exception:
+        return f"{ymd}版"
+
+
+def fill_datadoc(html, values):
+    """資料の {{名前}} を実測値に置き換える。
+
+    綴り間違いや消し忘れを黙って通さないよう、次の場合は例外にする。
+      ・資料に無い名前を渡した（不要な値が残っている）
+      ・置換後に {{ }} が残った（値を用意し忘れている）
+    """
+    used = set()
+
+    def sub(m):
+        k = m.group(1)
+        if k not in values:
+            return m.group(0)          # 残す → 後段の検査で失敗させる
+        used.add(k)
+        return values[k]
+
+    out = re.sub(r"\{\{(\w+)\}\}", sub, html)
+    left = sorted(set(re.findall(r"\{\{(\w+)\}\}", out)))
+    if left:
+        raise ValueError(f"データの成り立ち：値が用意されていない目印があります {left}")
+    unused = sorted(set(values) - used)
+    if unused:
+        raise ValueError(f"データの成り立ち：資料に無い目印が指定されています {unused}")
+    return out
+
+
+def datadoc_values(rows, dicts, data, as_of, prices, ippan, cm_stat):
+    """資料へ流し込む値。画面用に求めた結果を使い、二重計算しない。"""
+    n = len(rows)
+    f = lambda v: f"{v:,}"
+    pct = lambda v: f"{v / n * 100:.1f}%"
+    vals = {"n_items": f(n), "as_of_ja": _ja_date(as_of)}
+
+    # 製品区分
+    cnt = {}
+    for r in rows:
+        cnt[dict_rev(dicts, "pc", r[17])] = cnt.get(dict_rev(dicts, "pc", r[17]), 0) + 1
+    for k, v in cnt.items():
+        vals[f"pc_{k}"] = f(v)
+        vals[f"pcp_{k}"] = pct(v)
+
+    # 局方・基礎的の重なり
+    jp = {i for i, r in enumerate(rows) if r[25]}
+    kb = {i for i, r in enumerate(rows) if r[20]}
+    vals.update({"n_jp": f(len(jp)), "n_kiso": f(len(kb)),
+                 "n_jp_only": f(len(jp - kb)), "n_both": f(len(jp & kb)),
+                 "n_kiso_only": f(len(kb - jp)), "n_neither": f(n - len(jp | kb))})
+
+    # 選定療養・併売
+    vals["n_sentei"] = f(sum(1 for r in rows if r[26]))
+    vals.update({"cm_items": f(cm_stat["items"]), "cm_ing_io": f(cm_stat["ing_io"]),
+                 "cm_ing_all": f(cm_stat["ing_all"]), "cm_split": f(cm_stat["split"])})
+
+    # 薬価の2段階照合
+    ex = (prices or {}).get("exact", {})
+    uni = (prices or {}).get("uni", {})
+    a = sum(1 for r in rows if r[4] in ex)
+    b = sum(1 for r in rows if r[4] not in ex and r[4][:9] in uni)
+    mi = sum(1 for r in rows if dict_rev(dicts, "pc", r[17]) == "未収載医薬品")
+    mi_np = sum(1 for r in rows if r[19] is None
+                and dict_rev(dicts, "pc", r[17]) == "未収載医薬品")
+    vals.update({
+        "pr_exact": pct(a), "pr_uni": pct(b), "pr_total": pct(a + b),
+        "pr_rest": f(n - a - b), "pr_rest_p": pct(n - a - b),
+        "pr_rest_mishusai": f(mi_np),
+        "pr_ex": f"{(a + b) / (n - mi) * 100:.1f}%" if n > mi else "—",
+    })
+
+    # 一般名処方
+    ip = data.get("ippan", {})
+    items = (ippan or {}).get("items", [])
+    cur = sum(1 for it in items if it.get("cur"))
+    vals.update({
+        "gen_all": f(len(items)), "gen_cur": f(cur), "gen_old": f(len(items) - cur),
+        "gen_map9": f(len((ippan or {}).get("map9", {}))),
+        "gen_mapx": f(len((ippan or {}).get("mapx", {}))),
+        "gen_matched": f(ip.get("matched", 0)),
+        "gen_with_items": f(ip.get("with_items", 0)),
+    })
+    vs = (ippan or {}).get("versions", [])
+    nor = [v for v in vs if v["kind"] != "バイオ"]
+    bs = [v for v in vs if v["kind"] == "バイオ"]
+    cur_v = next((v for v in nor if v["current"]), None)
+    prev_v = next((v for v in reversed(nor) if not v["current"]), None)
+    vals["ip_cur_label"] = _ja_master("通常", cur_v["date"]) if cur_v else "現行版"
+    vals["ip_cur_n"] = f(cur_v["n"]) if cur_v else "—"
+    vals["ip_prev_label"] = _ja_master("通常", prev_v["date"]) if prev_v else "前版"
+    vals["ip_prev_n"] = f(prev_v["n"]) if prev_v else "—"
+    vals["ip_bs_n"] = f(max((v["n"] for v in bs), default=0))
+    return vals
+
+
 def load_datadoc(path, scope="#lgdoc"):
     """「データの成り立ち.html」を凡例へ埋め込める形にして返す。
 
@@ -899,6 +1017,21 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         rows[i][27] = others
     data["comarket"] = len(comarket)
 
+    # 資料「データの成り立ち」に載せる併売の集計。
+    # 画面側（JavaScript）でも同じ数え方をしているが、
+    # 資料へ流し込む値は生成時に確定させたいのでここでも求める。
+    cm_groups_all, cm_groups_io = {}, {}
+    for i in comarket:
+        ing = dict_rev(dicts, "i", rows[i][1])
+        cm_groups_all.setdefault(ing, []).append(i)
+        if dict_rev(dicts, "k", rows[i][5]) in ("内用薬", "外用薬"):
+            cm_groups_io.setdefault(ing, []).append(i)
+    cm_split = sum(1 for v in cm_groups_io.values()
+                   if any(rows[i][8] == 0 for i in v)
+                   and any(rows[i][8] != 0 for i in v))
+    cm_stat = {"items": len(comarket), "ing_all": len(cm_groups_all),
+               "ing_io": len(cm_groups_io), "split": cm_split}
+
     # ---- 出荷状況の推移（折れ線グラフ用） ----
     # 取得のたびに記録した「変化点」から、各日付での件数を組み立てる。
     # 全成分ぶんを持つと重いので、お知らせに出る成分と全体の合計だけにする。
@@ -1192,6 +1325,25 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     # 「データの成り立ち」を凡例の2つ目のタブとして埋め込む。
     # 資料の側を直せばページにも反映されるので、説明が二重管理にならない。
     doc = load_datadoc(datadoc_path)
+    if doc:
+        # 資料の数値を、いま生成した実測値で埋める。
+        # 目印の綴り間違いや値の用意し忘れがあれば、ここで例外になる。
+        dv = datadoc_values(rows, dicts, data, as_of, pr, ippan, cm_stat)
+        doc["html"] = fill_datadoc(doc["html"], dv)
+        # 値を埋めた資料を単体でも書き出す。
+        # PDFはこちらから作る（元ファイルは目印のままなので、
+        # そのままPDFにすると {{n_items}} が印刷されてしまう）。
+        src = resolve_jp_path(datadoc_path)
+        if src:
+            try:
+                filled = fill_datadoc(open(src, encoding="utf-8").read(), dv)
+                out_doc = os.path.join(os.path.dirname(os.path.abspath(out_path)),
+                                       "データの成り立ち_値入り.html")
+                with open(out_doc, "w", encoding="utf-8") as f:
+                    f.write(filled)
+                print(f"  値を埋めた資料: {os.path.basename(out_doc)}")
+            except Exception as e:
+                print(f"  警告: 値入りの資料を書き出せませんでした（{e}）")
     head = head.replace("/*__DOCCSS__*/", doc["css"] if doc else "")
     head = head.replace("<!--__DOCHTML__-->", doc["html"] if doc else "")
     data["doc"] = bool(doc)

@@ -363,8 +363,12 @@ def main():
                           "name": masters[k][-1][1].rsplit("/", 1)[-1],
                           "past": [d for d, _ in masters[k][:-1]]}
                       for k in sorted(masters)}
+        # 版ごとの件数。「データの成り立ち」が
+        # 「R7.12.5版の1,381件がR8.6.12版では1,230件に」と説明するのに使う。
+        # ここで記録しておかないと、資料の数値を自動更新できない。
+        versions = []
 
-        REQUIRED = ("items", "map9", "mapx", "files", "as_of")
+        REQUIRED = ("items", "map9", "mapx", "files", "as_of", "versions")
         missing = [k for k in REQUIRED if k not in prev]
         if prev.get("sha256") == h and not missing:
             if prev.get("as_of") != as_of or prev.get("files") != files_meta:
@@ -395,6 +399,8 @@ def main():
                 it, mx = parse_master(tmp, is_bs=(k == "バイオ"), date=date)
                 is_newest = (date == newest[k])
                 added = sum(1 for c in it if c not in items)
+                versions.append({"kind": k, "date": date, "n": len(it),
+                                 "current": 1 if is_newest else 0})
                 for c, v in it.items():
                     v["cur"] = 1 if is_newest else 0
                     items[c] = v          # 同じコードは新しい版で上書き
@@ -436,6 +442,7 @@ def main():
                 "sha256": h,
                 "source": page_url,
                 "updated_at": now_jst().isoformat(timespec="seconds"),
+                "versions": sorted(versions, key=lambda v: (v["kind"], v["date"])),
                 "items": arr,
                 "map9": map9,
                 "mapx": mapx,

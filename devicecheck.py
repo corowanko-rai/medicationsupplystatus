@@ -7,7 +7,7 @@ Android（Pixel / Galaxy）と iOS（iPhone）の実機定義で、
 
   python3 devicecheck.py <検索HTMLのパス>
 """
-import sys, os
+import sys, os, re
 from playwright.sync_api import sync_playwright
 
 # 実機定義名（Playwright組み込み）。狭い順に並べる。
@@ -36,6 +36,18 @@ SEARCHES = [
     ("カロナール",              11),
     ("ろきそ",                 110),   # ひらがな
     ("ロキソ",                 110),
+]
+
+# 「データの成り立ち」に必ず説明があるべき語。
+# 機能を足したら、ここにも1語足すこと。資料の更新漏れを検知するための一覧。
+DOC_TERMS = [
+    "一般名処方",     # 【般】一般名モード
+    "例外コード",     # 一般名コードの例外
+    "併売品",         # 併売バッジと一覧
+    "選定療養",       # 計算タブ
+    "変更調剤",       # 基／変更可
+    "経過措置",       # 使用期限
+    "販売中止",       # 手動登録
 ]
 
 MIN_TAP = 40   # タップ領域の最低px（Androidの推奨48dp、iOSの44ptを踏まえた実務下限）
@@ -88,8 +100,10 @@ def check_device(browser, p, name, url):
     # 状況フィルタ
     pg.click('.chip[data-f="normal"]')
     pg.wait_for_timeout(380)
-    if num(pg.inner_text("#cnt")) != 14550:
-        fails.append("通常出荷が14,550件でない")
+    want = pg.evaluate("() => R.filter(r => r[8] === 0).length")
+    if num(pg.inner_text("#cnt")) != want:
+        fails.append("通常出荷の件数がデータと合わない（表示 %s / 期待 %d）"
+                     % (pg.inner_text("#cnt"), want))
     if ovf() != 0:
         fails.append(f"チップ選択で横溢れ {ovf()}px")
     pg.click("#clrall")
@@ -98,6 +112,258 @@ def check_device(browser, p, name, url):
     # 製品区分
     pg.click("#advbtn")
     pg.wait_for_timeout(200)
+    # 併売品：バッジ・カード内一覧・一覧画面
+    pg.fill("#q", "コンスタン０．４")
+    pg.wait_for_timeout(420)
+    if pg.locator(".card").count():
+        if pg.locator(".card .cmb").count() == 0:
+            fails.append("併売バッジが出ない")
+        pg.locator(".card").first.click()
+        pg.wait_for_timeout(350)
+        if pg.locator(".card.open .cmitem").count() == 0:
+            fails.append("カード内に併売品が出ない")
+        if ovf() != 0:
+            fails.append(f"併売品の表示で横溢れ {ovf()}px")
+    pg.fill("#q", "")
+    pg.wait_for_timeout(250)
+
+    cb = pg.locator(".chip.cm")
+    if cb.count() == 0:
+        fails.append("併売品ボタンが無い")
+    else:
+        cb.click()
+        pg.wait_for_timeout(600)
+        if not pg.locator("#cmv").is_visible():
+            fails.append("併売品一覧が開かない")
+        if pg.locator(".cmvg").count() == 0:
+            fails.append("併売品一覧が空")
+        if ovf() != 0:
+            fails.append(f"併売品一覧で横溢れ {ovf()}px")
+        # 剤形の切り替え
+        for k in ["注射薬", "注射薬"]:
+            kb = pg.locator(f'#cmvk .kb2[data-k="{k}"]')
+            if kb.count() == 0:
+                fails.append("併売品一覧に剤形ボタンが無い")
+                break
+            kb.click()
+            pg.wait_for_timeout(300)
+            if ovf() != 0:
+                fails.append(f"併売品の剤形切替で横溢れ {ovf()}px")
+                break
+        for f in ["split", "all"]:
+            fb = pg.locator(f'#cmvf .sortb[data-f="{f}"]')
+            if fb.count():
+                fb.click()
+                pg.wait_for_timeout(300)
+                if ovf() != 0:
+                    fails.append(f"併売品の絞り込みで横溢れ {ovf()}px")
+                    break
+        pg.locator(".cmvg").first.locator("summary").click()
+        pg.wait_for_timeout(300)
+        if ovf() != 0:
+            fails.append(f"併売品を開いた時に横溢れ {ovf()}px")
+        pg.click("#cmvx")
+        pg.wait_for_timeout(300)
+        if pg.locator("#cmv").is_visible():
+            fails.append("併売品一覧が閉じない")
+
+    # 並び替えは状況チップと同じ行の右端にあること。
+    # CSSが壊れると行が分かれ、一覧の表示領域が40px削られる。
+    lay = pg.evaluate("""() => {
+      const q=(s)=>document.querySelector(s).getBoundingClientRect();
+      const rw=q('.chiprow'), c=q('#chips'), b=q('#cobtn');
+      return {row: Math.round(rw.height),
+              same: Math.abs(c.top - b.top) < 2,
+              disp: getComputedStyle(document.querySelector('.chiprow')).display};
+    }""")
+    if lay["disp"] != "flex":
+        fails.append("chiprow の display が flex でない（%s／CSSの記述ミスの可能性）" % lay["disp"])
+    if not lay["same"]:
+        fails.append("並び替えがチップと別の行にある")
+    if lay["row"] > 60:
+        fails.append("チップ行が高すぎる %dpx" % lay["row"])
+
+    # データの鮮度：一般名処方マスタの表記
+    pg.click("#lgbtn")
+    pg.wait_for_timeout(400)
+    lg = pg.inner_text("#lgbody")
+    if "一般名処方マスタ（過去分）" in lg:
+        fails.append("現行版のマスタに（過去分）が付いている")
+    if "一般名処方マスタ" in lg and not re.search(r"20\d\d/\d\d/\d\d", lg):
+        fails.append("マスタの日付が YYYY/MM/DD になっていない")
+
+    # 凡例の2枚目（データの成り立ち）
+    dtab = pg.locator('.lgtb[data-p="doc"]')
+    if dtab.count() and dtab.is_visible():
+        dtab.click()
+        pg.wait_for_timeout(400)
+        if not pg.locator("#lgdoc").is_visible():
+            fails.append("データの成り立ちが表示されない")
+        if pg.locator("#lgbody").is_visible():
+            fails.append("2枚目を開いてもバッジの説明が残る")
+        secs = ["doc-venn", "doc-map", "doc-join", "doc-calc"]
+        if pg.locator("#lgdoc .tab").count() != len(secs):
+            fails.append("データの成り立ちの切り替えが4つでない")
+        # 4つ目まで画面内に収まっていること（隠れると押せない）
+        over = pg.evaluate("""() => {
+          const t = document.querySelector('#lgdoc .tabs');
+          return t.scrollWidth - t.clientWidth;
+        }""")
+        if over > 0:
+            fails.append(f"データの成り立ちの切り替えが画面に収まらない（{over}px）")
+        for k in secs:
+            pg.click(f'#lgdoc .tab[data-t="{k}"]')
+            pg.wait_for_timeout(260)
+            vis = pg.evaluate(
+                "() => [...document.querySelectorAll('#lgdoc section')]"
+                ".filter(s => s.offsetParent).map(s => s.id)")
+            if vis != [k]:
+                fails.append(f"データの成り立ち「{k}」の切り替えが効かない（{vis}）")
+            if ovf() != 0:
+                fails.append(f"データの成り立ち「{k}」で横溢れ {ovf()}px")
+        # 資料とページの数字がずれていないか。
+        # 「データの成り立ち」は実測値を載せているので、機能を足したのに
+        # 資料を直し忘れると、ここで食い違いが出る。
+        # 非表示の章も含めて読む（inner_text は表示中の章しか返さない）
+        doc = pg.evaluate(
+            "() => document.getElementById('lgdoc').textContent")
+        # 目印が置換されずに残っていないか（自動更新の失敗を検知）
+        if "{{" in doc:
+            import re as _re
+            left = sorted(set(_re.findall(r"\{\{\w+\}\}", doc)))[:3]
+            fails.append("資料に未置換の目印が残っている：%s" % "／".join(left))
+
+        want = pg.evaluate("() => R.length.toLocaleString()")
+        # 「全16,393品目（…版）での実測値です」の宣言文そのものを見る。
+        # 文書のどこかに同じ数字があれば通る、という緩い判定にすると
+        # 冒頭だけ古いまま残っていても気づけない。
+        m = re.search(r"全\s*([\d,]+)\s*品目", doc)
+        if not m:
+            fails.append("資料に「全◯◯品目」の記載が無い")
+        elif m.group(1) != want:
+            fails.append("資料の総品目数がページと違う（資料 %s / ページ %s）"
+                         % (m.group(1), want))
+        # 2つのコードを同一視していないか。
+        # YJコード（個別医薬品コード）と薬価基準収載医薬品コードは、
+        # 銘柄別収載品では一致するが統一名収載品では下3桁が異なる。
+        # 「＝」で結ぶ書き方は誤りなので、資料と凡例の両方で禁止する。
+        badge = pg.evaluate("() => document.getElementById('lgbody').textContent")
+        for where, text in (("資料", doc), ("凡例", badge)):
+            for ng in ("薬価基準収載医薬品コード（＝YJコード）",
+                       "薬価基準収載医薬品コード＝YJコード",
+                       "YJコード（＝薬価基準収載医薬品コード）",
+                       "YJコード＝薬価基準収載医薬品コード"):
+                if ng in text:
+                    fails.append("%sで2つのコードを同一視している：%s" % (where, ng))
+        if DOC_TERMS:
+            missing = [t for t in DOC_TERMS if t not in doc]
+            if missing:
+                fails.append("資料に説明が無い機能：%s" % "／".join(missing))
+        pg.click('.lgtb[data-p="badge"]')
+        pg.wait_for_timeout(300)
+        if not pg.locator("#lgbody").is_visible():
+            fails.append("1枚目に戻れない")
+    else:
+        fails.append("データの成り立ちのタブが無い")
+
+    pg.click("#lgx")
+    pg.wait_for_timeout(300)
+
+    # 一般名処方（【般】モード）
+    gb = pg.locator('.sm[data-m="g"]')
+    if gb.count() and gb.is_visible():
+        gb.click()
+        pg.wait_for_timeout(600)
+        if not pg.locator("#genbar").is_visible():
+            fails.append("一般名モードで専用の絞り込みが出ない")
+        if pg.locator("#chiprow").is_visible():
+            fails.append("一般名モードで状況チップが残る")
+        if ovf() != 0:
+            fails.append(f"一般名モードで横溢れ {ovf()}px")
+        want = pg.evaluate("() => GEN.filter(g => g[1] === 0 || g[1] === 1).length")
+        if num(pg.inner_text("#cnt")) != want:
+            fails.append("一般名（内用+外用）の件数がデータと合わない（期待 %d）" % want)
+        # 現行マスタから外れた記載の扱い
+        if pg.locator("#gob").count() == 0:
+            fails.append("旧版の切り替えが無い")
+        else:
+            pg.click("#gob")
+            pg.wait_for_timeout(500)
+            want = pg.evaluate(
+                "() => GEN.filter(g => (g[1]===0||g[1]===1) && !g[9]).length")
+            if num(pg.inner_text("#cnt")) != want:
+                fails.append("旧版を外したときの件数が合わない（期待 %d）" % want)
+            pg.click("#gob")
+            pg.wait_for_timeout(500)
+        pg.fill("#q", "アムロジピン錠")
+        pg.wait_for_timeout(450)
+        if num(pg.inner_text("#cnt")) != 3:
+            fails.append("アムロジピン錠の一般名が3件でない")
+        if pg.locator(".gcard .gold").count() != 2:
+            fails.append("旧版バッジが2件でない")
+        # 旧版は一般名処方加算の対象外なので、加算バッジを出してはいけない
+        for i in range(pg.locator(".gcard").count()):
+            c = pg.locator(".gcard").nth(i)
+            if c.locator(".gold").count() and c.locator(".gadd").count():
+                fails.append("旧版に加算バッジが出ている")
+                break
+        pg.fill("#q", "")
+        pg.wait_for_timeout(350)
+        # 例外コードの品目が正しく出るか（持続性製剤の取り違え防止）
+        pg.fill("#q", "チモロール点眼液０．２５％（持続性）")
+        pg.wait_for_timeout(450)
+        if pg.locator(".gcard").count() != 1:
+            fails.append("チモロール点眼液０．２５％（持続性）が1件でない")
+        else:
+            pg.locator(".gcard").first.click()
+            pg.wait_for_timeout(350)
+            items = pg.locator(".gcard.open .cmitem").count()
+            if items == 0:
+                fails.append("持続性チモロールに品目が1つも出ない")
+            # 例外コードの要は「持続性でないものを混ぜないこと」。
+            # 品目数は供給状況データで増減するので、中身で判定する。
+            names = pg.locator(".gcard.open .cmnm").all_inner_texts()
+            bad = [t for t in names if "チモロール" in t or "チモプトール" in t
+                   or "リズモン" in t]
+            wrong = [t for t in bad if "ＸＥ" not in t and "ＴＧ" not in t]
+            if wrong:
+                fails.append("持続性でない製剤が混ざっている：%s" % "／".join(wrong))
+            if ovf() != 0:
+                fails.append(f"一般名の展開で横溢れ {ovf()}px")
+        # 「口腔内崩壊錠」を OD でも引けること
+        pg.fill("#q", "アムロジピンOD錠")
+        pg.wait_for_timeout(450)
+        if num(pg.inner_text("#cnt")) != 3:
+            fails.append("OD錠での言い換え検索が効かない")
+        pg.fill("#q", "")
+        pg.wait_for_timeout(350)
+        # 通常出荷が無いものへの絞り込み
+        pg.click('.gfb[data-g="risk"]')
+        pg.wait_for_timeout(500)
+        want = pg.evaluate("""() => {
+          let n = 0;
+          GEN.forEach((g, i) => {
+            if (g[1] !== 0 && g[1] !== 1) return;
+            const st = gStat(i);
+            if (st[3] > 0 && st[0] === 0) n++;
+          });
+          return n;
+        }""")
+        if num(pg.inner_text("#cnt")) != want:
+            fails.append("「通常出荷が無い」の件数が合わない（期待 %d）" % want)
+        if ovf() != 0:
+            fails.append(f"一般名の絞り込みで横溢れ {ovf()}px")
+        pg.click('.gfb[data-g="all"]')
+        pg.wait_for_timeout(400)
+        pg.click('.sm[data-m="n"]')
+        pg.wait_for_timeout(400)
+        if not pg.locator("#chiprow").is_visible():
+            fails.append("品名モードに戻すと状況チップが復活しない")
+        if pg.locator("#genbar").is_visible():
+            fails.append("品名モードで一般名の絞り込みが残る")
+    else:
+        fails.append("一般名モードのボタンが無い")
+
     # 選定療養の表示
     pg.fill("#q", "ムコダインシロップ")
     pg.wait_for_timeout(420)
@@ -132,6 +398,25 @@ def check_device(browser, p, name, url):
                 fails.append("割合を変えても差額が変わらない")
             if ovf() != 0:
                 fails.append(f"差額の割合切替で横溢れ {ovf()}px")
+            # 処方量を入れると合計が出る
+            q = pg.locator(".card.open .sdq")
+            if q.count() == 0:
+                fails.append("処方量の入力欄が無い")
+            else:
+                q.fill("50")
+                pg.wait_for_timeout(400)
+                # 内服薬なら日数も入れないと金額が出ない
+                dd = pg.locator(".card.open .sdday")
+                if dd.count():
+                    dd.fill("14")
+                    pg.wait_for_timeout(400)
+                txt = pg.locator(".card.open .sdtotal").inner_text()
+                if not txt.strip():
+                    fails.append("処方量を入れても合計が出ない")
+                elif "円" not in txt:
+                    fails.append("差額の金額が出ていない")
+                if ovf() != 0:
+                    fails.append(f"処方量の入力で横溢れ {ovf()}px")
     pg.fill("#q", "")
     pg.wait_for_timeout(250)
 
@@ -143,8 +428,10 @@ def check_device(browser, p, name, url):
     pg.wait_for_timeout(250)
     pg.select_option("#fpc", "後発品")
     pg.wait_for_timeout(380)
-    if num(pg.inner_text("#cnt")) != 7225:
-        fails.append("後発品が7,225件でない")
+    want = pg.evaluate("() => R.filter(r => D.pc[r[17]] === '後発品').length")
+    if num(pg.inner_text("#cnt")) != want:
+        fails.append("後発品の件数がデータと合わない（表示 %s / 期待 %d）"
+                     % (pg.inner_text("#cnt"), want))
     pg.select_option("#fpc", "")
     pg.wait_for_timeout(250)
     pg.click("#advbtn")
@@ -243,6 +530,42 @@ def check_device(browser, p, name, url):
             break
         btn.click()
         pg.wait_for_timeout(200)
+
+    # 計算ページ
+    ct = pg.locator('.ptab[data-p="calc"]')
+    if ct.count() == 0:
+        fails.append("計算タブが無い")
+    else:
+        ct.click()
+        pg.wait_for_timeout(600)
+        if not pg.locator("#calc").is_visible():
+            fails.append("計算ページが開かない")
+        pg.click("#caadd")
+        pg.wait_for_timeout(350)
+        if pg.locator(".carp").count() == 0:
+            fails.append("剤を追加できない")
+        else:
+            pg.locator(".caadddrug").first.click()
+            pg.wait_for_timeout(500)
+            if not pg.locator("#capick").is_visible():
+                fails.append("薬の選択画面が開かない")
+            pg.fill("#capinput", "ユーロジン２")
+            pg.wait_for_timeout(500)
+            if pg.locator(".capitem").count() == 0:
+                fails.append("薬の候補が出ない")
+            else:
+                pg.locator(".capitem").first.click()
+                pg.wait_for_timeout(400)
+                pg.fill(".cadqin", "2")
+                pg.wait_for_timeout(300)
+                pg.fill(".cadaysin", "30")
+                pg.wait_for_timeout(500)
+                if not pg.locator("#cares").inner_text().strip():
+                    fails.append("計算結果が出ない")
+            if ovf() != 0:
+                fails.append(f"計算ページで横溢れ {ovf()}px")
+        pg.locator('.ptab[data-p="search"]').click()
+        pg.wait_for_timeout(500)
 
     # 画面タブ（検索／お知らせ）
     tb = pg.locator('.ptab[data-p="board"]')
@@ -401,7 +724,7 @@ def check_device(browser, p, name, url):
 
     # タップ領域（Androidは48dp推奨。主要な操作要素を確認）
     small = pg.evaluate(f"""() => {{
-      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort'];
+      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort','.chip.cm','.cmitem','.sdq','.sdday','#cmvk .kb2','.gfb','#genk .kb2','#gob','#caadd','.caadddrug','.carb'];
       const out=[];
       sels.forEach(s=>document.querySelectorAll(s).forEach(el=>{{
         const r=el.getBoundingClientRect();
