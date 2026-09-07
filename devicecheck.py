@@ -364,6 +364,36 @@ def check_device(browser, p, name, url):
     else:
         fails.append("一般名モードのボタンが無い")
 
+    # 計算タブ：所定単位が剤形ごとに正しいか。
+    # 頓服薬は1調剤（全量で1単位）。1回分ごとに点数化して回数を掛けると
+    # 回数の分だけ金額が跳ね上がるため、内服との違いを必ず確かめる。
+    amt = pg.evaluate(r"""() => {
+      const r = R.find(x => get(x,'n').includes('ロキソニン錠６０'));
+      if (!r) return null;
+      const yj = get(r,'yj'), keep = caRps.slice();
+      const run = (kind, qty, times) => {
+        caRps = [{kind, days: times, drugs: [{yj, name: get(r,'n'), qty}]}];
+        caRatio = 0.3; drawCalc();
+        const t = document.getElementById('cares').innerText;
+        const m = t.match(/特別の料金（消費税込み）\s*([\d,]+)/);
+        return m ? Number(m[1].replace(/,/g,'')) : null;
+      };
+      const out = {oral: run('内服',1,10), ton: run('頓服',1,10),
+                   ext: run('外用',10,1)};
+      caRps = keep; drawCalc();
+      return out;
+    }""")
+    if amt is None:
+        fails.append("計算タブの検証薬（ロキソニン錠６０ｍｇ）が見つからない")
+    else:
+        if amt["ton"] != amt["ext"]:
+            fails.append("頓服薬が1調剤で計算されていない（頓服%s円／外用%s円）"
+                         % (amt["ton"], amt["ext"]))
+        if amt["ton"] != 11:
+            fails.append("頓服 1回1錠10回分が11円でない（%s円）" % amt["ton"])
+        if amt["oral"] != 110:
+            fails.append("内服 1日1錠10日分が110円でない（%s円）" % amt["oral"])
+
     # 選定療養の表示
     pg.fill("#q", "ムコダインシロップ")
     pg.wait_for_timeout(420)

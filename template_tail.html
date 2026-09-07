@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-04-v30';
+const TPL_VER='2026-09-07-v31';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -1645,7 +1645,10 @@ document.getElementById('albody').addEventListener('click',e=>{
    について」（令和8年3月27日 事務連絡）に沿って計算する。
 
    要点：
-   ・点数は「所定単位」ごとに算定する（内服薬は1剤1日分、外用薬は1調剤）
+   ・点数は「所定単位」ごとに算定する
+       内服薬 … 1剤1日分（日数を掛ける）
+       頓服薬 … 1調剤（1回量×回数の全量で1単位。回数を掛けてはいけない）
+       外用薬・注射薬 … 1調剤（総量で1単位）
    ・同じ剤に複数の長期収載品があるときは、金額を合算してから点数化する（規定ア）
    ・剤が複数あるときは、剤ごとに点数を出してから合算する（規定ウ）
    ・薬剤料の点数換算は「15円以下は1点、15円超は10円で除して五捨五超入」 */
@@ -1673,19 +1676,22 @@ function drawCalc(){
   }else{
     box.innerHTML=caRps.map((rp,ri)=>{
       const isOral = rp.kind==='内服';
+      const isTon  = rp.kind==='頓服';
+      const isOut  = !isOral && !isTon;
       return `<div class="carp" data-ri="${ri}">
         <div class="carph">
           <div class="carpt">Rp${ri+1}</div>
           <button class="carpx" data-act="delrp">この剤を削除</button>
         </div>
-        <div class="cakind">
+        <div class="cakind cakind3">
           <button class="cakb" data-act="kind" data-k="内服" aria-pressed="${isOral}">内服薬</button>
-          <button class="cakb" data-act="kind" data-k="外用" aria-pressed="${!isOral}">外用薬・注射薬</button>
+          <button class="cakb" data-act="kind" data-k="頓服" aria-pressed="${isTon}">頓服薬</button>
+          <button class="cakb" data-act="kind" data-k="外用" aria-pressed="${isOut}">外用薬・注射薬</button>
         </div>
-        ${isOral?`<div class="cadays">
-          <label>日数 <input type="number" class="cadaysin" inputmode="numeric"
+        ${(isOral||isTon)?`<div class="cadays">
+          <label>${isTon?'回数':'日数'} <input type="number" class="cadaysin" inputmode="numeric"
             min="1" step="1" value="${rp.days}"></label>
-          <span>日分</span>
+          <span>${isTon?'回分':'日分'}</span>
         </div>`:''}
         ${rp.drugs.map((d,di)=>{
           const row=R.find(x=>get(x,'yj')===d.yj);
@@ -1695,11 +1701,11 @@ function drawCalc(){
             <div class="cadn"><span>${esc(d.name)}</span>
               <button class="cadx" data-act="deldrug">削除</button></div>
             <div class="cadq">
-              <label>${isOral?'1日量':'総量（全量）'}
+              <label>${isOral?'1日量':isTon?'1回量':'総量（全量）'}
                 <input type="number" class="cadqin" inputmode="decimal"
                   min="0" step="any" value="${d.qty!=null?d.qty:''}"></label>
               <span>${esc(u)}</span>
-              ${isOral && d.qty>0 && rp.days>0
+              ${(isOral||isTon) && d.qty>0 && rp.days>0
                 ? `<span class="catot">合計 ${fmtY(d.qty*rp.days)}${esc(u)}</span>` : ''}
             </div>
             ${v?`<div class="cadinfo">差額分 ${fmtY(v[0])}円／${esc(unitOf(row))}　選定療養時 ${fmtY(v[1])}円</div>`:
@@ -1707,7 +1713,10 @@ function drawCalc(){
             ${(()=>{
               const k=d.kind || (row?dv(row,'k'):'');
               if(!k) return '';
-              const mismatch = isOral ? (k!=='内用薬') : (k==='内用薬');
+              /* 頓服薬も内用薬なので、内服と同じ扱いで判定する。
+                 誤って外用薬を内服・頓服に入れると総量が桁違いになるため、
+                 この警告は残す。 */
+              const mismatch = (isOral||isTon) ? (k!=='内用薬') : (k==='内用薬');
               return mismatch
                 ? `<div class="cawarnrow">この薬は<b>${esc(k)}</b>です。`+
                   `剤の種類が合っていない可能性があります</div>` : '';
@@ -1730,7 +1739,17 @@ function drawCalcResult(){
   const lines=[];
   caRps.forEach((rp,ri)=>{
     const isOral = rp.kind==='内服';
-    const days = isOral ? (rp.days>0?rp.days:0) : 1;
+    const isTon  = rp.kind==='頓服';
+    /* 所定単位（調剤報酬点数表）
+         内服薬 … 1剤1日分 → 1日量で点数化し、日数を掛ける
+         頓服薬 … 1調剤    → 1回量×回数の「全量」を1単位として点数化する
+                             （1回分ごとではない。掛け算をすると10倍になる）
+         外用薬・注射薬 … 1調剤 → 総量を1単位として点数化する           */
+    const times = (isOral||isTon) ? (rp.days>0?rp.days:0) : 1;
+    if((isOral||isTon) && !times) return;
+    /* 頓服は全量が1単位なので、金額の段階で回数を掛けてしまう */
+    const mul  = isTon ? times : 1;
+    const days = isOral ? times : 1;
     let sumA=0, sumB=0, sumG=0, any=false;
     rp.drugs.forEach(d=>{
       const row=R.find(x=>get(x,'yj')===d.yj);
@@ -1738,19 +1757,21 @@ function drawCalcResult(){
       const v=senOf(row);
       if(!v || !(d.qty>0)) return;
       any=true;
-      sumA += v[0]*d.qty;   /* 差額分 × 数量 */
-      sumB += v[1]*d.qty;   /* 選定療養時の薬価 × 数量 */
-      if(v[2]!=null) sumG += v[2]*d.qty;   /* 後発品最高価格 × 数量 */
+      sumA += v[0]*d.qty*mul;   /* 差額分 × 数量 */
+      sumB += v[1]*d.qty*mul;   /* 選定療養時の薬価 × 数量 */
+      if(v[2]!=null) sumG += v[2]*d.qty*mul;   /* 後発品最高価格 × 数量 */
     });
-    if(!any || !days) return;
-    /* 所定単位ごとに点数化してから日数を掛ける */
+    if(!any) return;
+    /* 所定単位ごとに点数化してから（内服のみ）日数を掛ける */
     const aTen = yenToTen(sumA)*days;
     const bTen = yenToTen(sumB)*days;
     totalG_ten += yenToTen(sumG)*days;
     totalA_ten += aTen; totalB_ten += bTen;
-    lines.push(`Rp${ri+1}（${isOral?days+'日分':'外用・注射'}）：`+
-      `特別の料金 ${yenToTen(sumA)}点${isOral?'×'+days+'日':''}=${aTen}点／`+
-      `保険分 ${yenToTen(sumB)}点${isOral?'×'+days+'日':''}=${bTen}点`);
+    const label = isOral ? times+'日分' : isTon ? times+'回分（全量で1単位）' : '外用・注射';
+    const mulTxt = isOral ? '×'+times+'日' : '';
+    lines.push(`Rp${ri+1}（${label}）：`+
+      `特別の料金 ${yenToTen(sumA)}点${mulTxt}=${aTen}点／`+
+      `保険分 ${yenToTen(sumB)}点${mulTxt}=${bTen}点`);
   });
 
   const A = totalA_ten*10*1.1;          /* 特別の料金（消費税込み） */
@@ -1818,7 +1839,7 @@ function updateTotals(rpEl, ri){
     const row=R.find(x=>get(x,'yj')===d.yj);
     const u=row?caUnitOf(row):'';
     let tot=el.querySelector('.catot');
-    const show = rp.kind==='内服' && d.qty>0 && rp.days>0;
+    const show = (rp.kind==='内服'||rp.kind==='頓服') && d.qty>0 && rp.days>0;
     if(show){
       if(!tot){
         tot=document.createElement('span');
@@ -1899,7 +1920,8 @@ document.getElementById('capbody').addEventListener('click',e=>{
        総量が日数倍になって桁違いの金額になるため。 */
     const k=dv(row,'k');                     /* 内用薬 / 外用薬 / 注射薬 */
     const wantOral = (k==='内用薬');
-    if(rp.drugs.length===0){
+    if(rp.drugs.length===0 && rp.kind!=='頓服'){
+      /* 頓服は利用者が明示的に選ぶものなので、自動判定で上書きしない */
       rp.kind = wantOral ? '内服' : '外用';   /* 最初の1剤で決める */
     }
     rp.drugs.push({yj, name:get(row,'n'), qty:null, kind:k});
@@ -2384,11 +2406,16 @@ document.getElementById('rvx').addEventListener('click',closeRv);
      '公表されている計算例と一致することを確認しています。'+
      '<br><b>剤（Rp）ごとに入力</b>してください。用法が違う薬は別の剤になります。'+
      '薬を追加すると<b>内服薬か外用薬かを自動で判定</b>します。'+
-     '<br>内服薬は<b>1日量と日数</b>、外用薬・注射薬は<b>総量</b>を入れます。'+
-     '内服薬では入力の下に合計量が出るので、桁の取り違えに気づけます。'+
+     '<br>内服薬は<b>1日量と日数</b>、頓服薬は<b>1回量と回数</b>、'+
+     '外用薬・注射薬は<b>総量</b>を入れます。'+
+     '内服薬と頓服薬は入力の下に合計量が出るので、桁の取り違えに気づけます。'+
      '<br><b>点数の求め方</b>：所定単位ごとに「15円以下は1点、15円超は10円で割って'+
-     '五捨五超入」で換算します。内服薬は1剤1日分ごとに点数化して日数を掛け、'+
-     '同じ剤に複数の長期収載品があるときは金額を合算してから点数化します。'+
+     '五捨五超入」で換算します。所定単位は剤形で異なります。'+
+     '<br>・<b>内服薬</b>＝1剤1日分。点数化してから日数を掛けます'+
+     '<br>・<b>頓服薬</b>＝1調剤。<b>1回量×回数の全量を1単位</b>として点数化します'+
+     '（1回分ごとに点数化して回数を掛けるのは誤りで、10回分なら10倍ずれます）'+
+     '<br>・<b>外用薬・注射薬</b>＝1調剤。総量を1単位として点数化します'+
+     '<br>同じ剤に複数の長期収載品があるときは金額を合算してから点数化します。'+
      '<br><b>含まれないもの</b>：調剤技術料などの薬剤料以外は計算に入りません。'+
      '<br><b>限界</b>：端数処理の関係で、実際の請求額と数円ずれる場合があります。'+
      '</div>';

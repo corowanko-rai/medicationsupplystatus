@@ -77,9 +77,17 @@ header{
   border:1px solid #f2c2c2;color:#b23c3c;font-size:11.5px;font-weight:700;
   cursor:pointer;font-family:inherit;flex:0 0 auto}
 .cakind{display:flex;gap:5px;margin-bottom:10px}
-.cakb{flex:1;min-height:36px;border-radius:8px;font-size:12px;font-weight:700;
+.cakb{flex:1;min-height:40px;padding:0 4px;border-radius:8px;font-size:12px;
+  font-weight:700;white-space:nowrap;
   background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
   cursor:pointer;font-family:inherit}
+/* 剤の種類が3つ並ぶ行。「外用薬・注射薬」が最も長いので、
+   狭い端末では字を詰めて折り返させない。 */
+.cakind3{gap:4px}
+.cakind3 .cakb{font-size:11.5px;letter-spacing:-.01em}
+@media (max-width:360px){
+  .cakind3 .cakb{font-size:10.5px;letter-spacing:-.02em;padding:0 2px}
+}
 .cakb[aria-pressed="true"]{background:#e8f4ec;border-color:#8fcaa8;color:#2f7a52}
 .cadays{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12.5px;
   font-weight:700;color:var(--ink2);flex-wrap:wrap}
