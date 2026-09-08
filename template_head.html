@@ -708,6 +708,14 @@ header{
   border-radius:10px;padding:9px 10px}
 .sendiff-h{font-size:11px;font-weight:700;color:#0a5a97;margin-bottom:6px}
 .sdratio{display:flex;gap:5px;margin-bottom:7px}
+/* カード内：定期／頓用の切り替え。内用薬は所定単位が変わるため、
+   薬剤の剤形だけでは決められない。 */
+.sdmode{display:flex;gap:5px;margin:8px 0 2px}
+.sdmb{flex:1;min-height:36px;border-radius:8px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit}
+.sdmb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+
 .sdb{flex:1;min-height:34px;padding:0;border-radius:8px;font-size:12.5px;font-weight:700;
   background:#fff;border:1px solid #b9d8f0;color:#0a5a97;cursor:pointer;font-family:inherit}
 .sdb[aria-pressed="true"]{background:#0a68b0;border-color:#0a68b0;color:#fff}

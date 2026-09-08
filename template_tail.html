@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-07-v31';
+const TPL_VER='2026-09-07-v32';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -482,8 +482,11 @@ function yenToTen(yen){
 
 /* 選定療養：後発品を選んだ場合との差額（カードごとに条件を覚えておく） */
 const senRatio={};   /* {YJコード: 0.1|0.2|0.3} */
-const senQty={};     /* {YJコード: 1日量（内服）または総量（外用）} */
-const senDays={};    /* {YJコード: 日数（内服のみ）} */
+const senQty={};     /* {YJコード: 1日量（定期）／1回量（頓用）／総量（外用）} */
+const senDays={};    /* {YJコード: 日数（定期）／回数（頓用）} */
+/* 内用薬は定期と頓用で所定単位が違う（定期＝1剤1日分、頓用＝1調剤）。
+   薬剤の剤形だけでは決まらないので、カードごとに利用者が選ぶ。 */
+const senTon={};     /* {YJコード: true=頓用} */
 
 /* 「後発品を選んだ場合との差額」を、厚労省の計算方法どおりに求める。
    単価の引き算では点数への換算が抜けて数円ずれるため、
@@ -513,15 +516,21 @@ function senDiffText(v, ratio){
 }
 
 /* 数量が入ったら、点数換算を使った正確な差額を出す */
-function senTotalText(v, ratio, qty, unit, qUnit, days, isOral){
+function senTotalText(v, ratio, qty, unit, qUnit, days, isOral, isTon){
   if(qty==null || !(qty>0)) return '';
-  if(isOral && !(days>0)) return '<span class="sdcalc">日数を入れると正確な金額が出ます</span>';
-  const r = senExactDiff(v, ratio, qty, isOral ? days : 1);
+  if(isOral && !(days>0))
+    return `<span class="sdcalc">${isTon?'回数':'日数'}を入れると正確な金額が出ます</span>`;
+  /* 頓用は全量（1回量×回数）が1単位。回数を掛けるのではなく、
+     数量の側に掛けてから点数化する。掛ける場所を誤ると回数の分だけずれる。 */
+  const r = isTon ? senExactDiff(v, ratio, qty*days, 1)
+                  : senExactDiff(v, ratio, qty, isOral ? days : 1);
   if(!r) return '';
   const yen=(x)=>Math.round(x).toLocaleString();
+  const how = isTon ? `1回${fmtY(qty)}${esc(qUnit)}×${days}回分（全量で1単位）`
+            : isOral ? `1日${fmtY(qty)}${esc(qUnit)}×${days}日分`
+            : `総量 ${fmtY(qty)}${esc(qUnit)}`;
   return `後発品より <b>${yen(r.diff)}円</b> 高くなります`+
-    `<span class="sdcalc">長期収載品 ${yen(r.total)}円 － 後発品 ${yen(r.gen)}円`+
-    `／${isOral?`1日${fmtY(qty)}${esc(qUnit)}×${days}日分`:`総量 ${fmtY(qty)}${esc(qUnit)}`}</span>`;
+    `<span class="sdcalc">長期収載品 ${yen(r.total)}円 － 後発品 ${yen(r.gen)}円／${how}</span>`;
 }
 document.addEventListener('input', e=>{
   const box = e.target.closest('.sendiff'); if(!box) return;
@@ -548,10 +557,36 @@ function refreshSenDiff(box, yj){
   const res = box.querySelector('.sdresult');
   if(res) res.innerHTML = senDiffText(v, ratio);
   const tot = box.querySelector('.sdtotal');
+  const isTon = isOral && !!senTon[yj];
   if(tot) tot.innerHTML =
-    senTotalText(v, ratio, senQty[yj], u, qUnit, senDays[yj], isOral);
+    senTotalText(v, ratio, senQty[yj], u, qUnit, senDays[yj], isOral, isTon);
+  if(isOral){
+    /* 定期／頓用で入力欄の呼び名が変わる。描き直さずに文字だけ差し替える
+       （カード全体を作り直すと入力中のカーソルが飛ぶため）。 */
+    const ql = box.querySelector('.sdqty > label');
+    if(ql) ql.childNodes[0].nodeValue = isTon ? '1回量' : '1日量';
+    const dl = box.querySelector('.sdd');
+    if(dl){
+      dl.childNodes[0].nodeValue = isTon ? '回数' : '日数';
+      const di = dl.querySelector('.sdday');
+      if(di) di.placeholder = isTon ? '回' : '日';
+      const du = dl.querySelector('.sdqu');
+      if(du) du.textContent = isTon ? '回分' : '日分';
+    }
+    box.querySelectorAll('.sdmb').forEach(x=>
+      x.setAttribute('aria-pressed', (x.dataset.t==='1')===isTon));
+  }
 }
 document.addEventListener('click', e=>{
+  const m = e.target.closest('.sdmb');
+  if(m){
+    const box = e.target.closest('.sendiff'); if(!box) return;
+    e.stopPropagation();   /* カードの開閉に伝播させない */
+    const yj = box.dataset.yj;
+    senTon[yj] = m.dataset.t==='1';
+    refreshSenDiff(box, yj);
+    return;
+  }
   const b = e.target.closest('.sdb'); if(!b) return;
   const box = e.target.closest('.sendiff'); if(!box) return;
   e.stopPropagation();   /* カード自体のクリック（開閉）に伝播させない */
@@ -654,8 +689,9 @@ function render(){
           const qUnit = u.replace(/^1/, '') || '個';   /* 入力欄の単位：錠、g、mL */
           const qty = senQty[yj];
           const isOral = dv(r,'k')==='内用薬';
+          const isTon = isOral && !!senTon[yj];
           const days = senDays[yj];
-          const totalTxt = senTotalText(v, ratio, qty, u, qUnit, days, isOral);
+          const totalTxt = senTotalText(v, ratio, qty, u, qUnit, days, isOral, isTon);
           return `<div class="row"><dt>選定療養</dt><dd>
             <div class="senunit">いずれも ${u?esc(u):esc(sp)} あたり（上の薬価と同じ規格）</div>
             <div class="senbox">
@@ -676,16 +712,20 @@ function render(){
                 <button class="sdb" data-r="0.3" aria-pressed="${ratio===0.3}">3割</button>
               </div>
               <div class="sdresult">${diffTxt}</div>
+              ${isOral?`<div class="sdmode">
+                <button class="sdmb" data-t="0" aria-pressed="${!isTon}">定期</button>
+                <button class="sdmb" data-t="1" aria-pressed="${isTon}">頓用</button>
+              </div>`:''}
               <div class="sdqty">
-                <label>${isOral?'1日量':'総量'}
+                <label>${isOral?(isTon?'1回量':'1日量'):'総量'}
                   <input type="number" class="sdq" inputmode="decimal" min="0" step="any"
                     placeholder="${esc(qUnit)}" value="${qty!=null?qty:''}">
                   <span class="sdqu">${esc(qUnit)}</span>
                 </label>
-                ${isOral?`<label class="sdd">日数
+                ${isOral?`<label class="sdd">${isTon?'回数':'日数'}
                   <input type="number" class="sdday" inputmode="numeric" min="1" step="1"
-                    placeholder="日" value="${days!=null?days:''}">
-                  <span class="sdqu">日分</span>
+                    placeholder="${isTon?'回':'日'}" value="${days!=null?days:''}">
+                  <span class="sdqu">${isTon?'回分':'日分'}</span>
                 </label>`:''}
                 <div class="sdtotal">${totalTxt}</div>
               </div>
@@ -772,10 +812,11 @@ function render(){
           : '<div class="hint">同一成分の他剤はありません</div>'}
       </div>`;
     el.addEventListener('click',(e)=>{
-      if(e.target.closest('.sdb')) return;   /* 差額の割合切替は開閉させない */
+      /* 差額欄の操作でカードを閉じない。
+         ここに1つでも書き漏らすと、押した瞬間にカードが畳まれて
+         操作できなくなるので、差額欄はまとめて除外する。 */
+      if(e.target.closest('.sendiff')) return;
       if(e.target.closest('.cmitem')) return; /* 併売品タップは開閉させない */
-      if(e.target.closest('.sdq')) return;    /* 処方量の入力は開閉させない */
-      if(e.target.closest('.sdday')) return;  /* 日数の入力も開閉させない */
       el.classList.toggle('open');
     });
     frag.appendChild(el);
@@ -2276,8 +2317,11 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         'カードを開くと、差額分の薬価と選定療養時の薬価が出ます（同じ規格の単価）。'+
         'チップの「選定療養対象」で絞り込めます。'+
         '<br>金額はすべて<b>その薬の課金単位あたり</b>（1錠・1g・1mLなど）です。'+
-        '<b>処方量</b>（内服薬は1日量と日数）を入れると、'+
-        '<b>後発品を選んだ場合との差額</b>が出ます。'+
+        '<b>処方量</b>を入れると<b>後発品を選んだ場合との差額</b>が出ます。'+
+        '内用薬は<b>定期／頓用</b>を選べます。'+
+        '定期は1日量と日数、頓用は1回量と回数、外用薬・注射薬は総量を入れます。'+
+        '<br><b>定期と頓用では金額が変わります。</b>所定単位が違うためで、'+
+        '定期は1剤1日分ごと、頓用は1回量×回数の全量で1単位として点数化します。'+
         '計算タブと同じ方法（点数に換算）で求めているので、両者の金額は一致します。'+
         '<br>正確な金額は<b>「計算」タブ</b>をお使いください。'+
         '厚労省の計算方法どおり、剤（Rp）ごとに点数へ換算して求めます。'+

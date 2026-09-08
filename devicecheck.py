@@ -394,6 +394,50 @@ def check_device(browser, p, name, url):
         if amt["oral"] != 110:
             fails.append("内服 1日1錠10日分が110円でない（%s円）" % amt["oral"])
 
+    # カード内の差額も、計算タブと同じ所定単位で求めているか。
+    # 画面が実際に呼ぶ senTotalText() の出力を読み、
+    # 期待値は同じ関数を使わず、規則から独立に計算して突き合わせる
+    # （同じ関数で検算すると、分岐の誤りをそのまま素通りさせてしまう）。
+    card = pg.evaluate(r"""() => {
+      const r = R.find(x => get(x,'n').includes('ロキソニン錠６０'));
+      if (!r) return null;
+      const v = senOf(r), u = unitOf(r), qu = u.replace(/^1/,'') || '個';
+      const ratio = 0.3, qty = 1, times = 10;
+      const pick = (html) => {
+        const m = html.match(/長期収載品\s*([\d,]+)円/);
+        return m ? Number(m[1].replace(/,/g,'')) : null;
+      };
+      // 画面の出力
+      const got = {
+        teiki: pick(senTotalText(v, ratio, qty, u, qu, times, true, false)),
+        ton:   pick(senTotalText(v, ratio, qty, u, qu, times, true, true))
+      };
+      // 規則からの独立計算（15円以下は1点、15円超は10円で割って五捨五超入）
+      const ten = (yen) => {
+        if (yen <= 0) return 0;
+        if (yen <= 15) return 1;
+        const q = yen/10, i = Math.floor(q);
+        return (q - i) <= 0.5 ? i : i + 1;
+      };
+      const want = {
+        // 定期＝1日量で点数化して日数を掛ける
+        teiki: ten(v[0]*qty)*times*10*1.1 + ten(v[1]*qty)*times*10*ratio,
+        // 頓用＝1回量×回数の全量で1単位
+        ton:   ten(v[0]*qty*times)*10*1.1 + ten(v[1]*qty*times)*10*ratio
+      };
+      return {got, want: {teiki: Math.round(want.teiki),
+                          ton:   Math.round(want.ton)}};
+    }""")
+    if card is None:
+        fails.append("カードの差額検証用の薬が見つからない")
+    else:
+        for k, ja in (("teiki", "定期"), ("ton", "頓用")):
+            if card["got"][k] != card["want"][k]:
+                fails.append("カードの%sが所定単位どおりでない（画面%s円／規則%s円）"
+                             % (ja, card["got"][k], card["want"][k]))
+        if card["got"]["ton"] == card["got"]["teiki"]:
+            fails.append("カードで定期と頓用の金額が同じ（切り替えが効いていない）")
+
     # 選定療養の表示
     pg.fill("#q", "ムコダインシロップ")
     pg.wait_for_timeout(420)
