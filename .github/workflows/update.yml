@@ -25,6 +25,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  issues: write        # 保守期限の通知にIssueを使うため
 
 concurrency:
   group: pages
@@ -34,16 +35,20 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # 【2026-09】Node.js 20 が 9/16 に削除されるため、Node 24 対応版へ更新。
+      # 版はタグではなくコミットSHAで固定する（タグは差し替えられるため）。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          # 【2026-09】3.11（保守終了 2027-10-31）から 3.13（同 2029-10-31）へ。
+          # pandas は cp313 の wheel を配布、openpyxl は版に依存しない純Python。
+          python-version: '3.13'
 
       - name: 依存パッケージのインストール
-        run: pip install pandas openpyxl
+        run: pip install -r requirements.txt
 
       # 薬価リストの取得。失敗しても供給状況ページの生成は続行する。
       # local モードでは厚労省へアクセスしない。
@@ -180,6 +185,36 @@ jobs:
       # GitHubは「リポジトリに60日間更新が無い」と定期実行を自動停止する。
       # 厚労省の更新が長く途絶えても止まらないよう、
       # 最終コミットから KEEPALIVE_DAYS 日以上経っていれば空コミットを打つ。
+      # 保守期限の見張り。期限の90日前になったらIssueで知らせる。
+      # 失敗にはしない（毎朝赤くなると、本当の異常に気づけなくなるため）。
+      - name: 保守期限を確認
+        id: eol
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          python check_eol.py
+          echo "code=$?" >> $GITHUB_OUTPUT
+          set -e
+
+      # 同じ内容のIssueが開いている間は、重ねて作らない。
+      - name: 保守期限のIssueを作る
+        if: always() && steps.eol.outputs.code == '20'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="【保守期限】対応が必要な項目があります"
+          FOUND=$(gh issue list --state open --search "$TITLE in:title" \
+                    --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            gh issue comment "$FOUND" --body-file _eol_body.md \
+              && echo "::notice::保守期限のIssue #$FOUND に追記しました。"
+          else
+            gh issue create --title "$TITLE" --body-file _eol_body.md \
+              && echo "::notice::保守期限のIssueを作成しました。"
+          fi
+
       - name: 定期実行の自動停止を防ぐ（キープアライブ）
         if: always()
         env:
@@ -204,13 +239,13 @@ jobs:
             echo "コミットは不要です。"
           fi
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         if: steps.run.outputs.code == '0'
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: steps.run.outputs.code == '0'
         with:
           path: public
 
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         if: steps.run.outputs.code == '0'
