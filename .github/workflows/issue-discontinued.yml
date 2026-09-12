@@ -114,7 +114,7 @@ jobs:
         with:
           path: public
 
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         if: steps.apply.outputs.code == '0'
 
       # 結果をIssueにコメントし、成功なら自動で閉じる
