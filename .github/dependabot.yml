@@ -1,0 +1,29 @@
+# 部品の新しい版を自動で見つけて、プルリクエストで知らせる設定。
+#
+# ・GitHub Actions … コミットSHAで固定しているため、放っておくと古くなる。
+#                     Dependabot はSHAと横のコメント（# v7.0.1）の両方を更新する。
+# ・Python パッケージ … requirements.txt を見る。
+#
+# 届いたプルリクエストは、内容を確認してから Merge してください。
+# 自動では反映されません（勝手に本番が変わらないようにするため）。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "更新"
+    labels:
+      - 保守
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "更新"
+    labels:
+      - 保守
