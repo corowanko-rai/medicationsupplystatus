@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-07-v32';
+const TPL_VER='2026-09-12-v34';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -159,8 +159,8 @@ const PAGE=40;
 const GINFO=DATA.ippan||{};
 const GEN=GINFO.items||[];
 /* 一般名の項目の並び：
-   [記載, 剤形, 成分名, 規格, 加算, 最低薬価, 備考, バイオ, 例外, 旧版, 版の日付] */
-const G={t:0,k:1,i:2,s:3,a:4,p:5,b:6,bs:7,x:8,o:9,d:10};
+   [記載, 剤形, 成分名, 規格, 加算, 最低薬価, 備考, バイオ, 例外, 旧版, 版の日付, 削除, 削除リストの版] */
+const G={t:0,k:1,i:2,s:3,a:4,p:5,b:6,bs:7,x:8,o:9,d:10,del:11,dv:12};
 const GKIND=['内用薬','外用薬','注射薬'];
 const GEN_ROWS=(()=>{
   const m=new Map();
@@ -219,7 +219,7 @@ function syncGob(){
   if(!GEN_OLD_N){ b.style.display='none'; return; }
   b.style.display='';
   b.setAttribute('aria-pressed', genOld);
-  b.textContent=`現行マスタから外れた記載も含める（${GEN_OLD_N}件）`;
+  b.textContent=`現行マスタに無い記載も含める（${GEN_OLD_N}件）`;
 }
 
 function match(r,terms){
@@ -391,7 +391,9 @@ function renderGen(){
         <span class="kind">${GKIND[gd[G.k]]||''}</span>
         ${(gd[G.a] && !gd[G.o])?`<span class="gadd">${gd[G.a]===12?'加算1,2':'加算1'}</span>`:''}
         ${gd[G.bs]?'<span class="gbs">バイオ後続品</span>':''}
-        ${gd[G.o]?`<span class="gold" title="現行のマスタには収載されていません">旧版 ${gDate(gd[G.d])}</span>`:''}
+        ${gd[G.o]?(gd[G.del]
+          ? `<span class="gdel" title="一般名処方マスタ削除リストに載っている記載です">削除 ${gDate(gd[G.dv]||gd[G.d])}</span>`
+          : `<span class="gold" title="現行のマスタには収載されていません">旧版 ${gDate(gd[G.d])}</span>`):''}
       </div>
       <div class="nm">${hl(gd[G.t],terms)}</div>
       <div class="sub">${esc(gd[G.s]||'')}${
@@ -401,10 +403,16 @@ function renderGen(){
         ${items||'<div class="hint">供給状況データに該当する品目がありません。</div>'}
         ${gd[G.b]?`<div class="gwarn">${esc(gd[G.b])}</div>`:''}
         ${gd[G.o]?`<div class="gwarn"><b>現行の一般名処方マスタには収載されていません。</b>
-          ${gDate(gd[G.d])}版のマスタにあった記載です。
-          マスタから外れたということは、その記載が
-          <b>一般名処方加算の対象ではなくなった</b>ことを意味します。
-          調剤できる品目の目安として残していますが、
+          ${gd[G.del]
+            ? `厚労省の<b>一般名処方マスタ削除リスト</b>（${gDate(gd[G.dv]||gd[G.d])}版）に
+               載っている記載です。同リストには
+               「この一般名処方に該当する品目は<b>一般名処方加算の対象ではない</b>」
+               と明記されています。`
+            : `${gDate(gd[G.d])}版のマスタにあった記載です。
+               マスタから外れたということは、その記載が
+               <b>一般名処方加算の対象ではなくなった</b>ことを意味します。`}
+          電子処方箋管理サービスには登録できるため、
+          調剤できる品目の目安として残しています。
           加算の可否は現行のマスタでご確認ください。</div>`:''}
         <div class="hint gnote">
           <div>YJコードの上9桁で判定しています${
@@ -2291,8 +2299,13 @@ document.getElementById('rvx').addEventListener('click',closeRv);
         '現行版では収載されていません）。'+
         'そこで<b>同じ一般名コードは新しい版で上書きし、'+
         '新しい版に無いものは残す</b>ようにしています。'+
-        '現行版に無いものには<b><span class="gold">旧版</span></b>と'+
-        'その版の日付を付けて区別しています。'+
+        '現行版に無いものには印を付けて区別しています。'+
+        '<br>・<b><span class="gdel">削除</span></b>＝厚労省の'+
+        '<b>一般名処方マスタ削除リスト</b>に載っている記載。'+
+        '同リストには「該当する品目は<b>一般名処方加算の対象ではない</b>」'+
+        'と明記されています（電子処方箋には登録できます）'+
+        '<br>・<b><span class="gold">旧版</span></b>＝過去のマスタにあり、'+
+        '現行版で落ちたもの'+
         'マスタから外れたということは'+
         '<b>一般名処方加算の対象ではなくなった</b>ということなので、'+
         '<b>加算の可否は現行のマスタでご確認ください</b>。'+

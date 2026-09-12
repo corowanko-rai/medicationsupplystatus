@@ -299,8 +299,32 @@ def check_device(browser, p, name, url):
         pg.wait_for_timeout(450)
         if num(pg.inner_text("#cnt")) != 3:
             fails.append("アムロジピン錠の一般名が3件でない")
-        if pg.locator(".gcard .gold").count() != 2:
-            fails.append("旧版バッジが2件でない")
+        # 削除リスト由来の記載が拾えているか。
+        # 現行版にも過去版にも無い記載（例：バルプロ酸Ｎａ錠２００ｍｇ）が
+        # 落ちると、対応する品目の一般名が分からなくなる。
+        pg.fill("#q", "バルプロ酸Ｎａ錠２００")
+        pg.wait_for_timeout(450)
+        if pg.locator(".gcard").count() != 1:
+            fails.append("削除リストの記載（バルプロ酸Ｎａ錠２００ｍｇ）が出ない")
+        else:
+            c = pg.locator(".gcard").first
+            if c.locator(".gdel").count() == 0:
+                fails.append("削除リストの記載に「削除」バッジが出ていない")
+            if c.locator(".gadd").count():
+                fails.append("削除リストの記載に加算バッジが出ている")
+            c.click()
+            pg.wait_for_timeout(350)
+            names = c.locator(".cmnm").all_inner_texts()
+            if not any("ＤＳＰ" in t for t in names):
+                fails.append("削除リストの記載に「ＤＳＰ」が紐づいていない")
+        pg.fill("#q", "アムロジピン錠")
+        pg.wait_for_timeout(450)
+        # 2.5mg と 5mg は現行版に無い（削除リストにも載っているため「削除」表示）。
+        # 現行版に無い印が何も付かなくなったら、積み上げが壊れている。
+        marks = (pg.locator(".gcard .gold").count()
+                 + pg.locator(".gcard .gdel").count())
+        if marks != 2:
+            fails.append("現行版に無い記載の印が2件でない（%d件）" % marks)
         # 旧版は一般名処方加算の対象外なので、加算バッジを出してはいけない
         for i in range(pg.locator(".gcard").count()):
             c = pg.locator(".gcard").nth(i)

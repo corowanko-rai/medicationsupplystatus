@@ -1,0 +1,60 @@
+# ============================================================
+#  保守期限 登録ファイル
+#
+#  このシステムが使っているもののうち、いつか期限が来るものを
+#  ここに書いておくと、期限の90日前から毎朝通知されます。
+#
+#  ★ 書き方（1行に1件、縦棒 | で区切る） ★
+#      期限 | 名前 | どこで使っているか | 期限が来たらどうするか | 出典URL
+#
+#      2027-10-31 | Python 3.11 | update.yml | 3.12以降へ上げる | https://…
+#
+#  ・期限は YYYY-MM-DD で書きます
+#  ・出典URLは省略できます
+#  ・行頭に # を付けると、その行は無視されます（一時的に止めたいとき）
+#  ・日付が分からないものは、期限の欄に「未確認」と書いてください。
+#    毎回「日付を調べてください」と促されます。
+#
+#  ★ 通知のされ方 ★
+#    期限の90日前になると、GitHub に Issue が作られてメールが届きます。
+#    同じ内容のIssueが開いている間は、重ねて作られません。
+#    片付いたら、この行を消すか # を付けて、Issueを閉じてください。
+# ============================================================
+
+
+# ---- 実行環境 ----
+# 「自動:python」と書くと、update.yml の python-version を読んで
+# 保守終了日を自分で計算します。版を上げれば期限も自動で追随します。
+自動:python | | .github/workflows/update.yml の python-version | | https://devguide.python.org/versions/
+
+# GitHub Actions の実行環境から Node.js 20 が削除される日。
+# 現在 update.yml が使っている checkout@v4 / setup-python@v5 /
+# configure-pages@v5 / upload-pages-artifact@v3 / deploy-pages@v4 は
+# いずれも Node.js 20 で動くため、この日を過ぎると毎朝の更新が止まる。
+# 対処：各アクションを Node.js 24 対応版（@v5 / @v6 系）へ上げる。
+# 【2026-09-08 対応済み】各アクションを Node.js 24 対応版へ更新し、
+# コミットSHAで固定した。下の行は記録として残すが、# で無効にしてある。
+# 2026-09-16 | GitHub Actions から Node.js 20 が削除 | update.yml の uses: 各行 | Node.js 24 対応版へ上げる | https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
+# SHAで固定したため、更新は自動では入らない。年1回は新しい版が出ていないか見る。
+2027-09-01 | GitHub Actions の版を見直す | .github/workflows/update.yml の uses: 各行 | 各アクションの最新版を確認し、必要ならSHAを更新する | https://github.com/actions/checkout/releases
+
+# runs-on は ubuntu-latest なので、GitHubが自動で新しいLTSへ移す。
+# こちらから何かする必要は無く、移行後に毎朝の更新が緑のままかを見るだけ。
+# 赤くなったら（メールが届く）、下の対処で時間を稼いでから原因を調べる。
+2027-04-17 | ubuntu-latest が次のLTS（26.04）へ移行 | .github/workflows/update.yml の runs-on | 何もしない。移行後の実行が失敗した場合のみ runs-on を ubuntu-24.04 に固定して時間を稼ぎ、原因（pandas/openpyxlの動作）を調べる | https://github.com/actions/runner-images
+
+
+# ---- 外部データの利用条件 ----
+未確認 | MEDIS HOTコードマスターの利用条件 | 医薬品コードマスタ（開発中） | 二次利用・再配布の範囲を規約で確認する。未確認のうちは公開ページで使わない | https://www2.medis.or.jp/
+
+
+# ---- 制度・様式 ----
+# 診療報酬改定は2年ごと（偶数年4月）。改定のたびに次の点を確認します。
+#   ・選定療養の計算方法（事務連絡）が変わっていないか
+#   ・薬価基準収載品目リストの様式が変わっていないか
+#   ・一般名処方マスタの様式が変わっていないか
+2028-04-01 | 令和10年度 診療報酬改定 | 選定療養の計算・各リストの様式 | 事務連絡を読み、計算方法と様式の変更を確認する | https://www.mhlw.go.jp/stf/newpage_39830.html
+
+
+# ▼▼▼ ここから下に追記してください ▼▼▼

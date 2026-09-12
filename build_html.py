@@ -628,6 +628,14 @@ def datadoc_values(rows, dicts, data, as_of, prices, ippan, cm_stat):
     vals["ip_prev_label"] = _ja_master("通常", prev_v["date"]) if prev_v else "前版"
     vals["ip_prev_n"] = f(prev_v["n"]) if prev_v else "—"
     vals["ip_bs_n"] = f(max((v["n"] for v in bs), default=0))
+    dl = [v for v in vs if v["kind"] == "削除"]
+    vals["ip_del_n"] = f(max((v["n"] for v in dl), default=0))
+    n_del = ip.get("deleted", 0)
+    vals["gen_del"] = f(n_del)
+    # 旧版のうち、削除リストに載っていないもの（理由が示されていない分）
+    vals["gen_oldonly"] = f(max(0, len(items) - cur - n_del))
+    # 削除リストのうち、どの版のマスタにも無かったもの（新規に拾えた分）
+    vals["ip_del_new"] = f(max((v.get("new", 0) for v in dl), default=0))
     return vals
 
 
@@ -1291,13 +1299,35 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         # cur=1 … 現行版に載っている / cur=0 … 過去の版から引き継いだ記載。
         # 引き継ぎ分は「一般名処方加算の対象ではなくなったため削除された」
         # ものなので、画面では加算区分を出さず「旧版」と表示する。
-        gitems, n_old = [], 0
-        for it in ippan["items"]:
+        # 削除リストには剤形の区分が無い（コードからの推測は精度82.7%で不十分）。
+        # ぶら下がった品目の剤形から決める。品目が無い場合だけ不明のまま。
+        gk = {}
+        for r in rows:
+            g = r[28]
+            if g >= 0 and ippan["items"][g].get("k") is None:
+                k = dict_rev(dicts, "k", r[5])
+                gk.setdefault(g, {}).setdefault(
+                    {"内用薬": 0, "外用薬": 1, "注射薬": 2}.get(k, 0), 0)
+                gk[g][{"内用薬": 0, "外用薬": 1, "注射薬": 2}.get(k, 0)] += 1
+
+        gitems, n_old, n_del, n_nok = [], 0, 0, 0
+        for n, it in enumerate(ippan["items"]):
             old = 0 if it.get("cur") else 1
             n_old += old
-            gitems.append([it["t"], it["k"], it["i"], it["s"],
+            dl = 1 if it.get("del") else 0
+            n_del += dl
+            k = it.get("k")
+            if k is None:
+                # 最も多かった剤形を採る。品目が無ければ内用薬として扱う
+                c = gk.get(n)
+                if c:
+                    k = max(c.items(), key=lambda x: x[1])[0]
+                else:
+                    k = 0
+                    n_nok += 1
+            gitems.append([it["t"], k, it["i"], it["s"],
                            it["a"], it["p"], it["b"], it["bs"], it["x"],
-                           old, it.get("v", "")])
+                           old, it.get("v", ""), dl, it.get("delv", "")])
         with_items = len({r[28] for r in rows if r[28] >= 0})
         data["ippan"] = {
             "available": True,
@@ -1307,6 +1337,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             "matched": n_gen,
             "with_items": with_items,
             "old": n_old,
+            "deleted": n_del,
+            "no_kind": n_nok,
             "items": gitems,
         }
     else:

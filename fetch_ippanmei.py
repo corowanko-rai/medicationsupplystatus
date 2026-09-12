@@ -60,7 +60,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "ippanmei.json")
 
 KIDX = {"内用薬": 0, "外用薬": 1, "注射薬": 2}
-FIELDS = ("c", "t", "k", "i", "s", "a", "p", "b", "bs", "x", "v", "cur")
+FIELDS = ("c", "t", "k", "i", "s", "a", "p", "b", "bs", "x", "v", "cur", "del", "delv")
 
 
 def log(m):
@@ -145,20 +145,25 @@ def find_masters(html, base):
       ippanmeishohoumaster_260612.xlsx
       ippannmeishohoumaster_bs_260601(260520).xlsx
     のように「n」の数と括弧書きが揺れるため、まとめて拾って区別する。
-    「ippannmeishohou_sakujo_…」（削除リスト）は master を含まないので当たらない。
+    削除リスト（ippannmeishohou_sakujo_YYMMDD.xlsx）も同じページにあり、
+    こちらは「master」を含まない別の書式なので、分けて拾う。
     過去分も同じ書式で並ぶので、ここでは全部を集めて古い順に積み上げる。
     """
-    got = {"通常": {}, "バイオ": {}}
+    got = {"通常": {}, "バイオ": {}, "削除": {}}
     for h in _hrefs(html):
         full = resolve(h, base)
         if not full:
             continue
         m = re.search(r"/ippann?meishohoumaster_(bs_)?(\d{6})[^/]*\.xlsx$",
                       full, re.I)
-        if not m:
+        if m:
+            key = "バイオ" if m.group(1) else "通常"
+            got[key][m.group(2)] = full      # 同じ日付が2つあれば後勝ち
             continue
-        key = "バイオ" if m.group(1) else "通常"
-        got[key][m.group(2)] = full          # 同じ日付が2つあれば後勝ち
+        m = re.search(r"/ippann?meishohou_sakujo_(\d{6})[^/]*\.xlsx$",
+                      full, re.I)
+        if m:
+            got["削除"][m.group(1)] = full
     return {k: [(d, v[d]) for d in sorted(v)] for k, v in got.items() if v}
 
 
@@ -236,6 +241,8 @@ def parse_master(path, is_bs, date):
             "x": 1 if s(r, c_exc) else 0,
             "v": date,      # この版に載っていた
             "cur": 0,       # 現行版かどうかは呼び出し側で決める
+            "del": 0,       # 削除リストに載っているか
+            "delv": "",     # 載っていた削除リストの版
         }
 
     # ---- 例外コード品目対照表 ----
@@ -274,6 +281,58 @@ def parse_master(path, is_bs, date):
         log(f"  警告: 対照表に載っていない例外コードが {len(missing)} 件あります"
             f"（{', '.join(missing[:3])}…）。該当する一般名は品目が出ません。")
     return items, mapx
+
+
+def parse_sakujo(path, date):
+    """削除リスト（一般名処方マスタから外れた記載）を読む。
+
+    列は 一般名コード／一般名処方の標準的な記載／成分名／規格 の4つだけで、
+    加算対象・最低薬価・例外コードの区別は載っていない。
+    区分（内用薬など）も無いため、コードの8桁目から推測する。
+
+    厚労省の注記：
+      「以下の一般名処方に該当する品目は、一般名処方加算の対象ではない」
+    """
+    import pandas as pd
+
+    probe = pd.read_excel(path, sheet_name=0, header=None, dtype=str)
+    hdr = _find_header(probe, "一般名コード")
+    if hdr is None:
+        raise ValueError("削除リストの見出し行が見つかりません。様式変更の可能性があります。")
+    df = pd.read_excel(path, sheet_name=0, header=hdr, dtype=str)
+    cols = {str(c).strip(): c for c in df.columns}
+    c_code = _pick(cols, "一般名コード")
+    c_text = _pick(cols, "一般名処方の標準的な記載", "標準的な記載")
+    c_ing = _pick(cols, "成分名")
+    c_spec = _pick(cols, "規格")
+    if c_code is None or c_text is None:
+        raise ValueError(f"削除リストの列が見つかりません: {list(cols)[:6]}")
+
+    def s(r, c):
+        if c is None:
+            return ""
+        v = str(r[c] or "").strip()
+        return "" if v == "nan" else v
+
+    items = {}
+    for _, r in df.iterrows():
+        code = s(r, c_code).upper()
+        if not re.fullmatch(r"[0-9A-Z]{9}ZZZ", code):
+            continue
+        text = s(r, c_text)
+        if not text:
+            continue
+        items[code] = {
+            "c": code, "t": text, "k": None,   # 剤形は削除リストに無い。生成時に品目から決める
+            "i": s(r, c_ing), "s": s(r, c_spec),
+            "a": 0,          # 加算の対象ではない
+            "p": None, "b": "", "bs": 0,
+            # 9桁目が英字なら例外コード。ただし削除リストに対照表は無いので、
+            # 品目は結び付かない（対照表が手に入らないため）
+            "x": 1 if not code[8].isdigit() else 0,
+            "v": date, "cur": 0, "del": 1,
+        }
+    return items
 
 
 def prev_as_codes(prev):
@@ -392,21 +451,47 @@ def main():
             log(f"前回の記録から {len(items):,}件を引き継ぎます。")
 
         tmp = os.path.join(HERE, "_ippanmei_tmp.xlsx")
-        for k in sorted(masters):
+        # 削除リストは最後に読む。記載の内容は本体のマスタのほうが詳しい
+        # （加算区分・最低薬価・区分を持つ）ので、先に読んだものを
+        # 上書きしないようにするため。
+        order = [k for k in sorted(masters) if k != "削除"] + \
+                (["削除"] if "削除" in masters else [])
+        for k in order:
             for date, _ in masters[k]:
                 with open(tmp, "wb") as f:
                     f.write(blobs[(k, date)])
-                it, mx = parse_master(tmp, is_bs=(k == "バイオ"), date=date)
-                is_newest = (date == newest[k])
+                if k == "削除":
+                    it, mx = parse_sakujo(tmp, date), {}
+                    is_newest = False
+                else:
+                    it, mx = parse_master(tmp, is_bs=(k == "バイオ"), date=date)
+                    is_newest = (date == newest[k])
                 added = sum(1 for c in it if c not in items)
+                # new は「この版で初めて現れた記載の数」。
+                # 削除リストでこれを見ると、どの版のマスタにも無かった
+                # ＝削除リストを取り込んで初めて拾えた件数が分かる。
                 versions.append({"kind": k, "date": date, "n": len(it),
+                                 "new": added,
                                  "current": 1 if is_newest else 0})
                 for c, v in it.items():
-                    v["cur"] = 1 if is_newest else 0
-                    items[c] = v          # 同じコードは新しい版で上書き
+                    if k == "削除":
+                        if c in items:
+                            # 既に本体のマスタにある記載。内容は残したまま、
+                            # 「削除リストにも載っている」ことと、その版を記録する。
+                            # v（最後に載っていたマスタの版）は上書きしない。
+                            items[c]["del"] = 1
+                            items[c]["delv"] = date
+                            continue
+                        v["delv"] = date
+                        items[c] = v      # 削除リストにしか無い記載
+                    else:
+                        v["cur"] = 1 if is_newest else 0
+                        v["del"] = items.get(c, {}).get("del", 0)
+                        v["delv"] = items.get(c, {}).get("delv", "")
+                        items[c] = v      # 同じコードは新しい版で上書き
                 mapx_c.update(mx)
                 log(f"  {k} {date}版: {len(it):,}件"
-                    f"（新規 {added:,} / 例外 {len(mx):,}）"
+                    f"（新規 {added:,}" + (f" / 例外 {len(mx):,}" if mx else "") + "）"
                     + ("  ← 現行版" if is_newest else ""))
         if os.path.exists(tmp):
             os.remove(tmp)
@@ -448,8 +533,10 @@ def main():
                 "mapx": mapx,
             }, f, ensure_ascii=False, separators=(",", ":"))
         cur_n = sum(1 for v in arr if v["cur"])
+        del_n = sum(1 for v in arr if v.get("del"))
         log(f"ippanmei.json を更新（一般名 {len(arr):,}件"
-            f" / 現行版 {cur_n:,} ・旧版 {len(arr) - cur_n:,}）")
+            f" / 現行版 {cur_n:,} ・旧版 {len(arr) - cur_n:,}"
+            f" ／ うち削除リスト掲載 {del_n:,}）")
         return 0
 
     except urllib.error.URLError as e:

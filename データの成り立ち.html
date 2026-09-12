@@ -108,11 +108,17 @@ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cgc{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP",monospace;
   font-size:13px;letter-spacing:.04em;color:var(--ink2);white-space:nowrap}
 .cgc b{background:#dcebfa;color:#0a4d80;border-radius:3px;padding:1px 2px;font-weight:800}
+/* 品名の列を 1fr にすると、紙のように幅が広い場合に品名列が伸び、
+   コードが右端へ離れて対応が読み取りにくくなる。
+   品名の実幅（max-content）に合わせ、余りは右に捨てる。 */
 .cgrid2{border:0;background:none;padding:0;margin:6px 0 0;
-  grid-template-columns:1fr max-content;gap:3px 10px}
+  grid-template-columns:max-content max-content;
+  justify-content:start;gap:3px 18px}
 .cgt{font-size:12.5px;color:var(--ink2)}
+.cgnote{margin:0 0 4px;font-size:11.5px;color:var(--ink3)}
 .cgn{grid-column:1/-1;font-size:12px;color:var(--ink2);margin:0 0 6px}
 @media (max-width:360px){
+  .cgrid2{grid-template-columns:1fr max-content;gap:3px 8px}
   .cgrid{gap:3px 8px;padding:10px}
   .cgc{font-size:11.5px;letter-spacing:0}
   .dgl{grid-template-columns:1fr}
@@ -377,8 +383,9 @@ li{margin-bottom:5px}
 
   <div class="cgrid">
     <div class="cgh">供給状況のYJコード</div><div class="cgh">薬価リスト側</div>
-    <code class="cgc"><b>2233002Q1</b>108</code>
-    <code class="cgc"><b>2233002Q1</b>108</code>
+    <div class="cgn cgnote">色を付けた部分が「一致している桁」です。</div>
+    <code class="cgc"><b>2233002Q1108</b></code>
+    <code class="cgc"><b>2233002Q1108</b></code>
     <div class="cgn">① 12桁が完全一致 …………… {{pr_exact}}</div>
     <code class="cgc"><b>2233002Q1</b>108</code>
     <code class="cgc"><b>2233002Q1</b>019</code>
@@ -513,7 +520,17 @@ YJコードごとに前回と比較
 
   {{ip_prev_label}} {{ip_prev_n}}件
   {{ip_cur_label}} {{ip_cur_n}}件   →  統合 {{gen_all}}件
-  バイオ版 {{ip_bs_n}}件       （うち現行版に無いもの {{gen_old}}件）</pre></div>
+  バイオ版 {{ip_bs_n}}件           現行版 {{gen_cur}}件
+  削除リスト {{ip_del_n}}件        削除 {{gen_del}}件／旧版のみ {{gen_oldonly}}件</pre></div>
+    <p><b>削除リストも取り込んでいます。</b>厚労省は
+    「一般名処方マスタ削除リスト」として、加算対象から外れた記載を別に公表しています。
+    これを取り込むと、現行版にも過去版にも無い記載を拾えます。
+    実測では、削除リスト{{ip_del_n}}件のうち{{ip_del_new}}件が
+    過去版にも無いものでした。
+    例：【般】バルプロ酸Ｎａ錠２００ｍｇ は削除リストにしかありませんが、
+    これによりバルプロ酸ナトリウム錠２００ｍｇ「ＤＳＰ」などと結び付きます。
+    削除リストには「該当する品目は一般名処方加算の対象ではない」と明記されているため、
+    過去版由来の「旧版」とは分けて<b>「削除」</b>と表示します。</p>
     <p style="margin-bottom:0">過去分のリンクはいずれページから消えるため、
     前回の <code>ippanmei.json</code> も統合の材料にしています。
     一度取り込んだ記載は以後も残ります。</p>
