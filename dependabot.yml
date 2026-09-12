@@ -1,0 +1,37 @@
+# 部品の新しい版を自動で見つけて、プルリクエストで知らせる設定。
+#
+# ・GitHub Actions … コミットSHAで固定しているため、放っておくと古くなる。
+#                     Dependabot はSHAと横のコメント（# v7.0.1）の両方を更新する。
+# ・Python パッケージ … requirements.txt を見る。
+#
+# 届いたプルリクエストは、内容を確認してから Merge してください。
+# 自動では反映されません（勝手に本番が変わらないようにするため）。
+#
+# 【directory ではなく directories と書いている理由】
+#   directory: "/" と書くと、Dependabot 側で "/." と解釈され、
+#   リポジトリ直下の requirements.txt を見つけられずに
+#   「No files found in /」で失敗することがある。
+#   複数形の directories で明示すると、この問題を避けられる。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "更新"
+    labels:
+      - 保守
+
+  - package-ecosystem: pip
+    directories:
+      - "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "更新"
+    labels:
+      - 保守
