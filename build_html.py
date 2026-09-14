@@ -760,7 +760,7 @@ def lookup_price(pr, yj):
 
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
-          prices_path=None, keep_chg=None,
+          prices_path=None, keep_chg=None, keep_osc=None,
           kiso_path=None, disc_path=None, sentei_path=None,
           ippanmei_path=None, datadoc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
@@ -795,6 +795,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     n_price = 0
     n_kiso = 0
     n_kchg = 0
+    old_map = {}          # YJコード → 変化前の状況コード
     n_sen = 0
     n_disc = 0
     n_gen = 0
@@ -806,9 +807,20 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         sc = SC.get(st, 3)
         # 悪化/改善: compare severity against the previous edition (0<1<2)
         chg = 0
+        # 前回の状況コード。「供給停止から通常出荷になった」のように
+        # どこから変わったのかを画面で示すために持たせる（-1＝不明）
+        old_sc_val = -1
+        if prev_snapshot is not None and yj in prev_snapshot:
+            v = prev_snapshot[yj]
+            if v in (0, 1, 2):
+                old_sc_val = v
         if keep_chg is not None:
-            # 再生成時は前回の判定結果をそのまま引き継ぐ（比較し直さない）
+            # 再生成時は前回の判定結果をそのまま引き継ぐ（比較し直さない）。
+            # 「変化前」も保存済みのものを使う。ここで現在値を使うと
+            # 前後が同じになってしまう。
             chg = keep_chg.get(yj, 0)
+            if keep_osc is not None and yj in keep_osc:
+                old_sc_val = keep_osc[yj]
         elif prev_snapshot is not None and yj in prev_snapshot:
             old_sc = prev_snapshot[yj]
             if sc in (0,1,2) and old_sc in (0,1,2):
@@ -818,6 +830,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             chg = 3                          # 新規掲載
         snap[yj] = sc
         chg_map[yj] = chg
+        if old_sc_val >= 0:
+            old_map[yj] = old_sc_val
         price = lookup_price(pr, yj)
         exp_raw = lookup_expiry(pr, yj)
         jp = 1 if is_jpharm(pr, yj) else 0
@@ -879,6 +893,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             sv,                                 # [26] 選定療養 [差額分, 選定療養時薬価] / 0
             0,                                  # [27] 併売品の行番号リスト / 0
             gi,                                 # [28] 一般名の通し番号 / -1
+            old_sc_val,                         # [29] 前回の状況コード / -1
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -929,6 +944,12 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                 "dates": dates,
                 "sc": snap,
                 "chg": {yj: v for yj, v in chg_map.items() if v},
+                # osc … 変化した品目の「変化前」の状況コード。
+                # これを残さないと、--local で作り直したときに
+                # 「供給停止 → 供給停止」のように前後が同じ表示になる
+                # （比較元が今回の値に置き換わってしまうため）。
+                "osc": {yj: old_map[yj] for yj in chg_map
+                        if chg_map[yj] in (1, 2) and old_map.get(yj) is not None},
                 "hist": hist,
             }, f, separators=(',', ':'))
 

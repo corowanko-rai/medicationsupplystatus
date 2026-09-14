@@ -116,6 +116,19 @@ def _load_keep_chg():
         return None
 
 
+def _load_keep_osc():
+    """保存済みの「変化前の出荷状況」を読む。
+    再生成では比較元が今回の値に置き換わってしまうため、
+    これが無いと「供給停止 → 供給停止」のような表示になる。"""
+    if not os.path.exists(SNAP):
+        return None
+    try:
+        o = json.load(open(SNAP, encoding="utf-8")).get("osc")
+        return {k: int(v) for k, v in o.items()} if o else None
+    except Exception:
+        return None
+
+
 def rebuild_only():
     """厚労省へアクセスせず、保存済みのExcelから作り直すだけ。
     表示の調整や販売中止の登録だけを反映したいときに使う。"""
@@ -141,7 +154,7 @@ def rebuild_only():
     n = build_html.build(XLSX, OUT, as_of=as_of,
                          source_label=st.get("label", ""), source_url=st.get("url", ""),
                          prev_snapshot=prev, snapshot_out=None, snapshot_path=SNAP,
-                         keep_chg=_load_keep_chg(),
+                         keep_chg=_load_keep_chg(), keep_osc=_load_keep_osc(),
                          prices_path=PRICES, kiso_path=KISO, disc_path=DISC,
                          sentei_path=SENTEI, ippanmei_path=IPPAN,
                          datadoc_path=DOC)
@@ -227,14 +240,16 @@ def main():
         # Excelが変わっていない再生成では、スナップショットを書き換えない
         snap_out = None if same_excel else SNAP
         keep = None
+        keep_o = None          # 先に定義しておく（同一Excelでない経路で未定義になるため）
         if same_excel:
             # Excelが同じなら比較し直さず、前回の判定結果をそのまま使う
             keep = _load_keep_chg()
+            keep_o = _load_keep_osc()
             log("  供給Excelは前回と同一のため、前回の変化判定を引き継ぎます")
 
         n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
                              prev_snapshot=prev, snapshot_out=snap_out, snapshot_path=SNAP,
-                             keep_chg=keep,
+                             keep_chg=keep, keep_osc=keep_o,
                              prices_path=PRICES, kiso_path=KISO,
                              disc_path=DISC, sentei_path=SENTEI,
                              ippanmei_path=IPPAN, datadoc_path=DOC)
