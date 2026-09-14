@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-14-v35';
+const TPL_VER='2026-09-14-v36';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2238,45 +2238,40 @@ document.getElementById('rvk').addEventListener('click',e=>{
 });
 document.getElementById('rvx').addEventListener('click',closeRv);
 
-/* ---------- 前回版からの変化（改善／悪化） ----------
-   改善した薬はバッジでしか分からず、探すのに手間がかかっていた。
-   とくに「通常出荷に戻った」は在庫の判断に直結するので、
-   悪化と同じ画面で、どこから変わったのかまで出す。 */
-let chgTab='better';   /* better=改善 / worse=悪化 */
-let chgOnlyNormal='';  /* '0' のとき「通常出荷になった」だけ */
+/* ---------- 通常出荷に戻った薬 ----------
+   掲示板は悪い知らせしか出さないため、良い知らせをここに独立して置く。
+   前回版との2点比較だと更新のたびに入れ替わり、見逃すと二度と出てこない。
+   そこで履歴（状態が変わった日の記録）から「戻った日」を拾う。
+   在庫を戻す判断に使えるよう、日付とどこから戻ったかを出す。 */
+let recFrom='';   /* '' = すべて / '1' = 限定出荷から / '2' = 供給停止から */
+/* 日付の表示。凡例側の fmtD は凡例の中だけで定義されているため、
+   ここでは使えない（参照するとお知らせ画面が止まる）。 */
+const recDate=(d)=>/^\d{4}-\d{2}-\d{2}$/.test(d||'') ? d.replace(/-/g,'/') : (d||'');
 const SCNM=['通常出荷','限定出荷','供給停止'];
 
 function drawChg(){
-  const want = chgTab==='better' ? 2 : 1;
-  let list = R.map((r,i)=>i).filter(i=>get(R[i],'chg')===want);
-  if(chgOnlyNormal==='0') list = list.filter(i=>get(R[i],'sc')===0);
-  /* 変化の幅が大きいものから。次に品名順 */
-  list.sort((a,b)=>{
-    const da=Math.abs(get(R[a],'sc')-get(R[a],'osc'));
-    const db=Math.abs(get(R[b],'sc')-get(R[b],'osc'));
-    return (db-da) || get(R[a],'n').localeCompare(get(R[b],'n'),'ja');
-  });
+  const all = DATA.recover || [];
+  const list = recFrom ? all.filter(x=>x.from===+recFrom) : all;
   document.getElementById('chgcnt').textContent =
     list.length ? `${list.length.toLocaleString()}品目` : '';
   const box=document.getElementById('chglist');
   if(!list.length){
     box.innerHTML='<div class="chgempty">'+
-      (chgOnlyNormal==='0'
-        ? '通常出荷になった品目はありません。'
-        : `前回版から${chgTab==='better'?'改善':'悪化'}した品目はありません。`)+
+      (all.length ? 'この条件に当てはまる品目はありません。'
+                  : '通常出荷に戻った品目は、まだ記録されていません。'+
+                    '<br>厚労省のデータが更新されるたびに記録が増えます。')+
       '</div>';
     return;
   }
-  box.innerHTML = list.slice(0,300).map(i=>{
-    const r=R[i], sc=get(r,'sc'), os=get(r,'osc');
-    const from = (os>=0&&os<=2) ? SCNM[os] : '掲載なし';
-    const to   = (sc>=0&&sc<=2) ? SCNM[sc] : dv(r,'st');
-    return `<div class="chgrow ${chgTab}" data-nm="${esc(get(r,'n'))}">
+  box.innerHTML = list.slice(0,300).map(x=>{
+    const r=R[x.i]; if(!r) return '';
+    return `<div class="chgrow better" data-nm="${esc(get(r,'n'))}">
       <div class="chgnm">${esc(get(r,'n'))}</div>
       <div class="chgmv">
-        <span class="cmst s${os>=0?os:3}">${esc(from)}</span>
+        <span class="cmst s${x.from}">${esc(SCNM[x.from]||'')}</span>
         <span class="chgar">→</span>
-        <span class="cmst s${sc}">${esc(to)}</span>
+        <span class="cmst s0">通常出荷</span>
+        <span class="chgday">${esc(recDate(x.d))}</span>
         <span class="chgmk">${esc(dv(r,'m')||'')}</span>
       </div>
     </div>`;
@@ -2284,16 +2279,9 @@ function drawChg(){
     ? `<div class="chgempty">ほか ${(list.length-300).toLocaleString()}品目</div>` : '');
 }
 
-document.getElementById('chgtabs').addEventListener('click',e=>{
-  const b=e.target.closest('.chgt'); if(!b) return;
-  chgTab=b.dataset.t;
-  document.querySelectorAll('#chgtabs .chgt').forEach(x=>
-    x.setAttribute('aria-pressed', x===b));
-  drawChg();
-});
 document.getElementById('chgsub').addEventListener('click',e=>{
   const b=e.target.closest('.chgs'); if(!b) return;
-  chgOnlyNormal=b.dataset.s;
+  recFrom=b.dataset.s;
   document.querySelectorAll('#chgsub .chgs').forEach(x=>
     x.setAttribute('aria-pressed', x===b));
   drawChg();
@@ -2471,7 +2459,8 @@ document.getElementById('chglist').addEventListener('click',e=>{
   h+=S_('前回版からの変化');
   h+=R_(bd('New','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「New」表示に対応');
   h+=R_(bd('悪化','bworse'),'供給状況が悪くなりました','通常出荷→限定出荷、限定出荷→供給停止 など');
-  h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など');
+  h+=R_(bd('改善','bbetter'),'供給状況が良くなりました','供給停止→限定出荷、限定出荷→通常出荷 など。'+
+        '通常出荷に戻ったものは「お知らせ」タブの最上段に、戻った日付つきで一覧されます');
 
   h+=S_('添付文書・経過措置');
   h+=R_('<span class="pmdabtn" style="min-height:auto;padding:3px 8px;font-size:11px">PMDA</span>',
@@ -2520,10 +2509,14 @@ document.getElementById('chglist').addEventListener('click',e=>{
      '</div>';
   h+='<div class="lgnote">'+
      '<b>「お知らせ」タブ</b>は4段です。'+
-     '<br><b>最上段＝前回版からの変化</b>：<b>改善</b>と<b>悪化</b>を切り替えて見られます。'+
-     '「どの状況から」「どの状況へ」変わったかを並べて出すので、'+
-     '<b>供給停止からでも限定出荷からでも、通常出荷に戻った薬</b>が分かります。'+
-     '<b>「通常出荷になった」</b>で絞り込めます。行をタップすると、その薬の検索に移ります。'+
+     '<br><b>最上段＝通常出荷に戻った薬</b>：'+
+     '<b>供給停止からでも限定出荷からでも</b>、通常出荷に戻った薬を'+
+     '<b>戻った日付つき</b>で一覧します。「供給停止から」「限定出荷から」で絞れます。'+
+     '行をタップすると、その薬の検索に移ります。'+
+     '<br>掲示板が悪い知らせ中心のため、良い知らせを独立して置いています。'+
+     '前回版との比較ではなく<b>履歴から「戻った日」を拾う</b>ので、'+
+     '更新のたびに入れ替わって見逃す、ということが起きません。'+
+     '記録は厚労省のデータが更新されるたびに増えていきます。'+
      '<br><b>上段＝お知らせ掲示板</b>：履歴から読み取れた事実を、'+
      '「割合の超過」「逼迫率の上昇」「段階的な悪化」「不安定」に分けて出します。'+
      '成分名をタップすると、中段のグラフと下段の一覧がその成分に切り替わります。'+

@@ -1114,6 +1114,45 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     data["series"] = series
     data["sdates"] = len(series.get("_all") or [])
 
+    # ---- 回復した薬（限定出荷・供給停止 → 通常出荷） ----
+    # 「前回版との比較」は前回と今回の2点しか見ないため、
+    # 更新のたびに入れ替わり、見逃すと二度と出てこない。
+    # 履歴（状態が変わった日の記録）から、
+    # 「いつ通常出荷に戻ったか」を拾って一覧にする。
+    # 在庫を戻す判断に直結するので、日付まで出す。
+    recover = []
+    try:
+        if shist:
+            # 画面側が dv() で辞書を引けるよう、行番号を渡す。
+            # ここで r[2]（薬効分類の索引）を渡すと、メーカー名の代わりに
+            # 数字が出てしまう。
+            idx_of = {r[4]: n for n, r in enumerate(rows)}
+            sc_now = {r[4]: r[8] for r in rows}
+            for yj, pts in shist.items():
+                if sc_now.get(yj) != 0:
+                    continue                      # いまが通常出荷でなければ対象外
+                if len(pts) < 2:
+                    continue                      # 変化の記録が無い
+                # 履歴をさかのぼり、通常出荷になった最後の時点を探す。
+                # 記録は「状態が変わった日」だけなので、
+                # 最後が 0（通常出荷）で、その直前が 1/2 なら回復とみなす。
+                last = None
+                for k in range(len(pts) - 1, 0, -1):
+                    if pts[k][1] == 0 and pts[k - 1][1] in (1, 2):
+                        last = (pts[k][0], pts[k - 1][1])
+                        break
+                if not last:
+                    continue
+                n_i = idx_of.get(yj)
+                if n_i is None:
+                    continue
+                recover.append({"i": n_i, "d": last[0], "from": last[1]})
+    except Exception:
+        recover = []
+    # 新しい順。同じ日なら品名順
+    recover.sort(key=lambda x: (x["d"], rows[x["i"]][0]), reverse=True)
+    data["recover"] = recover[:400]
+
     # ---- お知らせ掲示板（事実の提示） ----
     # 履歴から読み取れる「起きたこと」を、ジャンル別に文章化する。
     # 予測ではなく事実だけを出す（供給停止は外部要因が支配的で、

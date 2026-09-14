@@ -195,7 +195,15 @@ header{
 .chgnm{font-size:13px;font-weight:700;color:var(--ink);line-height:1.5}
 .chgmv{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11.5px}
 .chgar{color:var(--ink3)}
-.chgmk{margin-left:auto;font-size:11px;color:var(--ink3);white-space:nowrap}
+/* メーカー名は幅が足りなければ折り返させる。
+   nowrap のままだと右端で切れて読めなくなる。 */
+.chgmk{margin-left:auto;font-size:11px;color:var(--ink3);
+  min-width:0;overflow-wrap:anywhere;text-align:right}
+.chgmv{flex-wrap:wrap}
+/* 通常出荷に戻った日。在庫を戻す判断に使うので、品名の次に目立たせる */
+.chgday{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#2f7a52;
+  background:#e8f5ec;border-radius:5px;padding:2px 7px}
+
 .chgempty{padding:18px 10px;text-align:center;color:var(--ink3);font-size:12.5px}
 
 .bdhd{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
@@ -954,19 +962,19 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 </div>
 <div id="board">
   <div class="bdwrap">
-    <!-- 前回版からの変化。良くなった薬は探しにくいので、悪化と並べて最上段に置く -->
+    <!-- 通常出荷に戻った薬。掲示板が悪い知らせばかりなので、
+         良い知らせを最上段に独立して置く。
+         前回版との2点比較ではなく、履歴から「戻った日」を拾うため、
+         更新のたびに入れ替わって見逃す、ということが起きない。 -->
     <section class="bdsec" id="chgsec">
       <div class="bdhd">
-        <h2>前回版からの変化</h2>
+        <h2>通常出荷に戻った薬</h2>
         <span class="bdcnt" id="chgcnt"></span>
       </div>
-      <div class="chgtabs" id="chgtabs">
-        <button class="chgt" data-t="better" aria-pressed="true">改善</button>
-        <button class="chgt" data-t="worse" aria-pressed="false">悪化</button>
-      </div>
-      <div class="chgtabs sub" id="chgsub">
+      <div class="chgtabs" id="chgsub">
         <button class="chgs" data-s="" aria-pressed="true">すべて</button>
-        <button class="chgs" data-s="0" aria-pressed="false">通常出荷になった</button>
+        <button class="chgs" data-s="2" aria-pressed="false">供給停止から</button>
+        <button class="chgs" data-s="1" aria-pressed="false">限定出荷から</button>
       </div>
       <div class="bdscroll" id="chglist"></div>
     </section>

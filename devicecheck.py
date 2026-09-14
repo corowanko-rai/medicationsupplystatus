@@ -462,22 +462,19 @@ def check_device(browser, p, name, url):
         if card["got"]["ton"] == card["got"]["teiki"]:
             fails.append("カードで定期と頓用の金額が同じ（切り替えが効いていない）")
 
-    # お知らせ：前回版からの変化。
-    # 「供給停止 → 供給停止」のように前後が同じ行が出ていないか。
-    # 再生成で比較元が今回の値に置き換わると、この形で壊れる。
-    chg = pg.evaluate(r"""() => {
-      let same = 0, n = 0;
-      R.forEach(r => {
-        const c = get(r,'chg');
-        if (c !== 1 && c !== 2) return;      // 改善・悪化のみ
-        n++;
-        if (get(r,'sc') === get(r,'osc')) same++;
-      });
-      return {n, same};
+    # お知らせ：通常出荷に戻った薬。
+    # 前後が同じ（例：供給停止→供給停止）の行が出ていないか。
+    # 履歴から「戻った日」を拾う作りなので、from は 1 か 2 に限られる。
+    rec = pg.evaluate(r"""() => {
+      const a = DATA.recover || [];
+      return {n: a.length,
+              bad: a.filter(x => x.from !== 1 && x.from !== 2).length,
+              noday: a.filter(x => !x.d).length};
     }""")
-    if chg["same"]:
-        fails.append("変化の前後が同じ品目が %d件ある（比較元が保存されていない）"
-                     % chg["same"])
+    if rec["bad"]:
+        fails.append("通常出荷に戻った薬に、戻る前が通常出荷の行が %d件ある" % rec["bad"])
+    if rec["noday"]:
+        fails.append("通常出荷に戻った薬に、日付の無い行が %d件ある" % rec["noday"])
 
     # 選定療養の表示
     pg.fill("#q", "ムコダインシロップ")
