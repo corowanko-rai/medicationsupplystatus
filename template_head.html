@@ -284,13 +284,26 @@ header{
 .cfglb{font-size:11px;font-weight:800;color:var(--ink3);margin:9px 0 5px}
 /* お知らせ掲示板 */
 .nwbar{display:flex;align-items:center;gap:9px;margin-bottom:8px}
-.nwsort{min-height:34px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:700;
+.nwsort{min-height:40px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:700;
   background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
   cursor:pointer;font-family:inherit;white-space:nowrap}
 .nwkinds{flex:1;font-size:11px;color:var(--ink3);text-align:right}
+/* 良い知らせ／悪い知らせの切り替え。実務では良い方だけ見たい場面が多い */
+.nwside{display:flex;gap:5px;margin-bottom:6px}
+.nws{flex:1;min-height:38px;border-radius:9px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
+  cursor:pointer;font-family:inherit;white-space:nowrap}
+.nws[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.nws.good[aria-pressed="true"]{background:#2f7a52;border-color:#2f7a52}
+.nws.bad[aria-pressed="true"]{background:#a53b3b;border-color:#a53b3b}
+.cfgnote{margin-left:8px;font-size:10.5px;font-weight:600;color:var(--ink3)}
+/* 良い知らせの印。悪い知らせと色で見分けられるようにする */
+.ic-clear,.ic-uncross,.ic-fall,.ic-up{background:#e8f5ec;color:#2f7a52}
+.tg-clear,.tg-uncross,.tg-fall,.tg-up{background:#e8f5ec;color:#2f7a52}
+
 .nwtabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:9px;scrollbar-width:none}
 .nwtabs::-webkit-scrollbar{display:none}
-.nwt{flex:0 0 auto;min-height:34px;padding:0 12px;border-radius:99px;
+.nwt{flex:0 0 auto;min-height:40px;padding:0 12px;border-radius:99px;
   font-size:12px;font-weight:700;background:var(--surface2);
   border:1px solid var(--line);color:var(--ink2);cursor:pointer;font-family:inherit;
   white-space:nowrap}
@@ -966,6 +979,34 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
          良い知らせを最上段に独立して置く。
          前回版との2点比較ではなく、履歴から「戻った日」を拾うため、
          更新のたびに入れ替わって見逃す、ということが起きない。 -->
+      <details class="cfg" id="cfg">
+        <summary>表示の設定（剤形・割合）</summary>
+        <div class="cfgin">
+          <div class="cfglb">剤形<span class="cfgnote">この下の3つすべてに効きます</span></div>
+          <div class="kwrap" id="bdk">
+            <button class="kb2" data-k="0" aria-pressed="true">内用薬</button>
+            <button class="kb2" data-k="1" aria-pressed="true">外用薬</button>
+            <button class="kb2" data-k="2" aria-pressed="false">注射薬</button>
+          </div>
+          <div class="cfglb">逼迫の割合</div>
+          <div class="bdth" id="bdth">
+            <button class="thb" data-lo="25" data-hi="50">25〜50%</button>
+            <button class="thb" data-lo="50" data-hi="75">50〜75%</button>
+            <button class="thb" data-lo="75" data-hi="100">75%以上</button>
+            <button class="thb" data-lo="50" data-hi="100" aria-pressed="true">50%以上</button>
+            <button class="thb" data-lo="0" data-hi="100">すべて</button>
+          </div>
+          <div class="rngrow">
+            <label for="rng">下限 <b id="rnglb">50</b>%以上</label>
+            <input type="range" id="rng" min="0" max="100" step="5" value="50">
+          </div>
+          <div class="cfglb">お知らせの条件</div>
+          <div class="rngrow">
+            <label for="rng2">逼迫率の変化 <b id="rng2lb">10</b>ポイント以上</label>
+            <input type="range" id="rng2" min="5" max="50" step="5" value="10">
+          </div>
+        </div>
+      </details>
     <section class="bdsec" id="chgsec">
       <div class="bdhd">
         <h2>通常出荷に戻った薬</h2>
@@ -987,12 +1028,21 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
         <button class="nwsort" id="nwsort">高い順</button>
         <span class="nwkinds" id="nwkinds"></span>
       </div>
+      <div class="nwside" id="nwside">
+        <button class="nws" data-v="" aria-pressed="true">すべて</button>
+        <button class="nws good" data-v="good">良い知らせ</button>
+        <button class="nws bad" data-v="bad">悪い知らせ</button>
+      </div>
       <div class="nwtabs" id="nwtabs">
         <button class="nwt" data-t="" aria-pressed="true">すべて</button>
         <button class="nwt" data-t="cross">割合の超過</button>
         <button class="nwt" data-t="rise">逼迫率の上昇</button>
         <button class="nwt" data-t="down">段階的な悪化</button>
         <button class="nwt" data-t="swing">不安定</button>
+        <button class="nwt" data-t="clear">全品が通常出荷</button>
+        <button class="nwt" data-t="uncross">割合の回復</button>
+        <button class="nwt" data-t="fall">逼迫率の低下</button>
+        <button class="nwt" data-t="up">段階的な改善</button>
       </div>
       <div class="bdscroll" id="nwlist"></div>
     </section>
@@ -1010,34 +1060,6 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
         <h2>供給の逼迫が進んでいる成分</h2>
         <span class="bdcnt" id="bdcnt"></span>
       </div>
-      <details class="cfg" id="cfg">
-        <summary>表示の設定（剤形・割合）</summary>
-        <div class="cfgin">
-          <div class="cfglb">剤形</div>
-          <div class="kwrap" id="bdk">
-            <button class="kb2" data-k="0" aria-pressed="true">内用薬</button>
-            <button class="kb2" data-k="1" aria-pressed="true">外用薬</button>
-            <button class="kb2" data-k="2" aria-pressed="false">注射薬</button>
-          </div>
-          <div class="cfglb">逼迫の割合</div>
-          <div class="bdth" id="bdth">
-            <button class="thb" data-lo="25" data-hi="50">25〜50%</button>
-            <button class="thb" data-lo="50" data-hi="75">50〜75%</button>
-            <button class="thb" data-lo="75" data-hi="100">75%以上</button>
-            <button class="thb" data-lo="50" data-hi="100" aria-pressed="true">50%以上</button>
-            <button class="thb" data-lo="0" data-hi="100">すべて</button>
-          </div>
-          <div class="rngrow">
-            <label for="rng">下限 <b id="rnglb">50</b>%以上</label>
-            <input type="range" id="rng" min="0" max="100" step="5" value="50">
-          </div>
-          <div class="cfglb">お知らせの条件</div>
-          <div class="rngrow">
-            <label for="rng2">上昇幅 <b id="rng2lb">10</b>ポイント以上</label>
-            <input type="range" id="rng2" min="5" max="50" step="5" value="10">
-          </div>
-        </div>
-      </details>
       <div class="bdscroll" id="bdlist"></div>
     </section>
   </div>

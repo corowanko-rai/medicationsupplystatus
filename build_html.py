@@ -1215,6 +1215,25 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                     news.append({"t": "cross", "i": ing,
                                  "b": round(r1 * 100), "d1": last,
                                  "f0": f0, "f1": f1})
+                # ①' 逼迫率が下がった（良い知らせ）
+                # 上がった側と同じ基準（10ポイント）で対称に拾う。
+                # 基準を変えると、良い知らせだけ出にくい／出すぎるため。
+                if r0 - r1 >= 0.10:
+                    news.append({
+                        "t": "fall", "i": ing,
+                        "a": round(r0 * 100), "b": round(r1 * 100),
+                        "d0": first, "d1": last, "f0": f0, "f1": f1,
+                    })
+                # ②' 限定出荷以下が一定割合を下回った（良い知らせ）
+                if r1 < 0.30 and r0 >= 0.30:
+                    news.append({"t": "uncross", "i": ing,
+                                 "a": round(r0 * 100), "b": round(r1 * 100),
+                                 "d1": last, "f0": f0, "f1": f1})
+                # ②'' すべて通常出荷に戻った
+                if r1 == 0 and r0 > 0:
+                    news.append({"t": "clear", "i": ing,
+                                 "a": round(r0 * 100), "d1": last,
+                                 "f0": f0, "f1": f1})
 
             # ③④ 品目ごとの推移から、悪化の連続と往復を拾う
             for yj, pts in nh.items():
@@ -1234,6 +1253,18 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                             break
                     else:
                         run = 1
+                # 3段階以上の改善（2→1→0 のように単調に良くなった）
+                run = 1
+                for i in range(1, len(seq)):
+                    if seq[i] < seq[i - 1]:
+                        run += 1
+                        if run >= 3:
+                            news.append({"t": "up", "i": ing, "yj": yj,
+                                         "d0": pts[0][0], "d1": pts[-1][0],
+                                         "n": run, "kf": kind_of.get(yj)})
+                            break
+                    else:
+                        run = 1
                 # 往復（上がったり下がったりを繰り返す）
                 turns = sum(1 for i in range(1, len(seq) - 1)
                             if (seq[i] - seq[i - 1]) * (seq[i + 1] - seq[i]) < 0)
@@ -1246,19 +1277,26 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     def rank(z):
         if z["t"] == "rise":
             return -(z.get("b", 0) - z.get("a", 0))
-        if z["t"] == "cross":
-            return -z.get("b", 0)
+        if z["t"] == "fall":
+            return -(z.get("a", 0) - z.get("b", 0))   # 下がり幅の大きい順
+        if z["t"] in ("cross", "uncross", "clear"):
+            return -z.get("a", z.get("b", 0))
         return -z.get("n", 0)
 
-    seen, buckets = set(), {"rise": [], "cross": [], "down": [], "swing": []}
+    seen, buckets = set(), {"rise": [], "cross": [], "down": [], "swing": [],
+                            "fall": [], "uncross": [], "clear": [], "up": []}
     for x in sorted(news, key=rank):
         k = (x["t"], x["i"])
         if k in seen:
             continue
         seen.add(k)
         buckets[x["t"]].append(x)
+    # 良い知らせ・悪い知らせのどちらも、種類ごとに上限を設けて混ぜる。
+    # 種類ごとに枠を切らないと、件数の多い種類だけで画面が埋まる。
     data["news"] = ([*buckets["rise"][:150], *buckets["cross"][:150],
-                     *buckets["down"][:150], *buckets["swing"][:150]])
+                     *buckets["down"][:150], *buckets["swing"][:150],
+                     *buckets["fall"][:150], *buckets["uncross"][:150],
+                     *buckets["clear"][:150], *buckets["up"][:150]])
 
     # ---- 成分ごとの推移（折れ線グラフ用） ----
     # snapshot の変化点履歴から「各日にちで何品目が限定出荷／供給停止だったか」を

@@ -50,6 +50,13 @@ DOC_TERMS = [
     "販売中止",       # 手動登録
 ]
 
+GOOD_TYPES = {"clear", "uncross", "fall", "up"}
+
+
+def isGoodType(t):
+    return t in GOOD_TYPES
+
+
 MIN_TAP = 40   # タップ領域の最低px（Androidの推奨48dp、iOSの44ptを踏まえた実務下限）
 
 
@@ -833,6 +840,40 @@ def check_device(browser, p, name, url):
     pg.wait_for_timeout(250)
     if pg.locator("#lg").is_visible():
         fails.append("凡例が閉じない")
+
+    # お知らせ掲示板：良い知らせ／悪い知らせの切り替え。
+    # 種類ボタンは選んだ向きに合うものだけが出ること。
+    pg.click('.ptab[data-p="board"]')
+    pg.wait_for_timeout(500)
+    for v, want_good in (("good", True), ("bad", False)):
+        pg.click(f'#nwside .nws[data-v="{v}"]')
+        pg.wait_for_timeout(350)
+        vis = pg.evaluate("""() => [...document.querySelectorAll('#nwtabs .nwt')]
+            .filter(b => b.offsetParent).map(b => b.dataset.t).filter(Boolean)""")
+        bad = [t for t in vis if isGoodType(t) != want_good]
+        if bad:
+            fails.append("掲示板の種類ボタンが向きと合わない（%s に %s）"
+                         % (v, "／".join(bad)))
+    pg.click('#nwside .nws[data-v=""]')
+    pg.wait_for_timeout(300)
+
+    # 剤形の設定が、お知らせタブの各段すべてに効くこと
+    before = pg.evaluate("""() => ({
+      rec: (document.getElementById('chgcnt')||{}).textContent || '',
+      news: (document.getElementById('nwcnt')||{}).textContent || '',
+      bd: (document.getElementById('bdcnt')||{}).textContent || ''})""")
+    pg.evaluate("document.getElementById('cfg').open = true")
+    pg.click('#bdk .kb2[data-k="2"]')          # 注射薬を足す
+    pg.wait_for_timeout(500)
+    after = pg.evaluate("""() => ({
+      rec: (document.getElementById('chgcnt')||{}).textContent || '',
+      news: (document.getElementById('nwcnt')||{}).textContent || '',
+      bd: (document.getElementById('bdcnt')||{}).textContent || ''})""")
+    if before == after:
+        fails.append("剤形を変えてもお知らせタブの表示が変わらない")
+    pg.click('#bdk .kb2[data-k="2"]')          # 元に戻す
+    pg.wait_for_timeout(400)
+
 
     # タップ領域（Androidは48dp推奨。主要な操作要素を確認）
     small = pg.evaluate(f"""() => {{

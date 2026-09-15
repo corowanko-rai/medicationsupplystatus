@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-14-v36';
+const TPL_VER='2026-09-15-v37';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -1256,8 +1256,15 @@ function lv(pct){ return pct>=75?3:pct>=50?2:1; }
 /* ---------- お知らせ掲示板（事実の提示） ---------- */
 const NEWS=DATA.news||[];
 let nwType='', nwRise=10, nwDesc=true;
-const NWLAB={cross:'割合の超過',rise:'逼迫率の上昇',down:'段階的な悪化',swing:'不安定'};
-const NWIC={cross:'!',rise:'↑',down:'▼',swing:'↕'};
+/* 良い知らせ／悪い知らせの切り替え。'' = すべて */
+let nwSide='';
+const NWLAB={cross:'割合の超過',rise:'逼迫率の上昇',down:'段階的な悪化',swing:'不安定',
+             uncross:'割合の回復',fall:'逼迫率の低下',up:'段階的な改善',clear:'全品が通常出荷'};
+const NWIC={cross:'!',rise:'↑',down:'▼',swing:'↕',
+            uncross:'○',fall:'↓',up:'▲',clear:'✓'};
+/* どちらの向きの知らせか。良い知らせだけを見たい場面が実務では多い */
+const NWGOOD={uncross:1,fall:1,up:1,clear:1};
+const isGood=(t)=>!!NWGOOD[t];
 function nwText(x){
   const nm=D.i[x.i]||'(成分名なし)';
   const d=(v)=>String(v||'').replace(/-/g,'/');
@@ -1267,6 +1274,14 @@ function nwText(x){
     return `<b>${esc(nm)}</b> の逼迫率が <b>${x.a}% → ${x.b}%</b> に上昇しました`;
   if(x.t==='down')
     return `<b>${esc(nm)}</b> に、通常出荷から段階的に <b>${x.n}段階</b> 悪化した品目があります`;
+  if(x.t==='fall')
+    return `<b>${esc(nm)}</b> の逼迫率が <b>${x.a}% → ${x.b}%</b> に下がりました`;
+  if(x.t==='uncross')
+    return `<b>${esc(nm)}</b> の限定出荷以下が <b>${x.a}% → ${x.b}%</b> になり、30%を下回りました`;
+  if(x.t==='clear')
+    return `<b>${esc(nm)}</b> は <b>すべて通常出荷</b> に戻りました（以前は ${x.a}% が限定出荷以下）`;
+  if(x.t==='up')
+    return `<b>${esc(nm)}</b> に、段階的に <b>${x.n}段階</b> 改善した品目があります`;
   return `<b>${esc(nm)}</b> に、出荷状況が <b>${x.n}回</b> 変動した品目があります（不安定）`;
 }
 function nwSub(x){
@@ -1289,7 +1304,9 @@ function drawNews(){
   const list=[];
   NEWS.forEach(x=>{
     if(nwType && x.t!==nwType) return;
-    if(x.t==='down'||x.t==='swing'){
+    if(nwSide==='good' && !isGood(x.t)) return;
+    if(nwSide==='bad'  &&  isGood(x.t)) return;
+    if(x.t==='down'||x.t==='swing'||x.t==='up'){
       /* 品目単位の所見は、その薬の剤形で判断する */
       if(x.kf===undefined||x.kf===null||!bdKinds.has(x.kf)) return;
       list.push({...x});
@@ -1300,10 +1317,19 @@ function drawNews(){
     if(x.t==='rise' && (c.b-c.a)<nwRise) return;
     if(x.t==='rise' && c.b<=c.a) return;       /* 選び直すと上昇でなくなる場合 */
     if(x.t==='cross' && c.b<30) return;
+    /* 良い知らせも、剤形を選び直したときに成り立たなくなることがある。
+       悪い知らせと同じ基準で、成り立たなくなったものは出さない。 */
+    if(x.t==='fall' && (c.a-c.b)<nwRise) return;
+    if(x.t==='fall' && c.a<=c.b) return;
+    if(x.t==='uncross' && !(c.b<30 && c.a>=30)) return;
+    if(x.t==='clear' && !(c.b===0 && c.a>0)) return;
     list.push({...x, a:c.a, b:c.b, tot:c.n});
   });
   /* 並び替え：割合の超過と逼迫率の上昇は数値の大小で切り替える */
-  const key=(z)=> z.t==='rise' ? (z.b-z.a) : z.t==='cross' ? z.b : (z.n||0);
+  const key=(z)=> z.t==='rise' ? (z.b-z.a)
+               : z.t==='fall' ? (z.a-z.b)
+               : (z.t==='cross'||z.t==='uncross'||z.t==='clear') ? (z.a||z.b||0)
+               : (z.n||0);
   list.sort((p,q)=> nwDesc ? key(q)-key(p) : key(p)-key(q));
   document.getElementById('nwsort').textContent = nwDesc ? '高い順' : '低い順';
   document.getElementById('nwkinds').textContent =
@@ -1338,6 +1364,26 @@ document.getElementById('nwtabs').addEventListener('click',e=>{
   const b=e.target.closest('.nwt'); if(!b) return;
   nwType=b.dataset.t||''; drawNews();
 });
+document.getElementById('nwside').addEventListener('click',e=>{
+  const b=e.target.closest('.nws'); if(!b) return;
+  nwSide=b.dataset.v||'';
+  /* 向きを変えたら、種類の絞り込みは外す。
+     「良い知らせ」＋「段階的な悪化」のような噛み合わない組み合わせを防ぐ */
+  nwType='';
+  document.querySelectorAll('#nwside .nws').forEach(x=>
+    x.setAttribute('aria-pressed', x===b));
+  syncNwTabs();
+  drawNews();
+});
+/* 選んだ向きに合う種類だけをボタンとして出す */
+function syncNwTabs(){
+  document.querySelectorAll('#nwtabs .nwt').forEach(b=>{
+    const t=b.dataset.t||'';
+    const show = !t || !nwSide ||
+      (nwSide==='good' ? isGood(t) : !isGood(t));
+    b.style.display = show ? '' : 'none';
+  });
+}
 /* 掲示板の成分をタップ → 中段のグラフと下段の一覧をその成分に合わせる */
 document.getElementById('nwlist').addEventListener('click',e=>{
   const row=e.target.closest('.nwrow'); if(!row) return;
@@ -1494,7 +1540,9 @@ document.getElementById('bdk').addEventListener('click',e=>{
   const k=+b.dataset.k;
   if(bdKinds.has(k)){ if(bdKinds.size>1) bdKinds.delete(k); }
   else bdKinds.add(k);
-  drawNews(); drawBoard();
+  /* 剤形は3つの節すべてに効く。ここに書き漏らすと、
+     設定を変えても一部だけ古い表示のまま残る */
+  drawChg(); drawNews(); drawBoard();
 });
 document.getElementById('bdlist').addEventListener('click',e=>{
   const row=e.target.closest('.bdrow'); if(!row) return;
@@ -2248,9 +2296,14 @@ let recFrom='';   /* '' = すべて / '1' = 限定出荷から / '2' = 供給停
    ここでは使えない（参照するとお知らせ画面が止まる）。 */
 const recDate=(d)=>/^\d{4}-\d{2}-\d{2}$/.test(d||'') ? d.replace(/-/g,'/') : (d||'');
 const SCNM=['通常出荷','限定出荷','供給停止'];
+const KIDX={'内用薬':0,'外用薬':1,'注射薬':2};
 
 function drawChg(){
-  const all = DATA.recover || [];
+  /* 剤形は上部の「表示の設定」と共通。掲示板や下段と食い違わないようにする */
+  const all = (DATA.recover || []).filter(x=>{
+    const r=R[x.i]; if(!r) return false;
+    return bdKinds.has(KIDX[dv(r,'k')]);
+  });
   const list = recFrom ? all.filter(x=>x.from===+recFrom) : all;
   document.getElementById('chgcnt').textContent =
     list.length ? `${list.length.toLocaleString()}品目` : '';
@@ -2509,16 +2562,24 @@ document.getElementById('chglist').addEventListener('click',e=>{
      '</div>';
   h+='<div class="lgnote">'+
      '<b>「お知らせ」タブ</b>は4段です。'+
+     '最上部の<b>「表示の設定」</b>（折りたたみ）で剤形を選ぶと、'+
+     '<b>4段すべて</b>に反映されます。既定は<b>内用薬・外用薬</b>です。'+
      '<br><b>最上段＝通常出荷に戻った薬</b>：'+
      '<b>供給停止からでも限定出荷からでも</b>、通常出荷に戻った薬を'+
      '<b>戻った日付つき</b>で一覧します。「供給停止から」「限定出荷から」で絞れます。'+
      '行をタップすると、その薬の検索に移ります。'+
-     '<br>掲示板が悪い知らせ中心のため、良い知らせを独立して置いています。'+
+     '<br>掲示板にも良い知らせは出ますが、成分単位の割合の話なので、'+
+     '<b>品目単位で「どの薬が戻ったか」</b>を知るにはこの段を見てください。'+
      '前回版との比較ではなく<b>履歴から「戻った日」を拾う</b>ので、'+
      '更新のたびに入れ替わって見逃す、ということが起きません。'+
      '記録は厚労省のデータが更新されるたびに増えていきます。'+
-     '<br><b>上段＝お知らせ掲示板</b>：履歴から読み取れた事実を、'+
-     '「割合の超過」「逼迫率の上昇」「段階的な悪化」「不安定」に分けて出します。'+
+     '<br><b>上段＝お知らせ掲示板</b>：履歴から読み取れた事実を出します。'+
+     '<b>「良い知らせ」「悪い知らせ」</b>で切り替えられ、'+
+     '選んだ向きに合う種類のボタンだけが並びます。'+
+     '<br>悪い知らせ＝「割合の超過」「逼迫率の上昇」「段階的な悪化」「不安定」。'+
+     '良い知らせ＝「全品が通常出荷」「割合の回復」「逼迫率の低下」「段階的な改善」。'+
+     '良い知らせは悪い知らせと<b>同じ基準で対称に</b>拾っています'+
+     '（例：逼迫率が10ポイント上がったら「上昇」、10ポイント下がったら「低下」）。'+
      '成分名をタップすると、中段のグラフと下段の一覧がその成分に切り替わります。'+
      '<br><b>中段＝出荷状況の推移</b>　<b>下段＝逼迫している成分</b>'+
      '<br>剤形・割合・お知らせの条件は、下段の「表示の設定」で変えられます。'+
