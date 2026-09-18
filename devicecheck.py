@@ -116,9 +116,6 @@ def check_device(browser, p, name, url):
     pg.click("#clrall")
     pg.wait_for_timeout(250)
 
-    # 製品区分
-    pg.click("#advbtn")
-    pg.wait_for_timeout(200)
     # 併売品：バッジ・カード内一覧・一覧画面
     pg.fill("#q", "コンスタン０．４")
     pg.wait_for_timeout(420)
@@ -483,6 +480,51 @@ def check_device(browser, p, name, url):
     if rec["noday"]:
         fails.append("通常出荷に戻った薬に、日付の無い行が %d件ある" % rec["noday"])
 
+    # ⑰出荷量。バッジ・絞り込み・並び替えが動くこと。
+    # 直前でお知らせタブに移っているので、検索画面へ戻す。
+    # 【般】一般名モードのままだと詳細フィルタ自体が隠れるので、品名モードに戻す。
+    pg.click('.ptab[data-p="search"]')
+    pg.wait_for_timeout(400)
+    pg.click('.sm[data-m="n"]')
+    pg.wait_for_timeout(400)
+    vol = pg.evaluate(r"""() => {
+      const c = {};
+      R.forEach(r => { const v = get(r,'vc'); c[v] = (c[v]||0)+1; });
+      return c;
+    }""")
+    if not any(vol.get(str(k), 0) for k in range(5)):
+        fails.append("出荷量（⑰）が1件も読み取れていない")
+    # 詳細フィルタは折りたたみ。開いていなければ開く
+    if not pg.locator("#fvc").is_visible():
+        pg.click("#advbtn")
+        pg.wait_for_timeout(350)
+    pg.select_option("#fvc", "4")           # 薬価削除予定
+    pg.wait_for_timeout(500)
+    want = vol.get("4", 0)
+    if num(pg.inner_text("#cnt")) != want:
+        fails.append("出荷量での絞り込みが合わない（表示 %s / 期待 %d）"
+                     % (pg.inner_text("#cnt"), want))
+    pg.select_option("#fvc", "")
+    pg.wait_for_timeout(400)
+    for _ in range(4):
+        if "出荷量" in pg.inner_text("#ordbtn"):
+            break
+        pg.click("#ordbtn")
+        pg.wait_for_timeout(350)
+    if "出荷量" not in pg.inner_text("#ordbtn"):
+        fails.append("出荷量での並び替えが選べない")
+    else:
+        head = pg.evaluate("() => results.slice(0,5).map(r => get(r,'vc'))")
+        if head != sorted(head):
+            fails.append("出荷量の並び替えが良い順になっていない（%s）" % head)
+        pg.click("#ordbtn")
+        pg.wait_for_timeout(300)
+    # 開いたままにすると、狭い端末で #fmk などが他の要素を覆い、
+    # 後続のクリックを遮ってしまう。必ず閉じてから次へ進む。
+    if pg.locator("#fvc").is_visible():
+        pg.click("#advbtn")
+        pg.wait_for_timeout(300)
+
     # 選定療養の表示
     pg.fill("#q", "ムコダインシロップ")
     pg.wait_for_timeout(420)
@@ -539,6 +581,10 @@ def check_device(browser, p, name, url):
     pg.fill("#q", "")
     pg.wait_for_timeout(250)
 
+    # 詳細フィルタは折りたたみ。閉じていれば開いてから操作する
+    if not pg.locator("#ffm").is_visible():
+        pg.click("#advbtn")
+        pg.wait_for_timeout(350)
     pg.select_option("#ffm", "錠")
     pg.wait_for_timeout(380)
     if ovf() != 0:
@@ -553,11 +599,13 @@ def check_device(browser, p, name, url):
                      % (pg.inner_text("#cnt"), want))
     pg.select_option("#fpc", "")
     pg.wait_for_timeout(250)
-    pg.click("#advbtn")
-    pg.wait_for_timeout(200)
+    if pg.locator("#ffm").is_visible():
+        pg.click("#advbtn")
+        pg.wait_for_timeout(250)
 
-    # 並び順の切替
-    for _ in range(3):
+    # 並び順の切替。選択肢は4つ（状況／成分／名前／出荷量）なので、
+    # 4回押して元に戻すところまで確かめる。
+    for _ in range(4):
         btn = pg.locator("#ordbtn")
         if btn.count() == 0:
             fails.append("並び順ボタンが無い")
@@ -567,6 +615,8 @@ def check_device(browser, p, name, url):
         if ovf() != 0:
             fails.append(f"並び順切替で横溢れ {ovf()}px")
             break
+    if "状況" not in pg.inner_text("#ordbtn"):
+        fails.append("並び順が4回で一周しない（%s）" % pg.inner_text("#ordbtn"))
 
     # 「この成分で検索」ボタン
     pg.fill("#q", "ノルバスク")

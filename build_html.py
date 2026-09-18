@@ -40,6 +40,44 @@ def to_half(s):
 SC = {'通常出荷':0, '限定出荷（自社の事情）':1, '限定出荷（他社品の影響）':1,
       '限定出荷（その他）':1, '供給停止':2}
 
+# ⑰製造販売業者の「出荷量」の現在の状況。
+# 厚労省の定義（04_00003.html）どおり5区分。
+# 数値にするのは並び替えのため。良い順に 0→4 とし、
+# 「Dのほうが悪い」（薬価削除予定＝回復が見込めない）という実務感覚に合わせる。
+#   0 Aプラス 出荷量増加   予定の概ね110%以上
+#   1 A       出荷量通常   概ね90%以上110%未満
+#   2 B       出荷量減少   概ね90%未満
+#   3 C       出荷停止     市場に出荷していない
+#   4 D       薬価削除予定 削除願を提出済み（回復は見込めない）
+VOL_CODE = [
+    ("Aプラス", 0), ("プラス", 0),
+    ("D", 4), ("C", 3), ("B", 2), ("A", 1),
+]
+
+
+def vol_code(v):
+    """出荷量の表記から並び替え用の番号を返す。読めなければ -1。"""
+    t = (v or "").strip()
+    if not t:
+        return -1
+    # 「Aプラス．出荷量増加」のように区分の記号が先頭に来る。
+    # Aプラスを先に見ないと、Aだけ拾って誤判定する。
+    for key, code in VOL_CODE:
+        if t.startswith(key):
+            return code
+    if "増加" in t:
+        return 0
+    if "削除" in t:
+        return 4
+    if "停止" in t:
+        return 3
+    if "減少" in t:
+        return 2
+    if "通常" in t:
+        return 1
+    return -1
+
+
 def find_header_row(path, max_scan=10):
     """Locate the header row (it has moved before; don't hardcode)."""
     probe = pd.read_excel(path, header=None, nrows=max_scan)
@@ -771,7 +809,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     if len(c) < 21:
         raise ValueError(f"列数が想定と異なります（{len(c)}列）。様式変更の可能性があります。")
 
-    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note','pc','i','fm']}
+    dicts = {k: {} for k in ['st','vol','rsn','out','cls','m','k','note','pc','i','fm','vimp']}
     def idx(key, val):
         d = dicts[key]
         if val not in d: d[val] = len(d)
@@ -894,6 +932,8 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             0,                                  # [27] 併売品の行番号リスト / 0
             gi,                                 # [28] 一般名の通し番号 / -1
             old_sc_val,                         # [29] 前回の状況コード / -1
+            vol_code(strip_prefix(r[c[16]])),   # [30] 出荷量の区分 0=A+ 1=A 2=B 3=C 4=D
+            idx('vimp', clean(r[c[17]])),       # [31] ⑱出荷量の改善見込み時期
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")

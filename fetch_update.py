@@ -181,12 +181,33 @@ def main():
         st = load_state()
         prev_url  = st.get("url")
         prev_hash = st.get("sha256")
+        prev_as_of = st.get("as_of")
+
+        # 掲載中の版が前回より古くなっていないか。
+        # 厚労省は、公表した版を取り下げて前の版に戻すことがある
+        # （実例：令和8年9月17日版が一時掲載され、のち9月16日版に戻った）。
+        # 黙って古い版で上書きすると、誰も差し替えに気づけないため知らせる。
+        rollback = False
+        this_as_of = ymd_to_iso(ymd) if ymd else None
+        if prev_as_of and this_as_of and this_as_of < prev_as_of:
+            rollback = True
+            log(f"警告: 掲載中の版が前回より古くなっています"
+                f"（前回 {prev_as_of} → 今回 {this_as_of}）。")
+            log("  厚労省側で差し替え・取り下げがあった可能性があります。")
+            log("  掲載中の版をそのまま取り込みます（厚労省の現在の公表内容に合わせます）。")
+            print("::warning::供給状況の掲載版が前回より古くなりました"
+                  f"（{prev_as_of} → {this_as_of}）。厚労省側の差し替えの可能性があります。")
 
         if check:
             log("--check のため、ダウンロードは行いません。")
             if prev_url:
                 log(f"  前回取得: {st.get('label','?')}（{st.get('updated_at','?')}）")
-                log("  同一URLです。" if prev_url == url else "  ★URLが変わっています（更新の可能性）")
+                if prev_url == url:
+                    log("  同一URLです。")
+                elif rollback:
+                    log("  ★前回より古い版に差し替わっています")
+                else:
+                    log("  ★URLが変わっています（更新の可能性）")
             else:
                 log("  未実行の状態です（state.json なし）。")
             log("リンク取得は正常です。")
@@ -256,9 +277,18 @@ def main():
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = now_jst().isoformat(timespec="seconds")
-        save_state({"url": url, "sha256": h, "label": label,
-                    "as_of": as_of, "items": n,
-                    "updated_at": now, "last_checked": now})
+        new_state = {"url": url, "sha256": h, "label": label,
+                     "as_of": as_of, "items": n,
+                     "updated_at": now, "last_checked": now}
+        if rollback:
+            # いつ・どの版からどの版へ戻されたかを残す。
+            # あとから経緯をたどれるようにするため、履歴として積む。
+            hist = st.get("rollbacks") or []
+            hist.append({"at": now, "from": prev_as_of, "to": as_of})
+            new_state["rollbacks"] = hist[-20:]
+        elif st.get("rollbacks"):
+            new_state["rollbacks"] = st["rollbacks"]
+        save_state(new_state)
         return 0
 
     except urllib.error.URLError as e:

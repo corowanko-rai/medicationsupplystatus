@@ -682,6 +682,17 @@ header{
 .pkmeta{font-size:11.5px;color:var(--ink3);margin-top:4px}
 .bworse{background:var(--stop);color:#fff}
 .bbetter{background:var(--ok);color:#fff}
+/* ⑰出荷量のバッジ。出荷対応（通常/限定/停止）とは別の軸なので、
+   形を変えて（角ばった枠線）取り違えないようにする。
+   増加=緑／通常=青／減少=橙／停止=赤／削除予定=灰紫 */
+.vb{display:inline-flex;align-items:center;height:20px;padding:0 6px;
+  border-radius:4px;font-size:10.5px;font-weight:800;
+  border:1px solid currentColor;background:#fff}
+.vb.v0{color:#1f7a4d}
+.vb.v1{color:#2a5599}
+.vb.v2{color:#a5641d}
+.vb.v3{color:#b23c3c}
+.vb.v4{color:#6b4f8a;background:#f4f0f8}
 .kind{font-size:11px;color:var(--ink3);padding:3px 7px;background:var(--surface2);border-radius:6px}
 .nm{font-size:15px;font-weight:700;line-height:1.4;margin-bottom:3px;word-break:break-word}
 .sub{font-size:12.5px;color:var(--ink2);word-break:break-word}
@@ -926,8 +937,20 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     </div>
   </div>
   <div class="active" id="active"></div>
-  <button class="advbtn" id="advbtn">▸ 剤形（詳細）・薬効分類・製品区分・製造販売業者でしぼり込む</button>
+  <button class="advbtn" id="advbtn">▸ 出荷量・剤形（詳細）・薬効分類・製品区分・製造販売業者でしぼり込む</button>
   <div id="adv">
+    <!-- ⑰出荷量。出荷対応が同じでも、増加に転じているか
+         薬価削除予定かで対応が変わるため、単独で絞れるようにする -->
+    <select id="fvc">
+      <option value="">出荷量：すべて</option>
+      <option value="0">Aプラス．出荷量増加</option>
+      <option value="1">A．出荷量通常</option>
+      <option value="2">B．出荷量減少</option>
+      <option value="3">C．出荷停止</option>
+      <option value="4">D．薬価削除予定</option>
+      <option value="ok">増加または通常（A＋・A）</option>
+      <option value="ng">減少・停止・削除予定（B・C・D）</option>
+    </select>
     <select id="fcls"><option value="">薬効分類：すべて</option></select>
     <select id="ffm"><option value="">剤形（詳細）：すべて</option></select>
     <select id="fpc"><option value="">製品区分：すべて</option></select>
