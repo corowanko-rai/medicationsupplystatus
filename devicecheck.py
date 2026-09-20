@@ -480,6 +480,35 @@ def check_device(browser, p, name, url):
     if rec["noday"]:
         fails.append("通常出荷に戻った薬に、日付の無い行が %d件ある" % rec["noday"])
 
+    # 画面に固定した「？」。スクロールしても押せること。
+    pg.evaluate("window.scrollTo(0, 4000)")
+    pg.wait_for_timeout(500)
+    if not pg.locator("#helpfab").is_visible():
+        fails.append("スクロール後に「？」が消えている")
+    else:
+        a = pg.locator("#helpfab").bounding_box()
+        t = pg.locator("#top").bounding_box()
+        if t and a and not (a["y"] + a["height"] <= t["y"]
+                            or t["y"] + t["height"] <= a["y"]):
+            fails.append("「？」と「先頭へ戻る」が重なっている")
+        if a and (a["width"] < MIN_TAP or a["height"] < MIN_TAP):
+            fails.append("「？」のタップ領域が小さい（%dx%d）"
+                         % (a["width"], a["height"]))
+    pg.evaluate("window.scrollTo(0, 0)")
+    pg.wait_for_timeout(400)
+
+    # 出荷量の矢印は、履歴が2世代未満なら出さないこと。
+    arr = pg.evaluate(r"""() => {
+      const gen = DATA.vgen || 0;
+      const any = R.some(r => {
+        const v = get(r,'vc');
+        return v != null && v >= 0 && v !== 4 && volBadge(r).includes('vbd');
+      });
+      return {gen, any};
+    }""")
+    if arr["gen"] < 2 and arr["any"]:
+        fails.append("履歴が%d世代しか無いのに出荷量の矢印が出ている" % arr["gen"])
+
     # 出荷量の動き（傾向と新規の薬価削除予定）。
     # 傾向は履歴全体から判定するので、型は5種のいずれかに収まること。
     vt = pg.evaluate(r"""() => {

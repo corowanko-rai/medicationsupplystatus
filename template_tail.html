@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-19-v39';
+const TPL_VER='2026-09-20-v40';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -883,10 +883,14 @@ const VOLDEF=[
 const VDIR=['→','↑','↓'];
 const VDIRT=['前回から変わっていません','前回より改善しました','前回より悪化しました'];
 const volOf=(r)=>get(r,'vc');
+/* 出荷量の履歴が2世代以上たまるまでは矢印を出さない。
+   1世代しか無いのに「→（変わらず）」を出すと、
+   比較できていないのに変化が無いと誤解されるため。 */
+const volArrowOK=()=>(DATA.vgen||0)>=2;
 function volBadge(r){
   const v=volOf(r);
   if(v==null||v<0) return '';
-  const d=(v===4)?null:(get(r,'vd')||0);
+  const d=(v===4||!volArrowOK())?null:(get(r,'vd')||0);
   const ar=(d==null)?'':`<span class="vbd d${d}">${VDIR[d]}</span>`;
   const tip=VOLDEF[v]+(d==null?'':'／'+VDIRT[d]);
   return `<span class="vb v${v}" title="${esc(tip)}">${esc(VOLLAB[v])}${ar}</span>`;
@@ -2635,30 +2639,41 @@ document.getElementById('chglist').addEventListener('click',e=>{
         '薬価には影響しません（薬価は薬価基準収載品目リストのみを参照）');
 
   h+=S_('出荷量（⑰）');
-  h+=R_('<span class="vb v0">出荷増</span>','出荷量が増加している',
-        '厚労省の⑰「製造販売業者の出荷量の現在の状況」です。'+
-        '<b>出荷対応（通常／限定／停止）とは別の軸</b>なので、形を変えて出しています。'+
-        '<br>定義は厚労省の記載どおりです。'+
-        '<br>・<b>出荷増</b>（Aプラス．出荷量増加）：比較対象期間の出荷量又は市場予測による'+
-        '予定出荷量の概ね110％以上の出荷量'+
-        '<br>・<b>出荷通常</b>（A．出荷量通常）：比較対象期間の出荷量又は市場予測による'+
-        '予定出荷量の概ね90％以上110％未満の出荷量'+
-        '<br>・<b>出荷減</b>（B．出荷量減少）：比較対象期間の出荷量又は市場予測による'+
-        '予定出荷量の概ね90％未満の出荷量'+
-        '<br>・<b>出荷停止</b>（C．出荷停止）：市場に出荷していない状況'+
-        '<br>・<b>薬価削除予定</b>（D）：「薬価基準収載品目削除願」を提出し、'+
-        '薬価削除に向け対応を行っている状況'+
-        '<br><b>バッジの矢印</b>は前回版からの変化です。'+
-        '<span class="vbd d1">↑</span>改善　'+
-        '<span class="vbd d0">→</span>変わらず　'+
-        '<span class="vbd d2">↓</span>悪化。'+
-        '薬価削除予定は性質が違うので矢印を付けません。'+
-        '<br><b>同じ「限定出荷」でも打つ手が変わります。</b>'+
-        '量増加なら卸に直接あたる価値がありますが、'+
-        '量削除予定なら回復は見込めないので、処方変更の相談に進むほうが現実的です。'+
+  const vbx=(k,lab)=>`<span class="vb v${k}">${lab}</span>`;
+  h+=R_('', '厚労省の⑰「製造販売業者の出荷量の現在の状況」です',
+        '<b>出荷対応（通常出荷／限定出荷／供給停止）とは別の軸</b>なので、'+
+        '形を変えて（角ばった枠線で）出しています。定義は厚労省の記載どおりです。');
+  h+=R_(vbx(0,'出荷増'),'Aプラス．出荷量増加',
+        '比較対象期間の出荷量又は市場予測による予定出荷量の<b>概ね110％以上</b>の出荷量');
+  h+=R_(vbx(1,'出荷通常'),'A．出荷量通常',
+        '比較対象期間の出荷量又は市場予測による予定出荷量の'+
+        '<b>概ね90％以上110％未満</b>の出荷量');
+  h+=R_(vbx(2,'出荷減'),'B．出荷量減少',
+        '比較対象期間の出荷量又は市場予測による予定出荷量の<b>概ね90％未満</b>の出荷量');
+  h+=R_(vbx(3,'出荷停止'),'C．出荷停止','市場に出荷していない状況');
+  h+=R_(vbx(4,'薬価削除予定'),'D．薬価削除予定',
+        '「薬価基準収載品目削除願」を提出し、薬価削除に向け対応を行っている状況。'+
+        '<b>回復は見込めません</b>');
+  h+=R_(volArrowOK()
+          ? `${vbx(1,'出荷通常')}<span class="vbd d1">↑</span>`
+          : vbx(1,'出荷通常'),
+        volArrowOK() ? 'バッジの矢印は前回版からの変化です'
+                     : 'バッジの矢印は、まだ表示していません',
+        volArrowOK()
+          ? '<span class="vbd d1">↑</span>改善　'+
+            '<span class="vbd d0">→</span>変わらず　'+
+            '<span class="vbd d2">↓</span>悪化。'+
+            '薬価削除予定は性質が違うので矢印を付けません'
+          : '出荷量の記録が<b>2回分たまってから</b>表示されます。'+
+            '比較できないうちに「変わらず」と出すと誤解を招くためです');
+  h+=R_('', '同じ「限定出荷」でも打つ手が変わります',
+        '<b>出荷増</b>なら卸に直接あたる価値がありますが、'+
+        '<b>薬価削除予定</b>なら回復は見込めないので、'+
+        '処方変更の相談に進むほうが現実的です。'+
         '<br>「出荷量・剤形（詳細）…でしぼり込む」から絞り込めます。'+
         '「並び替え」を押していくと<b>出荷量の良い順</b>にも並べ替えられます。'+
-        '<br>カードを開くと、⑱の<b>出荷量の改善見込み時期</b>も出ます（記載がある品目のみ）。');
+        '<br>カードを開くと、⑱の<b>出荷量の改善見込み時期</b>も出ます'+
+        '（記載がある品目のみ）。');
 
   h+=S_('前回版からの変化');
   h+=R_(bd('New','bnew'),'今回の掲載で内容が更新されました','厚労省Excelの「今回掲載時の更新有無」に対応します。'+'<b>出荷状況が変わったことを意味しません。</b>'+'理由・解除見込み・<b>出荷量</b>などが変わっただけでも付きます。'+'実測では、Newが付いた51品目のうち50品目は<b>出荷量だけが変わった</b>ものでした'+'（令和8年9月1日版→9月17日版）。'+'そのため、通常出荷のままNewだけが付くことがあります');
@@ -2901,6 +2916,19 @@ function closeLg(){
   document.getElementById('lg').classList.remove('on');
   document.body.style.overflow='';
 }
+/* 画面に固定した「？」。ヘッダーの外にあるので、
+   スクロールしても常に押せる。
+   「先頭へ戻る」が出ているときは、重ならないよう上へ避ける。 */
+document.getElementById('helpfab').addEventListener('click',()=>{
+  document.getElementById('lgbtn').click();
+});
+(function(){
+  const fab=document.getElementById('helpfab'), top=document.getElementById('top');
+  const sync=()=>fab.classList.toggle('up', top.classList.contains('on'));
+  window.addEventListener('scroll', sync, {passive:true});
+  new MutationObserver(sync).observe(top,{attributes:true,attributeFilter:['class']});
+  sync();
+})();
 document.getElementById('lgbtn').addEventListener('click',openLg);
 document.getElementById('lgx').addEventListener('click',closeLg);
 

@@ -897,6 +897,19 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
   box-shadow:0 4px 14px rgba(16,32,48,.22);z-index:60
 }
 #top.on{display:block}
+/* 凡例を開く「？」。ヘッダーの中だけに置くとスクロールで流れて
+   見えなくなるので、画面に固定したものも用意する。
+   「先頭へ戻る」と重ならないよう、その上に置く。 */
+#helpfab{
+  position:fixed;right:14px;
+  bottom:calc(env(safe-area-inset-bottom) + 18px);
+  width:46px;height:46px;border-radius:50%;
+  background:var(--surface);color:var(--accent);
+  border:1px solid var(--line);font-size:19px;font-weight:800;
+  cursor:pointer;font-family:inherit;
+  box-shadow:0 4px 14px rgba(16,32,48,.18);z-index:60
+}
+#helpfab.up{bottom:calc(env(safe-area-inset-bottom) + 72px)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -984,6 +997,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
 </div>
 <div id="list"></div>
 <div id="more"></div>
+<button id="helpfab" aria-label="このページについて">？</button>
 <button id="top" aria-label="先頭へ戻る">↑</button>
 <div id="calc">
   <div class="cawrap">

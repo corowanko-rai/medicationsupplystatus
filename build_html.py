@@ -1296,6 +1296,13 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
 
     data["series"] = series
     data["sdates"] = len(series.get("_all") or [])
+    # 出荷量の履歴が何世代分たまっているか。
+    # 1世代しか無いうちは前回と比べようがないので、
+    # 画面側で矢印（↑→↓）を出さないための判断材料にする。
+    # 「→（変わらず）」を出してしまうと、
+    # 実際には比較できていないのに変化が無いと誤解される。
+    data["vgen"] = (max((len(v) for v in vhist_src.values()), default=0)
+                    if vhist_src else 0)
 
     # ---- 回復した薬（限定出荷・供給停止 → 通常出荷） ----
     # 「前回版との比較」は前回と今回の2点しか見ないため、
