@@ -116,6 +116,30 @@ def _load_keep_chg():
         return None
 
 
+def _load_keep_vdir():
+    """保存済みの「出荷量の変化（改善/悪化）」を読む。
+    再生成では比較元が今回の値に置き換わるため、これが無いと
+    バッジの矢印がすべて「不変」になってしまう。"""
+    if not os.path.exists(SNAP):
+        return None
+    try:
+        v = json.load(open(SNAP, encoding="utf-8")).get("vdir")
+        return {k: int(x) for k, x in v.items()} if v else None
+    except Exception:
+        return None
+
+
+def _load_keep_newdel():
+    """保存済みの「新たに薬価削除予定になった品目」を読む。"""
+    if not os.path.exists(SNAP):
+        return None
+    try:
+        v = json.load(open(SNAP, encoding="utf-8")).get("newdel")
+        return {k: int(x) for k, x in v.items()} if v is not None else None
+    except Exception:
+        return None
+
+
 def _load_keep_osc():
     """保存済みの「変化前の出荷状況」を読む。
     再生成では比較元が今回の値に置き換わってしまうため、
@@ -155,6 +179,8 @@ def rebuild_only():
                          source_label=st.get("label", ""), source_url=st.get("url", ""),
                          prev_snapshot=prev, snapshot_out=None, snapshot_path=SNAP,
                          keep_chg=_load_keep_chg(), keep_osc=_load_keep_osc(),
+                         keep_vdir=_load_keep_vdir(),
+                         keep_newdel=_load_keep_newdel(),
                          prices_path=PRICES, kiso_path=KISO, disc_path=DISC,
                          sentei_path=SENTEI, ippanmei_path=IPPAN,
                          datadoc_path=DOC)
@@ -262,15 +288,20 @@ def main():
         snap_out = None if same_excel else SNAP
         keep = None
         keep_o = None          # 先に定義しておく（同一Excelでない経路で未定義になるため）
+        keep_v = None
+        keep_nd = None
         if same_excel:
             # Excelが同じなら比較し直さず、前回の判定結果をそのまま使う
             keep = _load_keep_chg()
             keep_o = _load_keep_osc()
+            keep_v = _load_keep_vdir()
+            keep_nd = _load_keep_newdel()
             log("  供給Excelは前回と同一のため、前回の変化判定を引き継ぎます")
 
         n = build_html.build(XLSX, OUT, as_of=as_of, source_label=label, source_url=url,
                              prev_snapshot=prev, snapshot_out=snap_out, snapshot_path=SNAP,
-                             keep_chg=keep, keep_osc=keep_o,
+                             keep_chg=keep, keep_osc=keep_o, keep_vdir=keep_v,
+                             keep_newdel=keep_nd,
                              prices_path=PRICES, kiso_path=KISO,
                              disc_path=DISC, sentei_path=SENTEI,
                              ippanmei_path=IPPAN, datadoc_path=DOC)

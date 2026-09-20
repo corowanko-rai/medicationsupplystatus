@@ -480,6 +480,24 @@ def check_device(browser, p, name, url):
     if rec["noday"]:
         fails.append("通常出荷に戻った薬に、日付の無い行が %d件ある" % rec["noday"])
 
+    # 出荷量の動き（傾向と新規の薬価削除予定）。
+    # 傾向は履歴全体から判定するので、型は5種のいずれかに収まること。
+    vt = pg.evaluate(r"""() => {
+      const ok = ['imp','rec','wor','rel','swing'];
+      const a = DATA.voltrend || [];
+      return {n: a.length,
+              bad: a.filter(x => !ok.includes(x.p)).length,
+              noseq: a.filter(x => !(x.n >= 2)).length,
+              del: (DATA.newdel || []).length,
+              deldup: (DATA.voltrend || []).filter(x => x.b === 4).length};
+    }""")
+    if vt["bad"]:
+        fails.append("出荷量の傾向に未知の型が %d件ある" % vt["bad"])
+    if vt["noseq"]:
+        fails.append("出荷量の傾向に履歴2点未満の行が %d件ある" % vt["noseq"])
+    if vt["deldup"]:
+        fails.append("薬価削除予定が傾向に混じっている（%d件）" % vt["deldup"])
+
     # ⑰出荷量。バッジ・絞り込み・並び替えが動くこと。
     # 直前でお知らせタブに移っているので、検索画面へ戻す。
     # 【般】一般名モードのままだと詳細フィルタ自体が隠れるので、品名モードに戻す。

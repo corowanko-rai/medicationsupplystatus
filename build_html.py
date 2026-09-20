@@ -798,7 +798,7 @@ def lookup_price(pr, yj):
 
 def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
-          prices_path=None, keep_chg=None, keep_osc=None,
+          prices_path=None, keep_chg=None, keep_osc=None, keep_vdir=None, keep_newdel=None,
           kiso_path=None, disc_path=None, sentei_path=None,
           ippanmei_path=None, datadoc_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
@@ -814,6 +814,18 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         d = dicts[key]
         if val not in d: d[val] = len(d)
         return d[val]
+
+    # 前回の出荷量（スナップショット）。↑→↓の判定に使う。
+    prev_vol, vhist_src = {}, {}
+    if snapshot_path and os.path.exists(snapshot_path):
+        try:
+            _s = json.load(open(snapshot_path, encoding="utf-8"))
+            prev_vol = _s.get("vc") or {}
+            # 傾向の判定に使う履歴。再生成（snapshot_out=None）でも要るので
+            # ここで読む。書き出し側の prev_vhist とは別に持つ。
+            vhist_src = _s.get("vhist") or {}
+        except Exception:
+            prev_vol, vhist_src = {}, {}
 
     pr = load_prices(prices_path)
     kiso = load_kiso(kiso_path)
@@ -834,6 +846,9 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     n_kiso = 0
     n_kchg = 0
     old_map = {}          # YJコード → 変化前の状況コード
+    vsnap = {}            # YJコード → 今回の出荷量コード
+    vdir_map = {}         # YJコード → 出荷量の変化 0=不変 1=改善 2=悪化
+    newdel = []           # 新たに薬価削除予定になった品目
     n_sen = 0
     n_disc = 0
     n_gen = 0
@@ -870,6 +885,30 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         chg_map[yj] = chg
         if old_sc_val >= 0:
             old_map[yj] = old_sc_val
+        # ⑰出荷量。今回の値と、前回との差（改善/不変/悪化）を求める。
+        # 番号は良い順（0=増加 … 4=薬価削除予定）なので、
+        # 小さくなれば改善、大きくなれば悪化。
+        # ただし D（薬価削除予定）は性質が違うので傾向の対象外にする。
+        vc_now = vol_code(strip_prefix(r[c[16]]))
+        vsnap[yj] = vc_now
+        vdir = 0                       # 0=不変/不明 1=改善 2=悪化
+        vc_old = prev_vol.get(yj) if prev_vol else None
+        if keep_vdir is not None:
+            # 再生成のときは前回の判定をそのまま使う。
+            # スナップショットの vc は「今回の値」に書き換わっているため、
+            # ここで比較し直すと必ず「不変」になってしまう。
+            vdir = keep_vdir.get(yj, 0)
+        elif (vc_old is not None and vc_now is not None
+              and vc_old >= 0 and vc_now >= 0 and vc_old != vc_now
+              and vc_old != 4 and vc_now != 4):
+            vdir = 1 if vc_now < vc_old else 2
+        vdir_map[yj] = vdir
+        # 新たに薬価削除予定になったもの（出荷対応に関係なく知らせる）
+        if keep_newdel is not None:
+            if yj in keep_newdel:
+                newdel.append({"i": len(rows), "from": keep_newdel[yj]})
+        elif vc_now == 4 and vc_old is not None and vc_old >= 0 and vc_old != 4:
+            newdel.append({"i": len(rows), "from": vc_old})
         price = lookup_price(pr, yj)
         exp_raw = lookup_expiry(pr, yj)
         jp = 1 if is_jpharm(pr, yj) else 0
@@ -932,8 +971,9 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             0,                                  # [27] 併売品の行番号リスト / 0
             gi,                                 # [28] 一般名の通し番号 / -1
             old_sc_val,                         # [29] 前回の状況コード / -1
-            vol_code(strip_prefix(r[c[16]])),   # [30] 出荷量の区分 0=A+ 1=A 2=B 3=C 4=D
+            vc_now,                             # [30] 出荷量の区分 0=A+ 1=A 2=B 3=C 4=D
             idx('vimp', clean(r[c[17]])),       # [31] ⑱出荷量の改善見込み時期
+            vdir,                               # [32] 出荷量の変化 0=不変 1=改善 2=悪化
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -952,12 +992,14 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         # hist … 状態が変わった日だけを記録する。
         #        毎回の全件を残すと膨らむため、変化点のみを積む。
         prev_hist = {}
+        prev_vhist = {}
         if os.path.exists(snapshot_out):
             try:
-                prev_hist = json.load(
-                    open(snapshot_out, encoding="utf-8")).get("hist", {})
+                _sj = json.load(open(snapshot_out, encoding="utf-8"))
+                prev_hist = _sj.get("hist", {})
+                prev_vhist = _sj.get("vhist", {})
             except Exception:
-                prev_hist = {}
+                prev_hist, prev_vhist = {}, {}
 
         today = data["date"]
         prev_dates = []
@@ -978,11 +1020,31 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                 if len(h) > 40:                 # 古い分は間引く
                     hist[yj] = h[-40:]
 
+        # ⑰出荷量の履歴。出荷対応と同じく「変わった日」だけを積む。
+        # これが無いと、バッジの↑→↓も傾向の判定もできない。
+        vhist = dict(prev_vhist)
+        for yj, vc in vsnap.items():
+            if vc is None or vc < 0:
+                continue
+            h = vhist.get(yj)
+            if not h:
+                vhist[yj] = [[today, vc]]
+            elif h[-1][1] != vc:
+                h.append([today, vc])
+                if len(h) > 40:
+                    vhist[yj] = h[-40:]
+
         with open(snapshot_out, "w", encoding="utf-8") as f:
             json.dump({
                 "date": today,
                 "dates": dates,
                 "sc": snap,
+                "vc": vsnap,
+                "vhist": vhist,
+                # vdir … 出荷量の変化（1=改善 2=悪化）。再生成で消えないよう残す
+                "vdir": {yj: v for yj, v in vdir_map.items() if v},
+                # newdel … 新たに薬価削除予定になった品目と、その変更前
+                "newdel": {rows[x["i"]][4]: x["from"] for x in newdel},
                 "chg": {yj: v for yj, v in chg_map.items() if v},
                 # osc … 変化した品目の「変化前」の状況コード。
                 # これを残さないと、--local で作り直したときに
@@ -1151,6 +1213,87 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                 series[str(ing)] = [
                     [d] + (per[d].get(ing) or blank()) for d in sdates
                 ]
+    # ---- 新たに薬価削除予定になった品目 ----
+    # Dは出荷対応と無関係に付き、しかも回復が見込めない。
+    # 通常出荷のまま D になることもあるので、独立して知らせる。
+    data["newdel"] = newdel[:300]
+
+    # ---- 出荷量の傾向（出荷対応と組み合わせて見る） ----
+    # 「通常出荷だが減ってきている」「限定出荷だが増えてきている」は
+    # 出荷対応だけを見ていると気づけない。履歴から傾向を判定する。
+    voltrend = []
+    try:
+        if vhist_src:
+            vc_now = {r[4]: r[30] for r in rows}
+            sc_now = {r[4]: r[8] for r in rows}
+            idx_of = {r[4]: n for n, r in enumerate(rows)}
+            for yj, pts in vhist_src.items():
+                if len(pts) < 2 or yj not in idx_of:
+                    continue
+                cur = vc_now.get(yj)
+                if cur is None or cur < 0 or cur == 4:
+                    continue           # 薬価削除予定は傾向の対象外
+                seq = [p[1] for p in pts if p[1] != 4]
+                if len(seq) < 2 or seq[-1] != cur:
+                    continue
+                first, last = seq[0], seq[-1]
+
+                # 直近の1回だけで決めず、取得している全期間の並びから
+                # 「いまどの途上にあるか」を読む。
+                #   imp   一貫して改善（ずっと良くなっている）
+                #   rec   底を打って回復途上（悪化したあと改善に転じた）
+                #   wor   一貫して悪化
+                #   rel   改善後に再び悪化（戻り始めていたが逆戻り）
+                #   swing 上下を繰り返している（不安定）
+                worst, best = max(seq), min(seq)
+                i_worst = len(seq) - 1 - seq[::-1].index(worst)
+                i_best = len(seq) - 1 - seq[::-1].index(best)
+                mono_imp = all(seq[k + 1] <= seq[k] for k in range(len(seq) - 1))
+                mono_wor = all(seq[k + 1] >= seq[k] for k in range(len(seq) - 1))
+                # 向きが何度も変わるものは、どちらの途上とも言えない。
+                # 先に「不安定」として分けておかないと、
+                # たまたま最後がどちらかに寄っただけで断定してしまう。
+                turns = 0
+                prev_d = 0
+                for k in range(len(seq) - 1):
+                    dd = seq[k + 1] - seq[k]
+                    if dd == 0:
+                        continue
+                    dd = 1 if dd > 0 else -1
+                    if prev_d and dd != prev_d:
+                        turns += 1
+                    prev_d = dd
+                if turns >= 2:
+                    pat, up = "swing", (1 if last < first else 0)
+                elif mono_imp and last < first:
+                    pat, up = "imp", 1
+                elif mono_wor and last > first:
+                    pat, up = "wor", 0
+                elif last < worst and i_worst < len(seq) - 1:
+                    pat, up = "rec", 1
+                elif last > best and i_best < len(seq) - 1:
+                    pat, up = "rel", 0
+                else:
+                    pat, up = "swing", (1 if last < first else 0)
+                if pat != "swing" and first == last:
+                    continue
+                voltrend.append({
+                    "i": idx_of[yj],
+                    "sc": sc_now.get(yj, 0),
+                    "a": first, "b": last,
+                    "w": worst, "bs": best,
+                    "n": len(seq),
+                    "p": pat, "up": up,
+                    "d0": pts[0][0], "d1": pts[-1][0],
+                })
+    except Exception:
+        voltrend = []
+    # 悪化を先に、変化の幅が大きいものを上に。
+    PAT_ORDER = {"wor": 0, "rel": 1, "swing": 2, "rec": 3, "imp": 4}
+    voltrend.sort(key=lambda x: (PAT_ORDER.get(x["p"], 9),
+                                 -abs(x["b"] - x["a"]), -x["n"]))
+    data["voltrend"] = voltrend[:300]
+
     data["series"] = series
     data["sdates"] = len(series.get("_all") or [])
 

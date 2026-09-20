@@ -201,8 +201,11 @@ header{
   min-width:0;overflow-wrap:anywhere;text-align:right}
 .chgmv{flex-wrap:wrap}
 /* 通常出荷に戻った日。在庫を戻す判断に使うので、品名の次に目立たせる */
+/* 通常出荷に戻った日は強調するが、出荷量の動きの期間・最悪値は
+   補足情報なので、地味にして取り違えないようにする */
 .chgday{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#2f7a52;
   background:#e8f5ec;border-radius:5px;padding:2px 7px}
+#vtlist .chgday{font-weight:600;color:var(--ink3);background:none;padding:2px 0}
 
 .chgempty{padding:18px 10px;text-align:center;color:var(--ink3);font-size:12.5px}
 
@@ -688,6 +691,18 @@ header{
 .vb{display:inline-flex;align-items:center;height:20px;padding:0 6px;
   border-radius:4px;font-size:10.5px;font-weight:800;
   border:1px solid currentColor;background:#fff}
+/* 出荷量の変化。↑改善 ↓悪化 →不変 */
+/* 出荷量の傾向。履歴全体から読んだ「いまどの途上か」 */
+.vtp{display:inline-flex;align-items:center;height:20px;padding:0 7px;
+  border-radius:99px;font-size:10.5px;font-weight:800;white-space:nowrap}
+.vtp.pbetter{background:#e8f5ec;color:#1f7a4d}
+.vtp.pworse{background:#fdeaea;color:#b23c3c}
+.vtp.pswing{background:#fdf2e0;color:#9a6a1c}
+.chgrow.swing{border-left-color:#d9a441}
+.vbd{margin-left:3px;font-size:11px;font-weight:900}
+.vbd.d1{color:#1f7a4d}
+.vbd.d2{color:#b23c3c}
+.vbd.d0{color:#93a3b3}
 .vb.v0{color:#1f7a4d}
 .vb.v1{color:#2a5599}
 .vb.v2{color:#a5641d}
@@ -943,13 +958,13 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
          薬価削除予定かで対応が変わるため、単独で絞れるようにする -->
     <select id="fvc">
       <option value="">出荷量：すべて</option>
-      <option value="0">Aプラス．出荷量増加</option>
-      <option value="1">A．出荷量通常</option>
-      <option value="2">B．出荷量減少</option>
-      <option value="3">C．出荷停止</option>
-      <option value="4">D．薬価削除予定</option>
-      <option value="ok">増加または通常（A＋・A）</option>
-      <option value="ng">減少・停止・削除予定（B・C・D）</option>
+      <option value="0">出荷増（Aプラス．出荷量増加）</option>
+      <option value="1">出荷通常（A．出荷量通常）</option>
+      <option value="2">出荷減（B．出荷量減少）</option>
+      <option value="3">出荷停止（C．出荷停止）</option>
+      <option value="4">薬価削除予定（D）</option>
+      <option value="ok">出荷増または出荷通常</option>
+      <option value="ng">出荷減・出荷停止・薬価削除予定</option>
     </select>
     <select id="fcls"><option value="">薬効分類：すべて</option></select>
     <select id="ffm"><option value="">剤形（詳細）：すべて</option></select>
@@ -1030,6 +1045,22 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
           </div>
         </div>
       </details>
+    <!-- 出荷量の傾向と、新たに薬価削除予定になった品目。
+         出荷対応だけを見ていると気づけない動きをここに集める。 -->
+    <section class="bdsec" id="vtsec">
+      <div class="bdhd">
+        <h2>出荷量の動き</h2>
+        <span class="bdcnt" id="vtcnt"></span>
+      </div>
+      <div class="chgtabs" id="vtsub">
+        <button class="chgs" data-v="" aria-pressed="true">すべて</button>
+        <button class="chgs" data-v="up">改善傾向</button>
+        <button class="chgs" data-v="down">悪化傾向</button>
+        <button class="chgs" data-v="swing">不安定</button>
+        <button class="chgs" data-v="del">新たに薬価削除予定</button>
+      </div>
+      <div class="bdscroll" id="vtlist"></div>
+    </section>
     <section class="bdsec" id="chgsec">
       <div class="bdhd">
         <h2>通常出荷に戻った薬</h2>
