@@ -497,6 +497,24 @@ def check_device(browser, p, name, url):
     pg.evaluate("window.scrollTo(0, 0)")
     pg.wait_for_timeout(400)
 
+    # 凡例の矢印の説明が、実際の表示と食い違っていないこと。
+    # 記録がたまったのに「まだ表示していません」と書いてあると誤解を招く。
+    pg.click("#lgbtn")
+    pg.wait_for_timeout(450)
+    lg = pg.inner_text("#lgbody")
+    gen = pg.evaluate("DATA.vgen || 0")
+    if gen >= 2:
+        if "いまは表示していません" in lg:
+            fails.append("矢印は出ているのに、凡例が「表示していません」のまま")
+        for w in ("前回より改善した", "前回から変わっていない", "前回より悪化した"):
+            if w not in lg:
+                fails.append("凡例に矢印つきバッジの説明が無い（%s）" % w)
+    else:
+        if "いまは表示していません" not in lg:
+            fails.append("矢印が出ないのに、凡例がその旨を説明していない")
+    pg.click("#lgx")
+    pg.wait_for_timeout(300)
+
     # 出荷量の矢印は、履歴が2世代未満なら出さないこと。
     arr = pg.evaluate(r"""() => {
       const gen = DATA.vgen || 0;
@@ -508,6 +526,26 @@ def check_device(browser, p, name, url):
     }""")
     if arr["gen"] < 2 and arr["any"]:
         fails.append("履歴が%d世代しか無いのに出荷量の矢印が出ている" % arr["gen"])
+
+    # お知らせタブのボタンが、枠からはみ出していないこと。
+    # ボタンの数が増えると1行に収まらず、右へ飛び出す。
+    pg.click('.ptab[data-p="board"]')
+    pg.wait_for_timeout(500)
+    over = pg.evaluate("""() => {
+      const out = [];
+      document.querySelectorAll('.bdsec .chgtabs, .bdsec .nwside').forEach(t => {
+        const sec = t.closest('.bdsec').getBoundingClientRect();
+        t.querySelectorAll('button').forEach(b => {
+          if (!b.offsetParent) return;
+          const x = b.getBoundingClientRect();
+          if (x.right > sec.right - 1 || b.scrollWidth > b.clientWidth + 1)
+            out.push(b.textContent.trim());
+        });
+      });
+      return out;
+    }""")
+    if over:
+        fails.append("お知らせのボタンが枠からはみ出している：%s" % "／".join(over))
 
     # 出荷量の動き（傾向と新規の薬価削除予定）。
     # 傾向は履歴全体から判定するので、型は5種のいずれかに収まること。
