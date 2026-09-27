@@ -23,8 +23,8 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-21-v42';
-const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32};
+const TPL_VER='2026-09-28-v43';
+const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
 
@@ -384,15 +384,18 @@ function renderGen(){
     const items = idxs.map(i=>{
       const r=R[i], sc=get(r,'sc');
       const mk=dv(r,'m')||'', pr=get(r,'price');
-      /* 1行目＝状況と品名、2行目＝メーカーと薬価。
+      /* 1行目＝状況と品名、2行目＝規制区分・メーカー・薬価。
          1行のまま折り返させると、品名の長さで折り返し位置が変わり、
-         カードごとに並びが違って見えるため、行を分けて固定する。 */
+         カードごとに並びが違って見えるため、行を分けて固定する。
+         規制区分も品名の行に置くと品名が押し出されて折り返すので2行目に置く。 */
+      const rb=regBadges(r);
       return `<div class="cmitem" data-nm="${esc(get(r,'n'))}">
         <div class="cmr1">
           <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
           <span class="cmnm">${esc(get(r,'n'))}</span>
-        </div>${(mk||pr!=null)?`
+        </div>${(mk||pr!=null||rb)?`
         <div class="cmr2">
+          ${rb?`<span class="cmrg">${rb}</span>`:''}
           <span class="cmmk">${esc(mk)}</span>
           ${pr!=null?`<span class="gyen">¥${fmtY(pr)}</span>`:''}
         </div>`:''}
@@ -457,6 +460,23 @@ function pcBadge(r){
   const title=esc(t)+(get(r,'jp')?'（日本薬局方収載品）':'');
   return `<span class="pcb ${a[1]}" title="${title}">${a[0]}${jp}</span>`;
 }
+/* 規制区分（毒・劇・麻 など）。行データ[33]はビット列で、ビットの並びは DATA.reg.codes。
+   出典は電子添文から取り出した「法令に基づく指定の事実」。本文は持っていない。 */
+const REG=DATA.reg||{available:false,codes:[],names:[]};
+const RGC={'毒':'rg-doku','劇':'rg-geki','麻':'rg-ma','覚':'rg-kaku','覚原':'rg-kakug',
+  '向1':'rg-ko','向2':'rg-ko','向3':'rg-ko','向':'rg-ko','習':'rg-shu','特生':'rg-sei','生':'rg-sei',
+  '特例':'rg-rei','処':'rg-sho'};
+function regCodes(r){
+  const m=get(r,'reg')||0; if(!m) return [];
+  return REG.codes.filter((c,i)=>m&(1<<i));
+}
+function regBadges(r){
+  return regCodes(r).map(c=>{
+    const nm=REG.names[REG.codes.indexOf(c)]||c;
+    return `<span class="rg ${RGC[c]||'rg-shu'}" title="${esc(nm)}">${esc(c)}</span>`;
+  }).join('');
+}
+const regNames=(r)=>regCodes(r).map(c=>REG.names[REG.codes.indexOf(c)]||c);
 const KINFO=DATA.kiso||{};
 /* ⑨基礎的医薬品 / 変更調剤が認められる基礎的医薬品 */
 const kbBadge=(r)=>get(r,'kb')?'<span class="kb" title="基礎的医薬品">基</span>':'';
@@ -680,7 +700,7 @@ function render(){
     const note=dv(r,'note'), out=dv(r,'out'), rsn=dv(r,'rsn'), upd=get(r,'upd');
     el.innerHTML=
       `<div class="tags">
-        ${pcBadge(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}${cmBadge(r)}
+        ${pcBadge(r)}${regBadges(r)}${kbBadge(r)}${kcBadge(r)}${senBadge(r)}${cmBadge(r)}
         ${dcBadge(r)}
         <span class="badge b${sc}">${esc(st)}</span>
         ${volBadge(r)}
@@ -786,6 +806,10 @@ function render(){
         })()}
         <div class="row"><dt>製品区分</dt><dd>${esc(dv(r,'pc'))}${
           get(r,'jp')?'（局方品）':''}</dd></div>
+        ${(()=>{const ns=regNames(r); if(!ns.length) return '';
+          return `<div class="row"><dt>規制区分</dt><dd>${esc(ns.join('・'))}`+
+            `<div class="rgsrc">電子添文より${REG.date?'（'+esc(REG.date.replace(/-/g,'/'))+' 時点）':''}</div></dd></div>`;
+        })()}
         ${(()=>{const d=dcOf(r); if(!d) return '';
           const pk=dcPkgs(r);
           let body;
@@ -2506,6 +2530,20 @@ document.getElementById('chglist').addEventListener('click',e=>{
         '小さな「局」は<b>日本薬局方収載品</b>',
         '薬価基準収載品目リストの「局」の印によります。色は製品区分のままです');
 
+  if(REG.available){
+    h+=S_('規制区分');
+    /* 並びと名称は DATA.reg から作る（凡例と表示が食い違わないように） */
+    REG.codes.forEach((c,i)=>{
+      const note = c==='処' ? '全体の約3分の2に付くため、目立たない色にしています'
+                 : c==='向' ? '電子添文が無く、種別（第一種〜第三種）が分からないもの' : '';
+      h+=R_(`<span class="rg ${RGC[c]||'rg-shu'}">${esc(c)}</span>`, esc(REG.names[i]), note);
+    });
+    h+=R_('', '電子添文（PMDA）の規制区分欄から取り出したもの',
+          (REG.date?REG.date.replace(/-/g,'/')+' 時点の電子添文です。':'')+
+          'その後に発売・改訂された品目には反映されていないことがあります。'+
+          '毒・劇・麻などの表示は、容器に義務付けられている表示と同じ意味です');
+  }
+
   h+=S_('基礎的医薬品');
   h+=R_('<span class="kb">基</span>','基礎的医薬品です');
   h+=R_('<span class="kc">変更可</span>',
@@ -2848,6 +2886,8 @@ document.getElementById('chglist').addEventListener('click',e=>{
                         SRC.sentei.date, SRC.sentei.file||'（未取得）');
   if(SRC.kiso) h+=row('変更調剤が認められる基礎的医薬品等',
                       SRC.kiso.date, SRC.kiso.file||'（未取得）');
+  if(SRC.reg) h+=row('規制区分（PMDA 電子添文より）',
+                     SRC.reg.date, SRC.reg.file||'（未設定）');
   if(SRC.ippan){
     /* files には区分ごとの「現行版」だけが入る。過去分は past に日付だけ持つ。 */
     const GF=SRC.ippan.files||{};

@@ -48,6 +48,7 @@ DOC_TERMS = [
     "変更調剤",       # 基／変更可
     "経過措置",       # 使用期限
     "販売中止",       # 手動登録
+    "規制区分",       # 毒・劇・麻などのバッジ（regulation.json）
 ]
 
 GOOD_TYPES = {"clear", "uncross", "fall", "up"}
@@ -608,6 +609,31 @@ def check_device(browser, p, name, url):
     # 後続のクリックを遮ってしまう。必ず閉じてから次へ進む。
     if pg.locator("#fvc").is_visible():
         pg.click("#advbtn")
+        pg.wait_for_timeout(300)
+
+    # 規制区分バッジ。regulation.json が置かれていれば、代表品目に正しく付くこと。
+    # 凡例と表示の食い違い（凡例に無い略号が出る等）もここで見る。
+    reg = pg.evaluate("() => (DATA.reg||{}).available ? DATA.reg.codes : null")
+    if reg:
+        for q, want in (("オキノーム散２．５", ["劇", "麻", "処"]),
+                        ("ニンラーロカプセル２．３", ["毒", "処"]),
+                        ("コンサータ錠１８", ["劇", "向1", "処"])):
+            pg.fill("#q", q)
+            pg.wait_for_timeout(420)
+            if pg.locator(".card").count() == 0:
+                fails.append(f"規制区分の検証薬（{q}）が見つからない")
+                continue
+            got = pg.locator(".card").first.locator(".rg").all_inner_texts()
+            if got != want:
+                fails.append(f"{q} の規制区分が {got}（期待 {want}）")
+        pg.fill("#q", "")
+        pg.wait_for_timeout(250)
+        pg.click("#lgbtn")
+        pg.wait_for_timeout(400)
+        shown = pg.locator("#lgbody .rg").all_inner_texts()
+        if shown != reg:
+            fails.append("凡例の規制区分がデータと食い違う（%s）" % "／".join(shown))
+        pg.click("#lgx")
         pg.wait_for_timeout(300)
 
     # 選定療養の表示

@@ -51,6 +51,16 @@ p{margin:0 0 13px}
 .s-manual{background:var(--manual)}.s-calc{background:var(--calc)}
 .s-browser{background:var(--browser)}
 .s-gen{background:#5b46a5}
+.s-reg{background:#c62828}
+/* 規制区分バッジ（検索ページと同じ見た目） */
+.rg{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;
+  padding:0 4px;border-radius:4px;font-size:11px;font-weight:800;line-height:1;
+  border:1.5px solid currentColor;white-space:nowrap;background:#fff}
+.rg-doku{background:#16202b;color:#fff;border-color:#16202b;box-shadow:inset 0 0 0 1px #fff}
+.rg-geki{color:#c62828}
+.rg-ma{background:#c62828;color:#fff;border-color:#c62828;border-radius:999px}
+.rg-ko{color:#5f34ab;border-radius:999px}
+.rg-sho{color:#66788a;border-width:1px;font-weight:600}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;
   border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:420px}
@@ -239,7 +249,20 @@ li{margin-bottom:5px}
     <tr><td>変更可のみ</td><td><span class="b-kc">変更可</span></td><td>基礎的医薬品ではないが<b>変更調剤は可</b></td></tr>
   </table></div>
 
-  <h3>4. 選定療養と併売品</h3>
+  <h3>4. 規制区分は1品目に複数付く</h3>
+  <p>製品区分と違い、<b>重なって付きます</b>（例：オキノーム散は劇薬・麻薬・処方箋医薬品）。
+  全{{n_items}}品目のうち{{n_reg}}品目に1つ以上付いています（{{reg_date_ja}}時点の電子添文）。</p>
+  <div class="tw"><table>
+    <tr><th>バッジ</th><th class="n">品目数</th><th>意味</th></tr>
+    <tr><td><span class="rg rg-doku">毒</span></td><td class="n">{{n_doku}}</td><td>毒薬</td></tr>
+    <tr><td><span class="rg rg-geki">劇</span></td><td class="n">{{n_geki}}</td><td>劇薬</td></tr>
+    <tr><td><span class="rg rg-ma">麻</span></td><td class="n">{{n_ma}}</td><td>麻薬</td></tr>
+    <tr><td><span class="rg rg-ko">向3</span></td><td class="n">{{n_ko}}</td><td>向精神薬（第一種〜第三種の合計）</td></tr>
+    <tr><td><span class="rg rg-sho">処</span></td><td class="n">{{n_sho}}</td><td>処方箋医薬品。数が多いため目立たない色にしています</td></tr>
+  </table></div>
+  <p class="small">ほかに覚醒剤・覚醒剤原料・習慣性医薬品・特定生物由来製品・生物由来製品・特例承認医薬品があります。一覧は「バッジの意味」をご覧ください。</p>
+
+  <h3>5. 選定療養と併売品</h3>
   <p>後から追加した2つの属性です。いずれも製品区分とは独立しています。</p>
   <div class="tw"><table>
     <tr><th>バッジ</th><th class="n">品目数</th><th>意味</th></tr>
@@ -263,6 +286,7 @@ li{margin-bottom:5px}
       <span class="src s-kiso">基礎</span> 変更調剤が認められる基礎的医薬品等（厚労省・毎日確認）<br>
       <span class="src s-sen">選定</span> 選定療養の対象医薬品リスト（厚労省・毎日確認）<br>
       <span class="src s-gen">一般</span> 一般名処方マスタ（厚労省・毎日確認）<br>
+      <span class="src s-reg">添文</span> 規制区分（PMDA の電子添文から抽出・電子添文を取り直したときに手動で差し替え）<br>
       <span class="src s-manual">手動</span> discontinued.txt（利用者が登録）<br>
       <span class="src s-calc">計算</span> 生成時に算出（複数データの突合・前回との比較）<br>
       <span class="src s-browser">端末</span> 閲覧時にブラウザで計算
@@ -293,6 +317,7 @@ li{margin-bottom:5px}
     <tr><td>選バッジ／差額分・選定療養時の薬価</td><td><span class="src s-sen">選定</span></td><td>薬価基準収載医薬品コードで完全一致（対象は銘柄別収載品なのでYJコードと同じ12桁）</td></tr>
     <tr><td>販売中止バッジ</td><td><span class="src s-manual">手動</span></td><td>薬剤名→YJコードに変換して結合</td></tr>
     <tr><td>【般】一般名処方で検索／調剤可能な品名</td><td><span class="src s-gen">一般</span></td><td>一般名コード（YJ先頭9桁＋例外は12桁）で結合</td></tr>
+    <tr><td>規制区分バッジ（毒・劇・麻・向 など）</td><td><span class="src s-reg">添文</span></td><td>YJコードの完全一致。同じYJに電子添文が複数あるときは、どれか1つに載っている区分をすべて付ける</td></tr>
     <tr><td>併売バッジ／併売品の一覧</td><td><span class="src s-calc">計算</span></td><td>YJ先頭9桁＋製品区分＋商品名で判定</td></tr>
     <tr><td>悪化／改善</td><td><span class="src s-calc">計算</span></td><td>前回版の供給状況と比較</td></tr>
     <tr><td>剤形（詳細）</td><td><span class="src s-calc">計算</span></td><td>品名＋YJコード8桁目から判定</td></tr>
@@ -337,7 +362,9 @@ li{margin-bottom:5px}
     <div class="dfar">↓</div>
     <div class="dfbox"><b>ハッシュ比較</b>変化があった分だけ取得する</div>
     <div class="dfar">↓</div>
-    <div class="dfbox"><b>突合</b>コードや薬剤名で結び付ける</div>
+    <div class="dfbox"><b>突合</b>コードや薬剤名で結び付ける
+      <div class="dfin">← <code>regulation.json</code>（規制区分。電子添文を取り直したときに手動で差し替え）</div>
+    </div>
     <div class="dfar">↓</div>
     <div class="dfbox">
       <b>前回版と比較</b>悪化／改善の判定と、履歴の蓄積
@@ -556,6 +583,7 @@ YJコードごとに前回と比較
       <li><b>変更可</b> … 薬剤名での突合のため、表記が変わると外れる可能性があります</li>
       <li><b>併売品</b> … 商品名の文字列比較を含みます</li>
       <li><b>販売中止</b> … 手動登録。登録漏れや包装単位の取りこぼしが生じえます</li>
+      <li><b>規制区分</b> … {{reg_date_ja}}時点の電子添文によります。それ以後の新発売・改訂は、<code>regulation.json</code> を差し替えるまで反映されません。電子添文が無い品目にはバッジが付きません</li>
       <li><b>一般名処方</b> … 一般名処方加算の対象品目についての標準的な記載であり、一般名処方の可否や記載方法を定めるものではありません。マスタに無い記載で処方されることもあります</li>
     </ul>
   </div>

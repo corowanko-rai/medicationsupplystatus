@@ -674,6 +674,22 @@ def datadoc_values(rows, dicts, data, as_of, prices, ippan, cm_stat):
     vals["gen_oldonly"] = f(max(0, len(items) - cur - n_del))
     # 削除リストのうち、どの版のマスタにも無かったもの（新規に拾えた分）
     vals["ip_del_new"] = f(max((v.get("new", 0) for v in dl), default=0))
+
+    # 規制区分（regulation.json）。行データ[33]のビット列から数える。
+    rg = data.get("reg") or {}
+    codes = rg.get("codes") or []
+    def n_badge(c):
+        if c not in codes:
+            return 0
+        bit = 1 << codes.index(c)
+        return sum(1 for r in rows if r[33] & bit)
+    vals["n_reg"] = f(rg.get("count", 0)) if rg.get("available") else "0"
+    vals["n_doku"] = f(n_badge("毒"))
+    vals["n_geki"] = f(n_badge("劇"))
+    vals["n_ma"] = f(n_badge("麻"))
+    vals["n_ko"] = f(sum(n_badge(c) for c in ("向1", "向2", "向3", "向")))
+    vals["n_sho"] = f(n_badge("処"))
+    vals["reg_date_ja"] = _ja_date(rg["date"]) if rg.get("date") else "（取得日未設定）"
     return vals
 
 
@@ -712,6 +728,43 @@ def load_datadoc(path, scope="#lgdoc"):
     if "<section" not in html:
         return None
     return {"css": css, "html": html.strip()}
+
+
+def load_regulation(path):
+    """regulation.json（規制区分バッジ）を読む。無ければバッジなしで続行する。
+
+    医薬品コードマスタの exports/public/card_by_yj.json をそのまま置いたもの。
+      badges … 表示順の {略号: 名称}
+      items  … {YJコード: {"b": [略号, …]}}
+    規制区分（劇薬・処方箋医薬品など）は法令に基づく指定の事実で、
+    添付文書の本文は含まない。出典と取得日を画面に表示する。
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        d = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return None
+    codes = list((d.get("badges") or {}).keys())
+    if not codes or not d.get("items"):
+        return None
+    if d.get("profile") != "public":
+        # 院内版（包装・添付文書由来の項目を含む）を公開ページに載せない
+        raise ValueError(f"regulation.json が公開版ではありません（profile={d.get('profile')}）。"
+                         "医薬品コードマスタの exports/public/card_by_yj.json を使うこと。")
+    bit = {c: 1 << i for i, c in enumerate(codes)}
+    mask = {}
+    for yj, v in d["items"].items():
+        m = 0
+        for c in v.get("b", []):
+            if c not in bit:
+                raise ValueError(f"regulation.json に凡例に無いバッジ {c} がある（{yj}）")
+            m |= bit[c]
+        if m:
+            mask[yj] = m
+    return {"codes": codes, "names": [d["badges"][c] for c in codes],
+            "mask": mask, "date": d.get("regulation_source_date") or "",
+            "attr": d.get("attribution") or "", "as_of": d.get("as_of") or ""}
 
 
 def load_ippanmei(path):
@@ -800,7 +853,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
           prev_snapshot=None, snapshot_out=None, snapshot_path=None,
           prices_path=None, keep_chg=None, keep_osc=None, keep_vdir=None, keep_newdel=None,
           kiso_path=None, disc_path=None, sentei_path=None,
-          ippanmei_path=None, datadoc_path=None):
+          ippanmei_path=None, datadoc_path=None, regulation_path=None):
     """prev_snapshot: {YJコード: sc} from the previous edition, for 悪化/改善 detection.
     snapshot_out: path to write this edition's snapshot for the next run."""
     hdr = find_header_row(xlsx_path)
@@ -831,6 +884,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     kiso = load_kiso(kiso_path)
     sentei = load_sentei(sentei_path)
     ippan = load_ippanmei(ippanmei_path)
+    reg = load_regulation(regulation_path)
     # 薬剤名 → YJコード の索引（販売中止を名前で登録できるようにするため）
     name_index = {}
     for _, r in df.iterrows():
@@ -974,6 +1028,7 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
             vc_now,                             # [30] 出荷量の区分 0=A+ 1=A 2=B 3=C 4=D
             idx('vimp', clean(r[c[17]])),       # [31] ⑱出荷量の改善見込み時期
             vdir,                               # [32] 出荷量の変化 0=不変 1=改善 2=悪化
+            (reg["mask"].get(yj, 0) if reg else 0),  # [33] 規制区分バッジ（ビット列。凡例は DATA.reg.codes）
         ])
     if not rows:
         raise ValueError("有効なデータ行が0件です。")
@@ -1564,6 +1619,16 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                    "files": (ippan or {}).get("files", {}),
                    "fetched": (ippan or {}).get("updated_at", "")},
     }
+
+    data["sources"]["reg"] = {"label": "規制区分（電子添文より）",
+                              "date": (reg or {}).get("date", ""),
+                              "file": "regulation.json" if reg else ""}
+    if reg:
+        data["reg"] = {"available": True, "codes": reg["codes"], "names": reg["names"],
+                       "date": reg["date"], "attr": reg["attr"],
+                       "count": sum(1 for r in rows if r[33])}
+    else:
+        data["reg"] = {"available": False, "codes": [], "names": []}
 
     data["disc"] = {"count": n_disc, "registered": len(disc)}
     data["sentei"] = {

@@ -719,6 +719,25 @@ header{
   min-width:26px;height:20px;padding:0 5px;border-radius:5px;font-size:11px;font-weight:800;
   border:1.5px solid currentColor;white-space:nowrap;flex:0 0 auto}
 .jpm{font-size:9px;font-weight:800;margin-left:1px;opacity:.85}
+/* 規制区分。毒・劇・麻は法定の容器表示に寄せた配色にして、見慣れた形で目に入るようにする
+   （毒＝黒地に白字、劇＝白地に赤枠・赤字、麻＝赤）。処方箋医薬品は品目の約3分の2に付くので、
+   他を埋もれさせないよう最も控えめにする。 */
+.rg{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;
+  padding:0 4px;border-radius:4px;font-size:11px;font-weight:800;line-height:1;
+  border:1.5px solid currentColor;white-space:nowrap;flex:0 0 auto;background:#fff}
+.rg-doku{background:#16202b;color:#fff;border-color:#16202b;box-shadow:inset 0 0 0 1px #fff}
+.rg-geki{color:#c62828}
+.rg-ma{background:#c62828;color:#fff;border-color:#c62828;border-radius:999px}
+.rg-kaku{background:#8e2a0c;color:#fff;border-color:#8e2a0c}
+.rg-kakug{color:#8e2a0c}
+.rg-ko{color:#5f34ab;border-radius:999px}
+.rg-shu{color:#4d6070}
+.rg-sei{color:#00695c}
+.rg-rei{color:#4d6070}
+.rg-sho{color:#66788a;border-width:1px;font-weight:600}
+.cmrg{display:inline-flex;gap:3px;margin-right:6px;flex:0 0 auto;vertical-align:middle}
+.cmrg .rg{height:17px;min-width:17px;font-size:10px;padding:0 3px}
+.rgsrc{font-size:11px;color:var(--ink3);margin-top:2px}
 .pc-sen{color:#0a68b0}      /* 先発品 */
 .pc-kou{color:#c2185b}      /* 後発品 */
 .pc-jun{color:#00838f}      /* 準先発品 */

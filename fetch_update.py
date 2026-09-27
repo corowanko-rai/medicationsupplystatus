@@ -34,6 +34,7 @@ SENTEI= os.path.join(HERE, "sentei.json")    # 選定療養（fetch_sentei.py �
 KISO  = os.path.join(HERE, "kiso.json")       # 変更調剤可の基礎的医薬品（fetch_kiso.py が作成）
 PRICES= os.path.join(HERE, "prices.json")     # 薬価（fetch_prices.py が作成。無ければ薬価なしで動く）
 IPPAN = os.path.join(HERE, "ippanmei.json")   # 一般名処方マスタ（fetch_ippanmei.py が作成）
+REGUL = os.path.join(HERE, "regulation.json") # 規制区分バッジ（医薬品コードマスタの公開版。手動で差し替え）
 DOC   = os.path.join(HERE, "データの成り立ち.html")  # 凡例の2つ目のタブに埋め込む資料
 OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
 
@@ -183,7 +184,7 @@ def rebuild_only():
                          keep_newdel=_load_keep_newdel(),
                          prices_path=PRICES, kiso_path=KISO, disc_path=DISC,
                          sentei_path=SENTEI, ippanmei_path=IPPAN,
-                         datadoc_path=DOC)
+                         datadoc_path=DOC, regulation_path=REGUL)
     log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
     return 0
 
@@ -304,7 +305,8 @@ def main():
                              keep_newdel=keep_nd,
                              prices_path=PRICES, kiso_path=KISO,
                              disc_path=DISC, sentei_path=SENTEI,
-                             ippanmei_path=IPPAN, datadoc_path=DOC)
+                             ippanmei_path=IPPAN, datadoc_path=DOC,
+                             regulation_path=REGUL)
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = now_jst().isoformat(timespec="seconds")
