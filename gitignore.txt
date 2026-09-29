@@ -1,0 +1,6 @@
+public/
+__pycache__/
+*.pyc
+医薬品供給状況_検索.html
+_eol_body.md
+_stale.md
