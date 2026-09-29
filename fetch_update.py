@@ -40,10 +40,99 @@ OUT   = os.path.join(HERE, "医薬品供給状況_検索.html")
 
 def log(m): print(f"[{now_jst():%Y-%m-%d %H:%M:%S}] {m}", flush=True)
 
-def http_get(url, timeout=90):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+NOCACHE = {"Cache-Control": "no-cache, max-age=0", "Pragma": "no-cache"}
+
+
+def http_get(url, timeout=90, nocache=False):
+    h = {"User-Agent": UA}
+    if nocache:
+        h.update(NOCACHE)
+    req = urllib.request.Request(url, headers=h)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
+
+
+def http_exists(url, timeout=30):
+    """そのURLにファイルがあるかを本体を取らずに確かめる。
+    厚労省の配信は途中に中継が入り、掲載ページの方が古いまま
+    見えることがあるため、ファイルの有無を直接確かめる用途で使う。
+    戻り値: (ある/ない, バイト数または None)"""
+    req = urllib.request.Request(url, headers={"User-Agent": UA, **NOCACHE},
+                                 method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status != 200:
+                return False, None
+            try:
+                return True, int(r.headers.get("Content-Length") or 0) or None
+            except Exception:
+                return True, None
+    except urllib.error.HTTPError:
+        return False, None
+    except Exception as e:
+        log(f"  （確認できませんでした: {url.rsplit('/', 1)[-1]} … {e}）")
+        return False, None
+
+
+# 厚労省のファイル名は「YYMMDDiyakuhinkyoukyu.xlsx」で規則的なため、
+# 掲載ページに載る前でも日付から直接たどれる。
+FNAME_FMT = "{ymd}iyakuhinkyoukyu.xlsx"
+PROBE_DAYS = 14        # 何日分さかのぼって探すか
+_FW = str.maketrans("0123456789", "０１２３４５６７８９")
+
+
+def date_to_ymd(d):
+    return f"{d.year % 100:02d}{d.month:02d}{d.day:02d}"
+
+
+def make_label(iso):
+    """2026-09-28 → 医療用医薬品供給状況（令和８年９月28日現在）
+    掲載ページの書き方（年・月は全角、日は半角）に合わせる。"""
+    try:
+        y, m, d = (int(x) for x in iso.split("-"))
+    except Exception:
+        return "医療用医薬品供給状況"
+    r = str(y - 2018).translate(_FW)
+    return f"医療用医薬品供給状況（令和{r}年{str(m).translate(_FW)}月{d}日現在）"
+
+
+def probe_newer(dir_url, base_iso, today=None):
+    """掲載ページより新しい版がサーバに置かれていないか、
+    日付を並べて直接確かめる。見つかった一番新しいものを返す。
+
+    掲載ページは中継の都合で古いまま見えることがあり（実例：
+    令和8年9月28日版はファイルが置かれているのに、
+    ページのリンクは9月25日版のままだった）、
+    ページだけを頼りにすると更新を取りこぼす。
+
+    戻り値: (url, iso) または None
+    """
+    today = today or now_jst().date()
+    try:
+        base = datetime.date.fromisoformat(base_iso) if base_iso else None
+    except Exception:
+        base = None
+    start = today - datetime.timedelta(days=PROBE_DAYS)
+    if base and base >= start:
+        start = base + datetime.timedelta(days=1)
+    if start > today:
+        return None
+    found = None
+    d = today
+    while d >= start:
+        url = dir_url.rstrip("/") + "/" + FNAME_FMT.format(ymd=date_to_ymd(d))
+        ok, size = http_exists(url)
+        if ok:
+            found = (url, d.isoformat(), size)
+            break                      # 新しい日から見ているので最初の1件が最新
+        d -= datetime.timedelta(days=1)
+    if not found:
+        return None
+    url, iso, size = found
+    log(f"掲載ページより新しい版がサーバにありました: {iso}"
+        + (f"（{size:,} bytes）" if size else ""))
+    log(f"  URL : {url}")
+    return url, iso
 
 class LinkFinder(HTMLParser):
     """Collect <a href=...>text</a> pairs."""
@@ -154,6 +243,42 @@ def _load_keep_osc():
         return None
 
 
+STALE_DAYS = 12   # 厚労省の公表間隔は週1回程度。これを超えたら知らせる
+
+
+def warn_if_stale(as_of):
+    """取り込み済みの版が古くなりすぎていないか。
+    取得の仕組みが黙って止まっても気づけるようにする。"""
+    if not as_of:
+        return
+    try:
+        age = (now_jst().date() - datetime.date.fromisoformat(as_of)).days
+    except Exception:
+        return
+    if age > STALE_DAYS:
+        log(f"警告: 取り込み済みの版が {age} 日前（{as_of}）のままです。")
+        print(f"::warning::供給状況が {age} 日間更新されていません（{as_of} 現在の版）。"
+              "厚労省ページの掲載状況と取得の仕組みをご確認ください。")
+        # ワークフローがこれを見てIssueを作る（ログだけでは気づけないため）
+        try:
+            with open(os.path.join(HERE, "_stale.md"), "w", encoding="utf-8") as f:
+                f.write(
+                    f"取り込み済みの供給状況が **{age} 日間** 更新されていません。\n\n"
+                    f"- 掲載中として記録している版: **{as_of} 現在**\n"
+                    f"- しきい値: {STALE_DAYS} 日\n\n"
+                    "### 確認すること\n\n"
+                    "1. 厚労省ページに新しい版が載っているか\n"
+                    "   <https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/"
+                    "kenkou_iryou/iryou/kouhatu-iyaku/04_00003.html>\n"
+                    "2. 載っているのに取り込めていない場合は、"
+                    "ファイル名の付け方が変わった可能性があります"
+                    "（`fetch_update.py` の `FNAME_FMT`）。\n"
+                    "3. 厚労省側の公表が止まっているだけなら、対応は不要です。\n\n"
+                    "※ 新しい版が取り込まれると、この通知は出なくなります。\n")
+        except Exception:
+            pass
+
+
 def rebuild_only():
     """厚労省へアクセスせず、保存済みのExcelから作り直すだけ。
     表示の調整や販売中止の登録だけを反映したいときに使う。"""
@@ -196,7 +321,7 @@ def main():
         return rebuild_only()
     try:
         log("厚労省ページを確認中…")
-        html = http_get(PAGE).decode("utf-8", "replace")
+        html = http_get(PAGE, nocache=True).decode("utf-8", "replace")
         found = find_xlsx(html)
         if not found:
             log("ERROR: Excelリンクが見つかりません。ページ構造が変わった可能性があります。")
@@ -210,13 +335,44 @@ def main():
         prev_hash = st.get("sha256")
         prev_as_of = st.get("as_of")
 
+        # 掲載ページのリンクが古いまま見えることがあるため、
+        # 日付から直接、新しい版が置かれていないかも確かめる。
+        page_as_of = ymd_to_iso(ymd) if ymd else None
+        base_iso = max([x for x in (page_as_of, prev_as_of) if x], default=None)
+        probed = probe_newer(url.rsplit("/", 1)[0], base_iso)
+        if probed:
+            url, new_iso = probed
+            ymd = date_to_ymd(datetime.date.fromisoformat(new_iso))
+            label = make_label(new_iso)
+            print("::notice::掲載ページに載る前の版を直接取得しました"
+                  f"（ページ {page_as_of or '?'} → 実際 {new_iso}）。")
+
+        # 掲載ページのリンクだけが古いまま見えている場合。
+        # 直接取得で先に新しい版を入れていると、翌日以降ページが
+        # 追いつくまでこの状態になる。取り込み済みのファイルが
+        # サーバにまだあるなら、取り下げではなくページが遅れているだけ。
+        this_as_of = ymd_to_iso(ymd) if ymd else None
+        stale_page = False
+        if (not probed and prev_as_of and this_as_of and this_as_of < prev_as_of
+                and prev_url):
+            stale_page, _ = http_exists(prev_url)
+        if stale_page:
+            log(f"掲載ページのリンクは {this_as_of} のままですが、"
+                f"取り込み済みの {prev_as_of} 版はサーバに残っています。")
+            log("  ページの反映が遅れているだけと判断し、そのまま維持します。")
+            if not check:
+                st["last_checked"] = now_jst().isoformat(timespec="seconds")
+                st["last_seen_label"] = label
+                save_state(st)
+                warn_if_stale(prev_as_of)
+                return 10
+
         # 掲載中の版が前回より古くなっていないか。
         # 厚労省は、公表した版を取り下げて前の版に戻すことがある
         # （実例：令和8年9月17日版が一時掲載され、のち9月16日版に戻った）。
         # 黙って古い版で上書きすると、誰も差し替えに気づけないため知らせる。
         rollback = False
-        this_as_of = ymd_to_iso(ymd) if ymd else None
-        if prev_as_of and this_as_of and this_as_of < prev_as_of:
+        if not stale_page and prev_as_of and this_as_of and this_as_of < prev_as_of:
             rollback = True
             log(f"警告: 掲載中の版が前回より古くなっています"
                 f"（前回 {prev_as_of} → 今回 {this_as_of}）。")
@@ -231,6 +387,10 @@ def main():
                 log(f"  前回取得: {st.get('label','?')}（{st.get('updated_at','?')}）")
                 if prev_url == url:
                     log("  同一URLです。")
+                elif stale_page:
+                    log("  ★掲載ページの反映が遅れています（取り込み済みの版を維持）")
+                elif probed:
+                    log("  ★掲載ページに載る前の新しい版があります")
                 elif rollback:
                     log("  ★前回より古い版に差し替わっています")
                 else:
@@ -241,9 +401,16 @@ def main():
             return 0
 
         log("ファイルを取得中…")
-        blob = http_get(url)
+        blob = http_get(url, nocache=True)
         h = hashlib.sha256(blob).hexdigest()
         log(f"  size={len(blob):,} bytes  sha256={h[:16]}…")
+
+        # 中継がエラーページを返すことがあるため、Excelであることを確かめる。
+        # 壊れたものを保存すると、次回まで古い内容が残り続ける。
+        if len(blob) < 100_000 or blob[:2] != b"PK":
+            log("ERROR: 取得したファイルがExcelとして読めません"
+                f"（先頭 {blob[:8]!r} / {len(blob):,} bytes）。今回は更新しません。")
+            return 1
 
         # 供給Excelが前回と同一なら、悪化/改善の比較基準を動かしてはいけない。
         # （--force は薬価更新などによる再生成のためのもので、
@@ -257,6 +424,7 @@ def main():
             save_state(st)
             log("変更なし（前回と同一ファイル）。処理を終了します。")
             log(f"  掲載中の版: {st.get('as_of','?')}")
+            warn_if_stale(st.get("as_of"))
             return 10
 
         if prev_hash:
