@@ -215,6 +215,24 @@ jobs:
               && echo "::notice::保守期限のIssueを作成しました。"
           fi
 
+      # 供給状況が長く更新されないままになっていたら知らせる。
+      # 取得の仕組みが黙って空振りし続ける事故に気づくため。
+      - name: 更新が止まっていたらIssueで知らせる
+        if: always() && hashFiles('_stale.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="【要確認】供給状況の更新が止まっています"
+          FOUND=$(gh issue list --state open --search "$TITLE in:title" \
+                    --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "::notice::既にIssue #$FOUND が開いています。重ねて作りません。"
+          else
+            gh issue create --title "$TITLE" --body-file _stale.md \
+              && echo "::notice::更新停止のIssueを作成しました。"
+          fi
+
       - name: 定期実行の自動停止を防ぐ（キープアライブ）
         if: always()
         env:
