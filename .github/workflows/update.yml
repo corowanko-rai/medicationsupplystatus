@@ -6,9 +6,22 @@ on:
     branches: [main]
     paths:
       - 'discontinued.txt'
+  # 【2026-09】1日1回（朝7時）から1日4回（9:07・16:37・19:07・22:07）へ。理由は2つ。
+  #  ① 厚労省の供給状況Excelは「その日の15時台」に作られている
+  #     （実測：9/28版 15:18、9/29版 15:33）。朝だけの確認では常に丸1日遅れる。
+  #  ② GitHubの定期実行は「ベストエフォート」で、2026年8月下旬から
+  #     数時間の遅れや欠落が広く報告されている（実測：07:00指定が 09:26・10:39 開始）。
+  #     回数を増やして、1回抜けても取りこぼさないようにする。
+  # 分は00を避ける（毎時00分は利用が集中して遅れやすい）。
+  # 朝の回だけ、薬価・基礎的医薬品・選定療養・一般名処方マスタ・保守期限も確認する
+  # （これらは日中に変わることがほぼ無く、厚労省へのアクセスも増やしたくないため）。
+  # ※ 朝の回の判定に下の MORNING_CRON と同じ文字列を使う。変えるときは両方そろえること。
   schedule:
-    # UTC 22:00 = JST 翌07:00（毎日）
-    - cron: '0 22 * * *'
+    # 朝は9時台：官公庁の始業（8時台）後の掲載も拾えるように。
+    - cron: '7 0 * * *'     # JST 09:07  朝の総合確認
+    - cron: '37 7 * * *'    # JST 16:37  供給状況のみ（軽い確認）
+    - cron: '7 10 * * *'    # JST 19:07  供給状況のみ（軽い確認）
+    - cron: '7 13 * * *'    # JST 22:07  供給状況のみ（軽い確認）
   workflow_dispatch:        # 手動実行も可能
     inputs:
       mode:
@@ -19,7 +32,7 @@ on:
           - local     # 厚労省へアクセスせず再生成（表示調整・販売中止の登録用）
           - check     # 厚労省を確認し、更新があれば取得
           - force     # 厚労省から強制的に再取得
-    # ※毎朝7時の定期実行は inputs が無いため、常に check で動作します
+    # ※定期実行は inputs が無いため、常に check で動作します
 
 permissions:
   contents: write
@@ -34,6 +47,9 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      # 朝の総合確認の cron。上の schedule の1行目と同じ文字列にすること
+      MORNING_CRON: '7 0 * * *'
     steps:
       # 【2026-09】Node.js 20 が 9/16 に削除されるため、Node 24 対応版へ更新。
       # 版はタグではなくコミットSHAで固定する（タグは差し替えられるため）。
@@ -55,7 +71,9 @@ jobs:
       - name: 薬価基準収載品目リストを取得
         id: prices
         continue-on-error: true
-        if: inputs.mode != 'local' && github.event_name != 'push'
+        if: >-
+          inputs.mode != 'local' && github.event_name != 'push' &&
+          (github.event_name != 'schedule' || github.event.schedule == env.MORNING_CRON)
         run: |
           set +e
           python fetch_prices.py
@@ -72,7 +90,9 @@ jobs:
       - name: 基礎的医薬品リストを取得
         id: kiso
         continue-on-error: true
-        if: inputs.mode != 'local' && github.event_name != 'push'
+        if: >-
+          inputs.mode != 'local' && github.event_name != 'push' &&
+          (github.event_name != 'schedule' || github.event.schedule == env.MORNING_CRON)
         run: |
           set +e
           python fetch_kiso.py
@@ -89,7 +109,9 @@ jobs:
       - name: 選定療養リストを取得
         id: sentei
         continue-on-error: true
-        if: inputs.mode != 'local' && github.event_name != 'push'
+        if: >-
+          inputs.mode != 'local' && github.event_name != 'push' &&
+          (github.event_name != 'schedule' || github.event.schedule == env.MORNING_CRON)
         run: |
           set +e
           python fetch_sentei.py
@@ -108,7 +130,9 @@ jobs:
       - name: 一般名処方マスタを取得
         id: ippan
         continue-on-error: true
-        if: inputs.mode != 'local' && github.event_name != 'push'
+        if: >-
+          inputs.mode != 'local' && github.event_name != 'push' &&
+          (github.event_name != 'schedule' || github.event.schedule == env.MORNING_CRON)
         run: |
           set +e
           python fetch_ippanmei.py
@@ -137,16 +161,25 @@ jobs:
             python fetch_update.py --local
           else
             EXTRA=""
+            # 朝以外の定期実行は「軽い確認」。ファイルの目印（更新日時・大きさ）が
+            # 前回と同じなら本体を取り直さず、厚労省への負荷を増やさない。
+            LIGHT=""
+            if [ "${{ github.event_name }}" = "schedule" ] && \
+               [ "${{ github.event.schedule }}" != "$MORNING_CRON" ]; then LIGHT=1; fi
             # 薬価や基礎的リストが更新された場合は、供給Excelが同じでも作り直す
             if [ "${{ steps.prices.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             if [ "${{ steps.kiso.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             if [ "${{ steps.sentei.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
             if [ "${{ steps.ippan.outputs.code }}" = "0" ]; then EXTRA="--force"; fi
-            # 販売中止の登録が変わった場合も作り直す
-            if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
+            # 販売中止の登録が変わった場合も作り直す。
+            # 軽い確認の回では見ない（直前のコミットが販売中止の登録だと、
+            # 1日4回とも作り直し＝Excelの取り直しになってしまうため。
+            # 登録の反映は、push 時の自動実行と朝の回で足りる）
+            if [ -z "$LIGHT" ] && git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q discontinued.txt; then
               EXTRA="--force"
             fi
             if [ "$MODE" = "force" ]; then EXTRA="--force"; fi
+            if [ -n "$LIGHT" ] && [ -z "$EXTRA" ]; then EXTRA="--light"; fi
             python fetch_update.py $EXTRA
           fi
           code=$?
@@ -189,7 +222,8 @@ jobs:
       # 失敗にはしない（毎朝赤くなると、本当の異常に気づけなくなるため）。
       - name: 保守期限を確認
         id: eol
-        if: always()
+        # 1日4回の定期実行のうち、朝の回だけ（Issueへの追記が1日4回になるのを防ぐ）
+        if: always() && (github.event_name != 'schedule' || github.event.schedule == env.MORNING_CRON)
         continue-on-error: true
         run: |
           set +e
