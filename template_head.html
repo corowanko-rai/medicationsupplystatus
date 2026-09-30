@@ -208,6 +208,39 @@ header{
 .chgday{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#2f7a52;
   background:#e8f5ec;border-radius:5px;padding:2px 7px}
 #vtlist .chgday{font-weight:600;color:var(--ink3);background:none;padding:2px 0}
+/* 出荷量の動き：まとめ行（同じメーカー・同じ分類・同じ動き）。
+   個々の品目の行と見分けがつくよう、背景を一段沈め、件数を目立たせる。 */
+.vtgrp,.vtfold{display:block;width:100%;text-align:left;font-family:inherit;
+  color:inherit;cursor:pointer;border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;margin-bottom:6px;background:var(--surface2)}
+.vtgrp.better{border-left:4px solid #2f7a52}
+.vtgrp.worse{border-left:4px solid #a53b3b}
+.vtgrp.swing{border-left:4px solid #d9a441}
+.vtgh{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;
+  line-height:1.5;color:var(--ink)}
+.vtgnm{min-width:0;overflow-wrap:anywhere}
+.vtgn{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#0a5a97;
+  background:#e3f0fa;border-radius:99px;padding:1px 9px}
+.vtgt{flex:0 0 auto;margin-left:auto;font-size:12px;color:var(--ink3)}
+.vtgrp .chgmv,.vtfold .chgmv{display:flex}
+.vtgbody{margin:-2px 0 8px 12px;padding-left:8px;border-left:2px dotted var(--line)}
+/* 生薬・漢方の折りたたみ。一覧の最後に置き、既定で閉じる */
+.vtfold{min-height:44px;background:var(--surface);border-style:dashed;margin-top:10px}
+.vtfold+.vtfold,.vtfbody+.vtfold{margin-top:4px}
+.vtfsub{font-size:11px;font-weight:600;color:var(--ink3)}
+.vtfbody{padding:6px 0 2px 8px;border-left:2px solid var(--line);margin:0 0 6px 6px}
+.vtnote{padding:8px 4px 4px;font-size:11.5px;color:var(--ink3);text-align:center}
+/* 表示の設定：まとめる件数 */
+.gmrow{display:flex;align-items:center;gap:8px}
+.gmb{flex:0 0 auto;width:44px;height:44px;border-radius:9px;font-size:20px;font-weight:700;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit;line-height:1}
+.gmval{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--ink2)}
+/* 16px未満だと iPhone が入力時に画面を拡大してしまう */
+.gmval input{width:64px;height:44px;box-sizing:border-box;text-align:center;
+  font-size:16px;font-weight:800;font-family:inherit;color:#0a5a97;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.cfghint{margin-top:6px;font-size:11px;line-height:1.6;color:var(--ink3)}
 
 .chgempty{padding:18px 10px;text-align:center;color:var(--ink3);font-size:12.5px}
 
@@ -255,7 +288,7 @@ header{
 .bdcnt{font-size:12px;font-weight:700;color:var(--ink3);
   background:var(--surface2);border-radius:99px;padding:3px 11px}
 .kwrap{display:flex;gap:5px;margin-bottom:8px}
-.kb2{flex:1;min-height:38px;border-radius:9px;font-size:12.5px;font-weight:700;
+.kb2{flex:1;min-height:40px;border-radius:9px;font-size:12.5px;font-weight:700;
   background:var(--surface2);border:1px solid var(--line);color:var(--ink3);
   cursor:pointer;font-family:inherit}
 .kb2[aria-pressed="true"]{background:#e8f4ec;border-color:#8fcaa8;color:#2f7a52}
@@ -269,6 +302,9 @@ header{
 .rngrow label{white-space:nowrap}
 .rngrow b{color:#0a5a97;font-variant-numeric:tabular-nums}
 #rng{flex:1;min-height:32px;accent-color:#0a68b0}
+/* お知らせの条件のスライダーも同じ扱いにする。幅の指定が無いと、
+   狭い端末（幅320px）で右端が枠の外に出て切れていた */
+#rng2{flex:1;min-width:0;min-height:32px;accent-color:#0a68b0}
 /* 上段は高さを決めてスクロールさせ、下段のグラフを常に見せる */
 .bdscroll{max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding-right:2px}
@@ -1054,13 +1090,20 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
          前回版との2点比較ではなく、履歴から「戻った日」を拾うため、
          更新のたびに入れ替わって見逃す、ということが起きない。 -->
       <details class="cfg" id="cfg">
-        <summary>表示の設定（剤形・割合）</summary>
+        <summary>表示の設定（剤形・生薬漢方・割合・まとめ）</summary>
         <div class="cfgin">
           <div class="cfglb">剤形<span class="cfgnote">この下の3つすべてに効きます</span></div>
           <div class="kwrap" id="bdk">
             <button class="kb2" data-k="0" aria-pressed="true">内用薬</button>
             <button class="kb2" data-k="1" aria-pressed="true">外用薬</button>
             <button class="kb2" data-k="2" aria-pressed="false">注射薬</button>
+          </div>
+          <!-- 生薬・漢方は、出荷量の動きでは既定で最後に折りたたむ。
+               それでも見たくない日のために、一覧から外せるようにする。 -->
+          <div class="cfglb">生薬・漢方<span class="cfgnote">この下の一覧すべてに効きます</span></div>
+          <div class="kwrap" id="bdkan">
+            <button class="kb2" data-v="0" aria-pressed="true">含める</button>
+            <button class="kb2" data-v="1" aria-pressed="false">一覧から除く</button>
           </div>
           <div class="cfglb">逼迫の割合</div>
           <div class="bdth" id="bdth">
@@ -1079,6 +1122,14 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
             <label for="rng2">逼迫率の変化 <b id="rng2lb">10</b>ポイント以上</label>
             <input type="range" id="rng2" min="5" max="50" step="5" value="10">
           </div>
+          <div class="cfglb">出荷量の動きのまとめ</div>
+          <div class="gmrow">
+            <button class="gmb" id="vtgmdn" aria-label="1件減らす">−</button>
+            <label class="gmval"><input type="number" id="vtgm" min="2" max="99" step="1"
+              value="5" inputmode="numeric" aria-label="まとめる件数">件以上</label>
+            <button class="gmb" id="vtgmup" aria-label="1件増やす">＋</button>
+          </div>
+          <div class="cfghint">同じメーカー・同じ薬効分類で、同じ動きをした品目がこの件数以上あれば1行にまとめます（タップで開きます）。</div>
         </div>
       </details>
     <!-- 出荷量の傾向と、新たに薬価削除予定になった品目。

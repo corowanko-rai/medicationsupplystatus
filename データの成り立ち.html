@@ -301,9 +301,10 @@ li{margin-bottom:5px}
     <tr><td>剤形タグ（内用／外用／注射）</td><td><span class="src s-mhlw">供給</span></td><td>①薬剤区分</td></tr>
     <tr><td>製品区分バッジ</td><td><span class="src s-mhlw">供給</span></td><td>⑧製品区分</td></tr>
     <tr><td>基バッジ</td><td><span class="src s-mhlw">供給</span></td><td>⑨基礎的医薬品</td></tr>
-    <tr><td>出荷量バッジ（量増加／量通常／量減少／量停止／量削除予定）</td>
+    <tr><td>出荷量バッジ（出荷増／出荷通常／出荷減／出荷停止／薬価削除予定）</td>
         <td><span class="src s-mhlw">供給</span></td><td>⑰</td></tr>
     <tr><td>成分名／薬効分類／YJコード</td><td><span class="src s-mhlw">供給</span></td><td>③②⑤</td></tr>
+    <tr><td>生薬・漢方の区分</td><td><span class="src s-mhlw">供給</span></td><td>②薬効分類（⑤-2で後述）</td></tr>
     <tr><td>理由／解除見込／備考／出荷量</td><td><span class="src s-mhlw">供給</span></td><td>⑭⑮⑯⑰</td></tr>
   </table></div>
 
@@ -323,6 +324,7 @@ li{margin-bottom:5px}
     <tr><td>剤形（詳細）</td><td><span class="src s-calc">計算</span></td><td>品名＋YJコード8桁目から判定</td></tr>
     <tr><td>「後発品が高い」一覧</td><td><span class="src s-calc">計算</span></td><td>YJ先頭9桁で群化し薬価を比較</td></tr>
     <tr><td>お知らせ掲示板／推移グラフ</td><td><span class="src s-calc">計算</span></td><td>過去の版の履歴から算出</td></tr>
+    <tr><td>出荷量の動き（傾向）</td><td><span class="src s-calc">計算</span></td><td>⑰出荷量の履歴の全期間から判定（⑤-2で後述）</td></tr>
   </table></div>
 
   <h3>閲覧時にブラウザで計算する項目</h3>
@@ -333,6 +335,7 @@ li{margin-bottom:5px}
     <tr><td>後発品との差額（カード内）</td><td>点数換算を含む正確な計算（計算タブと同じ）</td></tr>
     <tr><td>「計算」タブの金額</td><td>入力内容から点数を算出</td></tr>
     <tr><td>フィルターの並び順</td><td>端末に保存され、次回も同じ並びになります</td></tr>
+    <tr><td>出荷量の動きの並び・まとめ</td><td>まとめる件数（既定5件）と生薬・漢方を除く設定は端末に保存されます</td></tr>
   </table></div>
   <p class="small">上の2つは端末の日付で毎回計算するため、ページを作り直さなくても日数が進みます。端末の日付がずれていると表示もずれます。</p>
 
@@ -346,7 +349,7 @@ li{margin-bottom:5px}
 <section id="join">
   <h2>データの流れ</h2>
   <div class="dfw">
-    <div class="dfcap">毎朝7時・自動</div>
+    <div class="dfcap">自動：供給状況は1日4回、ほかは毎朝</div>
 
     <div class="dfbox dfsrc">
       <div class="dft">厚労省から取得</div>
@@ -360,7 +363,7 @@ li{margin-bottom:5px}
     </div>
 
     <div class="dfar">↓</div>
-    <div class="dfbox"><b>ハッシュ比較</b>変化があった分だけ取得する</div>
+    <div class="dfbox"><b>変化の確認</b>ファイルの更新日時とハッシュで比べ、変化があった分だけ取得する</div>
     <div class="dfar">↓</div>
     <div class="dfbox"><b>突合</b>コードや薬剤名で結び付ける
       <div class="dfin">← <code>regulation.json</code>（規制区分。電子添文を取り直したときに手動で差し替え）</div>
@@ -470,6 +473,22 @@ YJコードごとに前回と比較
   ↓
 この履歴から、通常出荷に戻った薬の一覧・お知らせ掲示板（良い/悪い両方）・推移グラフを作る</pre></div>
   <p class="small">初回導入時は比較対象が無いため0件です。2回目の更新以降に機能します。　「通常出荷に戻った薬」は前回版との比較ではなく、この履歴から「戻った日」を拾っているため、更新のたびに入れ替わって見逃すことがありません。</p>
+
+  <h3>⑤-2 出荷量の動き ── 全期間で判定し、まとめて並べる</h3>
+  <div class="flow"><pre>⑰出荷量を数値にして履歴に積む
+  出荷増(0) 出荷通常(1) 出荷減(2) 出荷停止(3)
+  ↓
+全期間の並びから「いまどの途上か」を5つの型に分ける
+  一貫して改善／底を打って回復途上／一貫して悪化
+  改善後に再び悪化／上下を繰り返す
+  ↓
+並べる：いまの出荷対応が悪い順 → 悪化の型 → 変化の幅
+  ↓
+同じメーカー・同じ薬効分類・同じ動きが5件以上なら1行にまとめる
+  ↓
+生薬・漢方は最後に折りたたむ（漢方製剤 → 生薬の順）</pre></div>
+  <p>生薬・漢方の区分は、供給状況Excelの<b>②薬効分類</b>で判定します。全{{n_items}}品目のうち、漢方製剤（520）が{{n_kampo}}品目、生薬（510）とその他の生薬及び漢方処方に基づく医薬品（590：加工ブシ末・ヨクイニンエキスなど）が合わせて{{n_shoyaku}}品目です。</p>
+  <p class="small">生薬のメーカーは、数十品目の⑰出荷量を一斉に付け直すことがあります。そのまま並べると、薬局でよく扱う薬が一覧の下に埋もれます。{{as_of_ja}}版では、出荷量の動きがあった{{vt_n}}品目のうち{{vt_kan}}品目が生薬・漢方、それ以外は{{vt_other}}品目でした。まとめる件数（既定5件）と、生薬・漢方を一覧から除くかどうかは、画面の「表示の設定」で変えられます。成分単位の一覧（お知らせ掲示板など）では、その成分の品目がすべて生薬・漢方のときだけ除きます。</p>
 
   <h3>⑥ 「後発品が高い」 ── 群化してから比較</h3>
   <div class="flow"><pre>YJ先頭9桁で群化

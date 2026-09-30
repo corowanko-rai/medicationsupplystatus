@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-28-v43';
+const TPL_VER='2026-09-29-v44';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -1307,6 +1307,37 @@ document.querySelector('.ptabs').addEventListener('click',e=>{
 /* 剤形は薬局の主用途に合わせ、内用薬・外用薬を既定にする */
 let bdKinds=new Set([0,1]);
 let bdLo=50, bdHi=100, chIng='_all', bdFocus=null;
+
+/* 生薬・漢方の区分。生成側（build_html.py の KAN_CLS）と同じ表を受け取り、
+   判定を二重に持たない。値は並び順：1＝漢方製剤、2＝生薬。 */
+const KANCLS=DATA.kancls||{};
+const kanOf=(r)=>KANCLS[dv(r,'cls')]||0;
+/* 成分単位の一覧（お知らせ掲示板・逼迫が進んでいる成分）での判定。
+   その成分の品目が「すべて」生薬・漢方のときだけ生薬・漢方とみなす。
+   1品目でも他の分類があれば除かない（除きすぎて見落とさないため）。 */
+const KANING=(()=>{
+  const m=new Map();
+  R.forEach(r=>{
+    const i=get(r,'i'); if(i===undefined||i===null||i<0) return;
+    const k=kanOf(r)?1:0, p=m.get(i);
+    m.set(i, p===undefined ? k : (p&k));
+  });
+  const s=new Set(); m.forEach((v,i)=>{ if(v) s.add(i); });
+  return s;
+})();
+/* 生薬・漢方を一覧から除くか。既定は含める（出荷量の動きでは最後に折りたたむ） */
+let bdNoKan=false;
+/* 出荷量の動き：同じ動きの品目がこの件数以上あれば1行にまとめる */
+const VTGM_LO=2, VTGM_HI=99, VTGM_DEF=5;
+let vtGroupMin=VTGM_DEF;
+/* 2つの設定は端末に覚えさせる（毎回設定し直さなくて済むように）。
+   保存できない環境（プライベートモード等）では既定値で動く。 */
+try{
+  const v=parseInt(localStorage.getItem('vtGroupMin'),10);
+  if(v>=VTGM_LO && v<=VTGM_HI) vtGroupMin=v;
+  bdNoKan = localStorage.getItem('bdNoKan')==='1';
+}catch(e){}
+const kanOk=(r)=>!bdNoKan || !kanOf(r);
 const KLABEL=['内用薬','外用薬','注射薬'];
 const KSHORT=['内','外','注'];
 const KCLS=['kb-nai','kb-gai','kb-chu'];
@@ -1382,6 +1413,7 @@ function nwCalc(x){
 function drawNews(){
   const list=[];
   NEWS.forEach(x=>{
+    if(bdNoKan && KANING.has(x.i)) return;   /* 生薬・漢方を除く設定 */
     if(nwType && x.t!==nwType) return;
     if(nwSide==='good' && !isGood(x.t)) return;
     if(nwSide==='bad'  &&  isGood(x.t)) return;
@@ -1494,6 +1526,8 @@ function drawBoard(){
   const rows=[];
   ALERTS.forEach(a=>{
     if(bdFocus!==null && a.i!==bdFocus) return;   /* 掲示板から成分を選んだとき */
+    /* 生薬・漢方を除く設定。成分を選んでいるときは、その成分を必ず出す */
+    if(bdFocus===null && bdNoKan && KANING.has(a.i)) return;
     /* 掲示板から特定の成分を選んだときは、剤形も割合も無視して必ず出す。
        掲示板に載っている＝ユーザーが見たい成分なのに、
        剤形の選択（既定は内用薬・外用薬）や下限に阻まれて
@@ -1623,6 +1657,28 @@ document.getElementById('bdk').addEventListener('click',e=>{
      設定を変えても一部だけ古い表示のまま残る */
   drawVt(); drawChg(); drawNews(); drawBoard();
 });
+/* 生薬・漢方を一覧から除く／含める。剤形と同じく一覧すべてに効く */
+document.getElementById('bdkan').addEventListener('click',e=>{
+  const b=e.target.closest('.kb2'); if(!b) return;
+  bdNoKan = b.dataset.v==='1';
+  try{ localStorage.setItem('bdNoKan', bdNoKan?'1':'0'); }catch(e){}
+  drawVt(); drawChg(); drawNews(); drawBoard();
+});
+/* 出荷量の動きのまとめ件数。範囲外は端に寄せる */
+function setVtGroupMin(v){
+  v=parseInt(v,10);
+  if(!(v>=VTGM_LO)) v = isNaN(v) ? vtGroupMin : VTGM_LO;
+  if(v>VTGM_HI) v=VTGM_HI;
+  vtGroupMin=v;
+  /* 入力欄にフォーカスがあっても、寄せた値を必ず見せる（「1」のまま残さない） */
+  document.getElementById('vtgm').value=v;
+  try{ localStorage.setItem('vtGroupMin', String(v)); }catch(e){}
+  drawVt();
+}
+document.getElementById('vtgmdn').addEventListener('click',()=>setVtGroupMin(vtGroupMin-1));
+document.getElementById('vtgmup').addEventListener('click',()=>setVtGroupMin(vtGroupMin+1));
+/* 入力途中（空欄や「1」）で書き換えると打ちにくいので、確定したときに反映する */
+document.getElementById('vtgm').addEventListener('change',e=>setVtGroupMin(e.target.value));
 document.getElementById('bdlist').addEventListener('click',e=>{
   const row=e.target.closest('.bdrow'); if(!row) return;
   const i=row.dataset.ing;
@@ -2391,18 +2447,132 @@ const VTPAT={
   swing:{t:'上下を繰り返す', c:'swing'},
 };
 
+/* 並び：①いまの出荷対応が悪いもの（供給停止→限定出荷→通常出荷）
+        ②悪化の型（一貫して悪化→…→一貫して改善。薬価削除予定はその後）
+        ③変化の幅が大きいもの ④記録が長いもの ⑤品名
+   ⑤まで決めておかないと、同じ順位の品目がExcelの行順（≒薬効分類順）で並び、
+   同じ分類の品目が塊になって上を占めてしまう。 */
+const VTORD={wor:0,rel:1,swing:2,rec:3,imp:4};
+function vtIsDel(x){ return x.from!==undefined; }
+function vtSc(x){ const r=R[x.i]; return r ? (get(r,'sc')||0) : 0; }
+function vtKey(x){
+  const del=vtIsDel(x);
+  return [-vtSc(x), del?5:VTORD[x.p], del?0:-Math.abs(x.b-x.a), -(x.n||0)];
+}
+function vtCmp(p,q){
+  const a=vtKey(p), b=vtKey(q);
+  for(let k=0;k<a.length;k++) if(a[k]!==b[k]) return a[k]-b[k];
+  return String(get(R[p.i],'n')).localeCompare(String(get(R[q.i],'n')),'ja');
+}
+/* まとめの単位：同じメーカー × 同じ薬効分類 × 同じ動き */
+function vtGroupId(x){
+  const r=R[x.i];
+  const mv = vtIsDel(x) ? `del${x.from}` : `${x.p}${x.a}${x.b}`;
+  return `g${get(r,'m')}_${get(r,'cls')}_${mv}`;
+}
+/* 開いているまとめ・折りたたみ。描き直しても開閉を保つ */
+const vtOpen=new Set();
+
+function vtRow(x){
+  const r=R[x.i]; if(!r) return '';
+  const isDel=vtIsDel(x);
+  const sc=get(r,'sc');
+  return `<div class="chgrow ${isDel?'worse':VTPAT[x.p].c}"
+      data-nm="${esc(get(r,'n'))}">
+    <div class="chgnm">${esc(get(r,'n'))}</div>
+    <div class="chgmv">
+      <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
+      ${isDel
+        ? `<span class="vb v4">薬価削除予定</span>
+           <span class="chgday">${esc(VOLLAB[x.from])}から</span>`
+        : `<span class="vtp p${VTPAT[x.p].c}">${esc(VTPAT[x.p].t)}</span>
+           <span class="vb v${x.a}">${esc(VOLLAB[x.a])}</span>
+           <span class="chgar">→</span>
+           <span class="vb v${x.b}">${esc(VOLLAB[x.b])}</span>
+           ${x.p!=='imp'&&x.p!=='wor'
+             ? `<span class="chgday">最悪 ${esc(VOLLAB[x.w])}</span>`:''}
+           <span class="chgday">${esc(recDate(x.d0))}〜${esc(recDate(x.d1))}</span>`}
+      <span class="chgmk">${esc(dv(r,'m')||'')}</span>
+    </div>
+  </div>`;
+}
+
+/* まとめ行。中身の出荷対応は混ざりうるので、内訳を件数で示す */
+function vtGroup(g, id){
+  const x=g[0], r=R[x.i], isDel=vtIsDel(x), open=vtOpen.has(id);
+  const scc=[0,0,0]; g.forEach(y=>{ scc[vtSc(y)]++; });
+  const scb=[2,1,0].filter(s=>scc[s])
+    .map(s=>`<span class="cmst s${s}">${SCNM[s]} ${scc[s]}</span>`).join('');
+  const d0=g.reduce((m,y)=>y.d0&&(!m||y.d0<m)?y.d0:m,'');
+  const d1=g.reduce((m,y)=>y.d1&&(!m||y.d1>m)?y.d1:m,'');
+  return `<button type="button" class="vtgrp ${isDel?'worse':VTPAT[x.p].c}"
+      data-g="${id}" aria-expanded="${open}">
+    <span class="vtgh">
+      <span class="vtgnm">${esc(dv(r,'m')||'')}の${esc(dv(r,'cls')||'')}</span>
+      <span class="vtgn">${g.length}品目</span>
+      <span class="vtgt" aria-hidden="true">${open?'▾ 閉じる':'▸ 開く'}</span>
+    </span>
+    <span class="chgmv">
+      ${scb}
+      ${isDel
+        ? `<span class="vb v4">薬価削除予定</span>
+           <span class="chgday">${esc(VOLLAB[x.from])}から</span>`
+        : `<span class="vtp p${VTPAT[x.p].c}">${esc(VTPAT[x.p].t)}</span>
+           <span class="vb v${x.a}">${esc(VOLLAB[x.a])}</span>
+           <span class="chgar">→</span>
+           <span class="vb v${x.b}">${esc(VOLLAB[x.b])}</span>
+           <span class="chgday">${esc(recDate(d0))}〜${esc(recDate(d1))}</span>`}
+    </span>
+  </button>` + (open ? `<div class="vtgbody">${g.map(vtRow).join('')}</div>` : '');
+}
+
+/* 1つの区分（一般／漢方製剤／生薬）を、まとめを作りながら並べる */
+const VT_ROWCAP=300;
+function vtSection(items){
+  const by=new Map();
+  items.forEach(x=>{ const id=vtGroupId(x); if(!by.has(id)) by.set(id,[]); by.get(id).push(x); });
+  const units=[];
+  by.forEach((g,id)=>{
+    g.sort(vtCmp);
+    if(g.length>=vtGroupMin) units.push({g, id, lead:g[0], grp:1});
+    else g.forEach(x=>units.push({g:[x], id:null, lead:x, grp:0}));
+  });
+  /* まとめは先頭の品目の順位で並べる。同順位なら個別の品目を先に */
+  units.sort((p,q)=>vtCmp(p.lead,q.lead)||(p.grp-q.grp));
+  const shown=units.slice(0,VT_ROWCAP);
+  let h=shown.map(u=>u.grp ? vtGroup(u.g,u.id) : vtRow(u.lead)).join('');
+  if(units.length>VT_ROWCAP){
+    const rest=units.slice(VT_ROWCAP).reduce((n,u)=>n+u.g.length,0);
+    h+=`<div class="chgempty">ほか ${rest.toLocaleString()}品目</div>`;
+  }
+  return h;
+}
+
 function drawVt(){
-  const kindOk=(r)=>bdKinds.has(KIDX[dv(r,'k')]);
-  const tr=(DATA.voltrend||[]).filter(x=>{const r=R[x.i]; return r&&kindOk(r);});
-  const dl=(DATA.newdel||[]).filter(x=>{const r=R[x.i]; return r&&kindOk(r);});
+  /* 設定欄の表示を現在の値に合わせる */
+  document.querySelectorAll('#bdkan .kb2').forEach(b=>
+    b.setAttribute('aria-pressed', (b.dataset.v==='1')===bdNoKan));
+  const gm=document.getElementById('vtgm');
+  if(document.activeElement!==gm) gm.value=vtGroupMin;
+
+  const ok=(r)=>r && bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r);
+  const tr=(DATA.voltrend||[]).filter(x=>ok(R[x.i]));
+  const dl=(DATA.newdel||[]).filter(x=>ok(R[x.i]));
   let list;
   if(vtView==='up')         list=tr.filter(x=>x.p==='imp'||x.p==='rec');
   else if(vtView==='down')  list=tr.filter(x=>x.p==='wor'||x.p==='rel');
   else if(vtView==='swing') list=tr.filter(x=>x.p==='swing');
   else if(vtView==='del')   list=dl;
   else                      list=[...tr, ...dl];
-  document.getElementById('vtcnt').textContent =
-    list.length ? `${list.length.toLocaleString()}品目` : '';
+
+  /* 区分ごとに分ける：0＝生薬・漢方以外、1＝漢方製剤、2＝生薬 */
+  const sec=[[],[],[]];
+  list.forEach(x=>sec[kanOf(R[x.i])].push(x));
+  const nk=sec[1].length+sec[2].length;
+  document.getElementById('vtcnt').textContent = !list.length ? '' :
+    `${list.length.toLocaleString()}品目` +
+    (nk ? `（うち生薬・漢方 ${nk.toLocaleString()}）` : '');
+
   const box=document.getElementById('vtlist');
   if(!list.length){
     box.innerHTML='<div class="chgempty">'+
@@ -2411,31 +2581,41 @@ function drawVt(){
           '<br>厚労省のデータが更新されるたびに記録が増えます。')+'</div>';
     return;
   }
-  box.innerHTML=list.slice(0,300).map(x=>{
-    const r=R[x.i]; if(!r) return '';
-    const isDel = x.from!==undefined;
-    const sc=get(r,'sc');
-    return `<div class="chgrow ${isDel?'worse':VTPAT[x.p].c}"
-        data-nm="${esc(get(r,'n'))}">
-      <div class="chgnm">${esc(get(r,'n'))}</div>
-      <div class="chgmv">
-        <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
-        ${isDel
-          ? `<span class="vb v4">薬価削除予定</span>
-             <span class="chgday">${esc(VOLLAB[x.from])}から</span>`
-          : `<span class="vtp p${VTPAT[x.p].c}">${esc(VTPAT[x.p].t)}</span>
-             <span class="vb v${x.a}">${esc(VOLLAB[x.a])}</span>
-             <span class="chgar">→</span>
-             <span class="vb v${x.b}">${esc(VOLLAB[x.b])}</span>
-             ${x.p!=='imp'&&x.p!=='wor'
-               ? `<span class="chgday">最悪 ${esc(VOLLAB[x.w])}</span>`:''}
-             <span class="chgday">${esc(recDate(x.d0))}〜${esc(recDate(x.d1))}</span>`}
-        <span class="chgmk">${esc(dv(r,'m')||'')}</span>
-      </div>
-    </div>`;
-  }).join('') + (list.length>300
-    ? `<div class="chgempty">ほか ${(list.length-300).toLocaleString()}品目</div>` : '');
+  let h = sec[0].length ? vtSection(sec[0])
+        : '<div class="vtnote">生薬・漢方以外で当てはまる品目はありません。</div>';
+  /* 生薬・漢方は1社で数十品目が一斉に動くことがあり、
+     そのまま並べると薬局でよく扱う薬が埋もれる。最後に置いて既定で閉じる。 */
+  [[1,'漢方製剤'],[2,'生薬']].forEach(([k,nm])=>{
+    const s=sec[k]; if(!s.length) return;
+    const id='f'+k, open=vtOpen.has(id);
+    const up=s.filter(x=>!vtIsDel(x)&&VTPAT[x.p].c==='better').length;
+    const dn=s.filter(x=>vtIsDel(x)||VTPAT[x.p].c==='worse').length;
+    const sw=s.length-up-dn;
+    const sub=[dn?`悪化 ${dn}`:'', up?`改善 ${up}`:'', sw?`不安定 ${sw}`:'']
+      .filter(Boolean).join('・');
+    h+=`<button type="button" class="vtfold" data-f="${k}" aria-expanded="${open}">
+      <span class="vtgh">
+        <span class="vtgnm">${nm}</span>
+        <span class="vtgn">${s.length.toLocaleString()}品目</span>
+        <span class="vtfsub">${sub}</span>
+        <span class="vtgt" aria-hidden="true">${open?'▾ 閉じる':'▸ 開く'}</span>
+      </span>
+    </button>` + (open ? `<div class="vtfbody">${vtSection(s)}</div>` : '');
+  });
+  if(DATA.vtcut)
+    h+=`<div class="vtnote">件数が多いため、優先度の低い${DATA.vtcut.toLocaleString()}品目は省いています。</div>`;
+  box.innerHTML=h;
 }
+
+/* まとめ・折りたたみの開閉。品目の行（.chgrow）のタップは下の検索移動が受け持つ */
+document.getElementById('vtlist').addEventListener('click',e=>{
+  const t=e.target.closest('.vtgrp,.vtfold'); if(!t) return;
+  const id = t.classList.contains('vtfold') ? 'f'+t.dataset.f : t.dataset.g;
+  if(vtOpen.has(id)) vtOpen.delete(id); else vtOpen.add(id);
+  const box=document.getElementById('vtlist'), y=box.scrollTop;
+  drawVt();
+  box.scrollTop=y;
+});
 
 document.getElementById('vtsub').addEventListener('click',e=>{
   const b=e.target.closest('.chgs'); if(!b) return;
@@ -2455,7 +2635,7 @@ function drawChg(){
   /* 剤形は上部の「表示の設定」と共通。掲示板や下段と食い違わないようにする */
   const all = (DATA.recover || []).filter(x=>{
     const r=R[x.i]; if(!r) return false;
-    return bdKinds.has(KIDX[dv(r,'k')]);
+    return bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r);
   });
   const list = recFrom ? all.filter(x=>x.from===+recFrom) : all;
   document.getElementById('chgcnt').textContent =
@@ -2790,8 +2970,30 @@ document.getElementById('chglist').addEventListener('click',e=>{
      '<br><b>新たに薬価削除予定</b>は別枠です。'+
      '出荷対応が通常出荷のままでも付くことがあり、'+
      '<b>いまは買えるがいずれ無くなる</b>ことを意味するためです。'+
-     '最上部の<b>「表示の設定」</b>（折りたたみ）で剤形を選ぶと、'+
+     '<br><b>並び順</b>：①いまの出荷対応が悪いもの（<b>供給停止→限定出荷→通常出荷</b>）、'+
+     '②悪化の型（一貫して悪化が先、一貫して改善が後）、③変化の幅が大きいもの、の順です。'+
+     '<br><b>まとめ表示</b>：<b>同じメーカー・同じ薬効分類</b>で<b>同じ動き</b>をした品目が'+
+     `<b>${VTGM_DEF}件以上</b>あれば、1行にまとめます。タップで中身を開きます。`+
+     '件数は「表示の設定」で変えられます（端末に保存されます）。'+
+     '<div class="vtgrp worse" style="cursor:default;margin:6px 0">'+
+       '<span class="vtgh"><span class="vtgnm">○○製薬の生薬</span>'+
+       '<span class="vtgn">21品目</span><span class="vtgt">▸ 開く</span></span>'+
+       '<span class="chgmv"><span class="cmst s0">通常出荷 21</span>'+
+       '<span class="vtp pworse">一貫して悪化</span>'+
+       `<span class="vb v1">${VOLLAB[1]}</span><span class="chgar">→</span>`+
+       `<span class="vb v2">${VOLLAB[2]}</span></span></div>`+
+     '左端の<b>「通常出荷 21」</b>は、まとめた品目の<b>いまの出荷対応</b>の内訳です。'+
+     '<br><b>生薬・漢方</b>：生薬のメーカーは数十品目が一斉に動くことがあり、'+
+     'そのまま並べると薬局でよく扱う薬が埋もれます。そのため'+
+     '<b>一覧の最後に折りたたみ</b>、<b>漢方製剤→生薬</b>の順に置きます。'+
+     '判定は供給状況Excelの<b>②薬効分類</b>で、生薬（510）と'+
+     'その他の生薬及び漢方処方に基づく医薬品（590：加工ブシ末など）を「生薬」、'+
+     '漢方製剤（520）を「漢方製剤」としています。'+
+     '「表示の設定」で<b>一覧から除く</b>こともできます（端末に保存されます）。'+
+     '<br>最上部の<b>「表示の設定」</b>（折りたたみ）で剤形を選ぶと、'+
      '<b>4段すべて</b>に反映されます。既定は<b>内用薬・外用薬</b>です。'+
+     '<b>生薬・漢方を除く</b>設定も同じく一覧すべてに効きます'+
+     '（成分単位の一覧では、その成分の品目がすべて生薬・漢方のときに除きます）。'+
      '<br><b>最上段＝通常出荷に戻った薬</b>：'+
      '<b>供給停止からでも限定出荷からでも</b>、通常出荷に戻った薬を'+
      '<b>戻った日付つき</b>で一覧します。「供給停止から」「限定出荷から」で絞れます。'+
@@ -2913,7 +3115,11 @@ document.getElementById('chglist').addEventListener('click',e=>{
     }
   }
   h+='<div class="lgnote" style="margin-top:12px">'+
-     '厚労省の各ファイルを<b>毎朝7時に自動確認</b>し、更新があった分だけ取得します。'+
+     '供給状況は<b>1日4回</b>（9時・16時半・19時・22時ごろ）、'+
+     'そのほかのファイルは<b>毎朝9時ごろ</b>に自動確認し、更新があった分だけ取得します。'+
+     '厚労省の供給状況は<b>その日の15時台</b>に作られることが多く、'+
+     'この画面への反映は<b>早くてその日の夕方以降</b>です。'+
+     '自動確認はGitHubの混雑で<b>数時間遅れる</b>ことがあります。'+
      '日付はそのファイルが適用・作成された日です。'+
      (DATA.gen?`<br>このページの生成日時：${esc(DATA.gen)}（日本時間）`:'')+
      `<br>表示テンプレートの版：<b>${TPL_VER}</b>`+

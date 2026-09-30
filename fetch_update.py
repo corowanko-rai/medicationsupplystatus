@@ -52,6 +52,13 @@ def http_get(url, timeout=90, nocache=False):
         return r.read()
 
 
+def http_get_full(url, timeout=90):
+    """本体と応答ヘッダーを両方返す（次回の軽い確認に使う目印を控えるため）。"""
+    req = urllib.request.Request(url, headers={"User-Agent": UA, **NOCACHE})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(), r.headers
+
+
 def http_exists(url, timeout=30):
     """そのURLにファイルがあるかを本体を取らずに確かめる。
     厚労省の配信は途中に中継が入り、掲載ページの方が古いまま
@@ -72,6 +79,39 @@ def http_exists(url, timeout=30):
     except Exception as e:
         log(f"  （確認できませんでした: {url.rsplit('/', 1)[-1]} … {e}）")
         return False, None
+
+
+def http_head_sig(url, timeout=30):
+    """ファイルの「目印」（更新日時・大きさ・ETag）だけを、本体を取らずに得る。
+    前回と同じなら中身も同じとみなし、1.5MBのExcelを取り直さずに済ませる。
+    取れなかったときは None（その場合は従来どおり本体を取って比べる）。"""
+    req = urllib.request.Request(url, headers={"User-Agent": UA, **NOCACHE},
+                                 method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status != 200:
+                return None
+            return sig_from_headers(r.headers)
+    except Exception:
+        return None
+
+
+def sig_from_headers(h):
+    sig = {"etag": h.get("ETag") or "",
+           "last_modified": h.get("Last-Modified") or "",
+           "size": h.get("Content-Length") or ""}
+    # 更新日時もETagも無いと、大きさだけでは中身の差し替えを見分けられない
+    return sig if (sig["etag"] or sig["last_modified"]) else None
+
+
+def same_sig(a, b):
+    """目印が一致するか。ETagがあればETagで、無ければ更新日時＋大きさで比べる。"""
+    if not a or not b:
+        return False
+    if a.get("etag") and b.get("etag"):
+        return a["etag"] == b["etag"]
+    return (bool(a.get("last_modified")) and a.get("last_modified") == b.get("last_modified")
+            and a.get("size") == b.get("size"))
 
 
 # 厚労省のファイル名は「YYMMDDiyakuhinkyoukyu.xlsx」で規則的なため、
@@ -317,6 +357,9 @@ def rebuild_only():
 def main():
     force = "--force" in sys.argv
     check = "--check" in sys.argv
+    # 軽い確認（1日4回のうち朝以外の回）。ファイルが前回と同じと
+    # 目印で分かれば、本体（約1.5MB）を取り直さない。厚労省への負荷を増やさないため。
+    light = "--light" in sys.argv
     if "--local" in sys.argv:
         return rebuild_only()
     try:
@@ -400,8 +443,21 @@ def main():
             log("リンク取得は正常です。")
             return 0
 
+        if light and not force and url == prev_url and st.get("sig"):
+            now_sig = http_head_sig(url)
+            if same_sig(now_sig, st["sig"]):
+                st["last_checked"] = now_jst().isoformat(timespec="seconds")
+                st["last_seen_label"] = label
+                save_state(st)
+                log("変更なし（ファイルの更新日時・大きさが前回と同じ）。本体の取得は省きました。")
+                log(f"  掲載中の版: {st.get('as_of','?')}")
+                warn_if_stale(st.get("as_of"))
+                return 10
+            log("  ファイルの目印が前回と違うため、本体を取得して確かめます。")
+
         log("ファイルを取得中…")
-        blob = http_get(url, nocache=True)
+        blob, hdrs = http_get_full(url)
+        dl_sig = sig_from_headers(hdrs)
         h = hashlib.sha256(blob).hexdigest()
         log(f"  size={len(blob):,} bytes  sha256={h[:16]}…")
 
@@ -421,6 +477,8 @@ def main():
             # 変更が無い日も「最終確認時刻」を残す（定期実行の自動停止対策）
             st["last_checked"] = now_jst().isoformat(timespec="seconds")
             st["last_seen_label"] = label
+            if dl_sig:
+                st["sig"] = dl_sig
             save_state(st)
             log("変更なし（前回と同一ファイル）。処理を終了します。")
             log(f"  掲載中の版: {st.get('as_of','?')}")
@@ -478,7 +536,7 @@ def main():
         log(f"生成完了: {OUT}（{n:,}品目 / {as_of} 現在）")
 
         now = now_jst().isoformat(timespec="seconds")
-        new_state = {"url": url, "sha256": h, "label": label,
+        new_state = {"url": url, "sha256": h, "label": label, "sig": dl_sig,
                      "as_of": as_of, "items": n,
                      "updated_at": now, "last_checked": now}
         if rollback:

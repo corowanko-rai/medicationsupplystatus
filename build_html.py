@@ -204,6 +204,20 @@ def norm_name(s):
     return re.sub(r"\s+", "", s).lower()
 
 
+# 生薬・漢方の区分（供給状況Excelの②薬効分類で判定）。
+# 出荷量の動きで、この区分の品目は後ろへ回して折りたたむ。
+# 値は並び順で、漢方製剤が上、生薬が下。
+# 590（加工ブシ末・ヨクイニンエキス等）は生薬を加工した製剤なので生薬側に入れる。
+# 画面側もこの表を DATA.kancls として受け取り、判定を二重に持たない。
+KAN_CLS = {
+    "漢方製剤": 1,
+    "生薬": 2,
+    "その他の生薬及び漢方処方に基づく医薬品": 2,
+}
+# 出荷量の動きに載せる上限。画面側でまとめて表示するので件数は多くてよい。
+# 上限を超えた分は、上の並び（生薬・漢方と通常出荷を後ろ）で後ろから切る。
+VT_CAP = 2000
+
 JP_DATE = re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日")
 ISO_DATE = re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})")
 # 貼り付けデータに混ざる見出し・状態表記
@@ -690,6 +704,16 @@ def datadoc_values(rows, dicts, data, as_of, prices, ippan, cm_stat):
     vals["n_ko"] = f(sum(n_badge(c) for c in ("向1", "向2", "向3", "向")))
     vals["n_sho"] = f(n_badge("処"))
     vals["reg_date_ja"] = _ja_date(rg["date"]) if rg.get("date") else "（取得日未設定）"
+
+    # 出荷量の動き（生薬・漢方の扱い）
+    kan_of = lambda r: KAN_CLS.get(dict_rev(dicts, "cls", r[6]), 0)
+    vals["n_kampo"] = f(sum(1 for r in rows if kan_of(r) == 1))
+    vals["n_shoyaku"] = f(sum(1 for r in rows if kan_of(r) == 2))
+    vt = data.get("voltrend") or []
+    vt_kan = sum(1 for x in vt if kan_of(rows[x["i"]]))
+    vals["vt_n"] = f(len(vt))
+    vals["vt_kan"] = f(vt_kan)
+    vals["vt_other"] = f(len(vt) - vt_kan)
     return vals
 
 
@@ -966,7 +990,9 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
         price = lookup_price(pr, yj)
         exp_raw = lookup_expiry(pr, yj)
         jp = 1 if is_jpharm(pr, yj) else 0
-        # 選定療養の対象。薬価基準収載医薬品コード（＝YJコード）で突合する。
+        # 選定療養の対象。対象リストの薬価基準収載医薬品コードと、
+        # 供給状況のYJコードを12桁で突合する。両者は別のコードだが、
+        # 選定療養の対象（長期収載品）は銘柄別収載のため12桁が一致する。
         sv = 0
         if sentei:
             it = (sentei.get("items") or {}).get(yj)
@@ -1343,11 +1369,23 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                 })
     except Exception:
         voltrend = []
-    # 悪化を先に、変化の幅が大きいものを上に。
+    # 並びは画面側で付け直す（まとめる件数を利用者が変えられるため）。
+    # ここでの並びは、件数の上限で切るときに「何を残すか」を決めるためのもの。
+    #   ① 生薬・漢方以外 → 漢方製剤 → 生薬
+    #   ② いまの出荷対応が悪いもの（供給停止 → 限定出荷 → 通常出荷）
+    #   ③ 悪化を先に、変化の幅が大きいものを上に
+    # 生薬は1社で数十品目が一斉に動くことがあり、そのまま並べると
+    # 薬局でよく扱う品目が埋もれる（実例：令和8年9月28日版で、内用・外用の116件中106件が生薬）。
     PAT_ORDER = {"wor": 0, "rel": 1, "swing": 2, "rec": 3, "imp": 4}
-    voltrend.sort(key=lambda x: (PAT_ORDER.get(x["p"], 9),
+
+    def _kan(x):
+        return KAN_CLS.get(dict_rev(dicts, "cls", rows[x["i"]][6]), 0)
+
+    voltrend.sort(key=lambda x: (_kan(x), -x["sc"], PAT_ORDER.get(x["p"], 9),
                                  -abs(x["b"] - x["a"]), -x["n"]))
-    data["voltrend"] = voltrend[:300]
+    data["vtcut"] = max(0, len(voltrend) - VT_CAP)
+    data["voltrend"] = voltrend[:VT_CAP]
+    data["kancls"] = KAN_CLS
 
     data["series"] = series
     data["sdates"] = len(series.get("_all") or [])
