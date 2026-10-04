@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-09-29-v44';
+const TPL_VER='2026-10-04-v48';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -120,7 +120,10 @@ const CHIP_GROUPS = {
     '<button class="chip" data-g="k" data-f="外用薬" aria-pressed="false">外用薬</button>'+
     '<button class="chip" data-g="k" data-f="注射薬" aria-pressed="false">注射薬</button>'},
 };
-const CHIP_DEFAULT = ['st','ex','cm','sn','dc','chg','k'];
+/* マイ薬局。採用薬での絞り込みは、店舗が1つ以上あるときだけ出す */
+CHIP_GROUPS.my = {label:'マイ薬局', html:()=>
+  '<button class="chip myset" data-g="myset" aria-label="マイ薬局の設定を開く">設定 ▸</button>'};
+const CHIP_DEFAULT = ['my','st','ex','cm','sn','dc','chg','k'];
 let chipOrder = CHIP_DEFAULT.slice();
 
 /* 並び順は端末に覚えさせる（次回開いたときも同じ並びにする） */
@@ -144,12 +147,13 @@ function renderChips(){
   box.innerHTML = chipOrder.map((k,i)=>{
     const g=CHIP_GROUPS[k]; if(!g) return '';
     return (i?'<span class="gdiv"></span>':'')+
-      `<span class="glabel">${g.label}</span>`+g.html;
+      `<span class="glabel">${g.label}</span>`+(typeof g.html==='function' ? g.html() : g.html);
   }).join('');
   syncChips();
 }
 
-let state={q:'',qMode:'n',order:'std',st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),sn:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:'',vc:''}, results=[], shown=0;
+let myTypedQ='';
+let state={q:'',qMode:'n',order:'std',my:new Set(),st:new Set(),stMode:'or',chg:new Set(),dc:new Set(),ex:new Set(),sn:new Set(),k:new Set(),cls:'',mk:'',pc:'',fm:'',vc:''}, results=[], shown=0;
 const PAGE=40;
 
 /* ---------- 一般名処方の標準的な記載 ----------
@@ -239,7 +243,7 @@ function run(){
     v==='limited'? get(r,'sc')===1 :
     v==='stopped'? get(r,'sc')===2 :
     v==='new'    ? !!get(r,'new') : true;
-  results=R.filter(r=>{
+  const pickRows=(useScope)=>R.filter(r=>{
     if(S.size){
       /* 通常/限定/停止 are mutually exclusive: always OR within that trio.
          「今回更新」 overlaps them, so it participates in the chosen mode. */
@@ -252,6 +256,8 @@ function run(){
       else hit = AND ? (shipOK && test(r,'new')) : (shipOK || test(r,'new'));
       if(!hit) return false;
     }
+    /* マイ薬局：店舗を選んでいるときは、その店舗の採用薬だけ */
+    if(useScope && !myHas(r)) return false;
     /* dosage form group: OR */
     if(K.size&&!K.has(dv(r,'k'))) return false;
     /* 経過措置グループ: OR */
@@ -288,6 +294,19 @@ function run(){
     }
     return match(r,terms);
   });
+  /* 店舗を選んでいるときの検索。
+     ・自分で打った検索語 … 採用薬だけを出す
+     ・切替候補や成分名から飛んできたとき … 採用薬以外も出す
+       （残っている通常出荷品は未採用のことが多く、隠すと肝心の候補が見えない）
+     ・打った検索語で採用薬に1件も無いとき … 採用薬以外を出して、その旨を知らせる */
+  const scoped=myScoped();
+  let peek = scoped && state.q!==myTypedQ ? 'jump' : '';
+  results = pickRows(scoped && !peek);
+  if(scoped && !peek && !results.length && state.q){
+    const all=pickRows(false);
+    if(all.length){ results=all; peek='none'; }
+  }
+  drawMyPeek(scoped, peek);
   /* 並び順
      std  … 供給状況を優先（従来）。困っている薬を先に出す
      grp  … 成分名 → 規格 → 薬価 → 供給状況。同じ薬を一箇所にまとめる
@@ -709,7 +728,7 @@ function render(){
         ${get(r,'chg')===2?'<span class="badge bbetter">改善</span>':''}
         <span class="kind">${esc(dv(r,'k'))}</span>
       </div>
-      <div class="nm">${hl(get(r,'n'),terms)}</div>
+      <div class="nm">${hl(get(r,'n'),terms)}<span class="nmmy">${myMarks(r)}</span></div>
       <div class="sub">${hl(get(r,'sp'),terms)}<span class="sep">|</span>${hl(dv(r,'m'),terms)}${
         get(r,'price')!=null?`<span class="yen">¥${fmtY(get(r,'price'))}</span>`:''}${
         (()=>{const d=dcOf(r); return (d&&d[1])?`<span class="dcd">中止 ${esc(d[1])}</span>`:'';})()}</div>
@@ -844,7 +863,16 @@ function render(){
         ${note?`<div class="row"><dt>備考</dt><dd>${esc(note)}</dd></div>`:''}
         <div class="row"><dt>YJコード</dt><dd style="font-variant-numeric:tabular-nums">${hl(get(r,'yj'),terms)}</dd></div>
         ${upd?`<div class="row"><dt>状況更新</dt><dd>${esc(upd)}</dd></div>`:''}
+        ${MY.stores.length&&get(r,'yj')?`<div class="row"><dt>マイ薬局</dt>
+          <dd class="mytg" data-yj="${esc(get(r,'yj'))}">${myToggles(r)}</dd></div>`:''}
         </dl>
+        ${(()=>{const yj=get(r,'yj');
+          if(!yj||yj.length!==12) return '';
+          /* 切替余地。開いたときに組み立てる（一覧の描画を重くしないため）。
+             限定出荷・供給停止の薬だけ、開く前に要点を一言で見せる。 */
+          return `<button type="button" class="swbtn" data-yj="${esc(yj)}" aria-expanded="false">切替余地を見る${
+            sc>0?`<br><span style="font-weight:600;font-size:11.5px">${esc(swHint(r))}</span>`:''}</button><div class="swbox"></div>`;
+        })()}
         ${(()=>{const yj=get(r,'yj');
           if(!yj||yj.length<12) return '';   /* 未収載品はYJが短く対象外 */
           const u='https://www.pmda.go.jp/PmdaSearch/rdSearch/02/'+encodeURIComponent(yj);
@@ -865,6 +893,8 @@ function render(){
          操作できなくなるので、差額欄はまとめて除外する。 */
       if(e.target.closest('.sendiff')) return;
       if(e.target.closest('.cmitem')) return; /* 併売品タップは開閉させない */
+      /* マイ薬局の付け外し・切替余地の操作でもカードを閉じない */
+      if(e.target.closest('.mytg,.swbtn,.swbox')) return;
       el.classList.toggle('open');
     });
     frag.appendChild(el);
@@ -881,11 +911,12 @@ let t;
 const qEl=document.getElementById('q');
 qEl.addEventListener('input',e=>{
   state.q=e.target.value;
+  myTypedQ=state.q;      /* 自分で打った検索語（マイ薬局の絞り込みに使う） */
   document.getElementById('clr').classList.toggle('on',!!state.q);
   clearTimeout(t); t=setTimeout(run,180);
 });
 document.getElementById('clr').addEventListener('click',()=>{
-  state.q=''; qEl.value=''; document.getElementById('clr').classList.remove('on'); run(); qEl.focus();
+  state.q=''; qEl.value=''; myTypedQ=''; document.getElementById('clr').classList.remove('on'); run(); qEl.focus();
 });
 /* ---------- ⑰出荷量 ----------
    出荷対応（通常/限定/停止）だけでは実態が分からない。
@@ -987,6 +1018,7 @@ document.getElementById('chips').addEventListener('click',e=>{
      目的の薬はすでに検索で見つけている前提で、
      代替候補を成分単位で見渡すほうが実用的なため。 */
   if(b.dataset.g==='cm'){ openCmv(); return; }
+  if(b.dataset.g==='myset'){ openMy(); return; }
   const set=state[b.dataset.g], v=b.dataset.f;
   if(set.has(v)) set.delete(v); else set.add(v);
   syncChips(); run(); window.scrollTo({top:0});
@@ -1056,13 +1088,14 @@ const EX=['normal','limited','stopped'];
 const LBL={normal:'通常出荷',limited:'限定出荷',stopped:'供給停止',new:'今回更新',
            worse:'悪化',better:'改善',disc:'販売中止',
            has:'経過措置あり',near:'期限6か月以内',over:'期限切れ',
-           sen:'選定療養対象'};
+           sen:'選定療養対象',my:'採用薬'};
 /* 絞り込み中の表示に使う短い名前 */
 const VCLBL={'0':'出荷増','1':'出荷通常','2':'出荷減','3':'出荷停止','4':'薬価削除予定',
              ok:'A＋・A',ng:'B・C・D'};
 function renderActive(){
   const box=document.getElementById('active');
   const parts=[];
+  state.my.forEach(v=>parts.push({g:'my',v,t:LBL[v]}));
   state.st.forEach(v=>parts.push({g:'st',v,t:LBL[v]}));
   state.ex.forEach(v=>parts.push({g:'ex',v,t:LBL[v]}));
   state.sn.forEach(v=>parts.push({g:'sn',v,t:LBL[v]}));
@@ -1092,7 +1125,7 @@ function renderActive(){
 }
 document.getElementById('active').addEventListener('click',e=>{
   if(e.target.id==='clrall'){
-    state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear(); state.ex.clear(); state.sn.clear();
+    state.my.clear(); state.st.clear(); state.k.clear(); state.chg.clear(); state.dc.clear(); state.ex.clear(); state.sn.clear();
     state.cls=''; state.mk=''; state.pc=''; state.fm=''; state.vc=''; state.stMode='or';
     document.getElementById('fcls').value=''; document.getElementById('fmk').value='';
     document.getElementById('fpc').value='';
@@ -1102,7 +1135,7 @@ document.getElementById('active').addEventListener('click',e=>{
   }
   const x=e.target.closest('.x'); if(!x) return;
   const pill=x.closest('.pill'), g=pill.dataset.g, v=pill.dataset.v;
-  if(g==='st'||g==='k'||g==='chg'||g==='dc'||g==='ex'||g==='sn') state[g].delete(v);
+  if(g==='my'||g==='st'||g==='k'||g==='chg'||g==='dc'||g==='ex'||g==='sn') state[g].delete(v);
   else if(g==='cls'){ state.cls=''; document.getElementById('fcls').value=''; }
   else if(g==='pc'){ state.pc=''; document.getElementById('fpc').value=''; }
   else if(g==='fm'){ state.fm=''; document.getElementById('ffm').value=''; }
@@ -1292,10 +1325,13 @@ function switchPage(k){
   if(tp && k!=='search') tp.classList.remove('on');
   document.getElementById('board').classList.toggle('on', k==='board');
   document.getElementById('calc').classList.toggle('on', k==='calc');
+  document.getElementById('ana').classList.toggle('on', k==='ana');
   const nc=document.getElementById('nochg');
   if(nc) nc.style.display = k==='search' ? '' : 'none';
-  if(k==='board'){ drawVt(); drawChg(); drawNews(); drawBoard(); }
+  document.getElementById('mypeek').style.display = k==='search' ? '' : 'none';
+  if(k==='board'){ drawMsw(); drawLow(); drawVt(); drawChg(); drawNews(); drawBoard(); }
   if(k==='calc') drawCalc();
+  if(k==='ana') drawAna();
   window.scrollTo({top:0});
 }
 document.querySelector('.ptabs').addEventListener('click',e=>{
@@ -1414,6 +1450,7 @@ function drawNews(){
   const list=[];
   NEWS.forEach(x=>{
     if(bdNoKan && KANING.has(x.i)) return;   /* 生薬・漢方を除く設定 */
+    if(!myIngOk(x.i)) return;                /* マイ薬局：採用薬の成分だけ */
     if(nwType && x.t!==nwType) return;
     if(nwSide==='good' && !isGood(x.t)) return;
     if(nwSide==='bad'  &&  isGood(x.t)) return;
@@ -1528,6 +1565,7 @@ function drawBoard(){
     if(bdFocus!==null && a.i!==bdFocus) return;   /* 掲示板から成分を選んだとき */
     /* 生薬・漢方を除く設定。成分を選んでいるときは、その成分を必ず出す */
     if(bdFocus===null && bdNoKan && KANING.has(a.i)) return;
+    if(bdFocus===null && !myIngOk(a.i)) return;
     /* 掲示板から特定の成分を選んだときは、剤形も割合も無視して必ず出す。
        掲示板に載っている＝ユーザーが見たい成分なのに、
        剤形の選択（既定は内用薬・外用薬）や下限に阻まれて
@@ -1655,14 +1693,14 @@ document.getElementById('bdk').addEventListener('click',e=>{
   else bdKinds.add(k);
   /* 剤形は3つの節すべてに効く。ここに書き漏らすと、
      設定を変えても一部だけ古い表示のまま残る */
-  drawVt(); drawChg(); drawNews(); drawBoard();
+  drawMsw(); drawLow(); drawVt(); drawChg(); drawNews(); drawBoard();
 });
 /* 生薬・漢方を一覧から除く／含める。剤形と同じく一覧すべてに効く */
 document.getElementById('bdkan').addEventListener('click',e=>{
   const b=e.target.closest('.kb2'); if(!b) return;
   bdNoKan = b.dataset.v==='1';
   try{ localStorage.setItem('bdNoKan', bdNoKan?'1':'0'); }catch(e){}
-  drawVt(); drawChg(); drawNews(); drawBoard();
+  drawMsw(); drawLow(); drawVt(); drawChg(); drawNews(); drawBoard();
 });
 /* 出荷量の動きのまとめ件数。範囲外は端に寄せる */
 function setVtGroupMin(v){
@@ -2479,7 +2517,7 @@ function vtRow(x){
   const sc=get(r,'sc');
   return `<div class="chgrow ${isDel?'worse':VTPAT[x.p].c}"
       data-nm="${esc(get(r,'n'))}">
-    <div class="chgnm">${esc(get(r,'n'))}</div>
+    <div class="chgnm">${esc(get(r,'n'))}${myMarks(r)}</div>
     <div class="chgmv">
       <span class="cmst s${sc}">${esc(dv(r,'st'))}</span>
       ${isDel
@@ -2555,7 +2593,7 @@ function drawVt(){
   const gm=document.getElementById('vtgm');
   if(document.activeElement!==gm) gm.value=vtGroupMin;
 
-  const ok=(r)=>r && bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r);
+  const ok=(r)=>r && bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r) && myOk(r);
   const tr=(DATA.voltrend||[]).filter(x=>ok(R[x.i]));
   const dl=(DATA.newdel||[]).filter(x=>ok(R[x.i]));
   let list;
@@ -2631,11 +2669,13 @@ document.getElementById('vtlist').addEventListener('click',e=>{
   switchPage('search'); run();
 });
 
+/* 通常出荷に戻った記録の「開始日」を、行番号と戻った日から引けるようにする */
+const RCVS=new Map((DATA.rcv||[]).map(x=>[x[0]+'|'+x[1], x[3]]));
 function drawChg(){
   /* 剤形は上部の「表示の設定」と共通。掲示板や下段と食い違わないようにする */
   const all = (DATA.recover || []).filter(x=>{
     const r=R[x.i]; if(!r) return false;
-    return bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r);
+    return bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r) && myOk(r);
   });
   const list = recFrom ? all.filter(x=>x.from===+recFrom) : all;
   document.getElementById('chgcnt').textContent =
@@ -2651,13 +2691,19 @@ function drawChg(){
   }
   box.innerHTML = list.slice(0,300).map(x=>{
     const r=R[x.i]; if(!r) return '';
+    /* 戻るまでにかかった日数（開始日が分かるものだけ）。
+       在庫を戻す判断の参考に、どのくらい続いていたかを添える。 */
+    const st=RCVS.get(x.i+'|'+x.d);
+    const took = st ? `${Math.max(0,dayDiff(st,x.d))}日間`
+               : st==='' ? `${dayDiff(DATA.since0||'2025-05-13',x.d)}日以上` : '';
     return `<div class="chgrow better" data-nm="${esc(get(r,'n'))}">
-      <div class="chgnm">${esc(get(r,'n'))}</div>
+      <div class="chgnm">${esc(get(r,'n'))}${myMarks(r)}</div>
       <div class="chgmv">
         <span class="cmst s${x.from}">${esc(SCNM[x.from]||'')}</span>
         <span class="chgar">→</span>
         <span class="cmst s0">通常出荷</span>
         <span class="chgday">${esc(recDate(x.d))}</span>
+        ${took?`<span class="chgtook">${took}</span>`:''}
         <span class="chgmk">${esc(dv(r,'m')||'')}</span>
       </div>
     </div>`;
@@ -2678,6 +2724,984 @@ document.getElementById('chglist').addEventListener('click',e=>{
   state.qMode='n'; syncMode();
   qEl.value=row.dataset.nm; state.q=qEl.value;
   switchPage('search'); run();
+});
+
+/* =====================================================================
+   マイ薬局
+   採用薬の一覧は、この端末のブラウザの中だけに保存する。
+   ページ（公開されているファイル）には一切含めず、どこにも送らない。
+   店舗ごとの一覧を「設定ファイル」として書き出し、渡した相手だけが読み込む。
+   ===================================================================== */
+/* 店舗の色。先頭4色は、色覚の違いがあっても互いに見分けられる組み合わせとして
+   検証済み。5・6色目は見分けにくい組があるため、印には必ず頭文字を入れている。 */
+const MYCOL=['#2563eb','#c2410c','#0f8a5f','#a21caf','#8a6d00','#be185d'];
+const MY_MAX=6;
+const MY_APP='medsupply-myph';
+/* view … 何を表示するか。
+     'none' = すべての薬（採用薬には印だけ付く）
+     'all'  = 全店舗の採用薬に関係するものだけ（2店舗以上のとき）
+     店舗id = その店舗の採用薬に関係するものだけ */
+let MY={v:1,stores:[],view:'none'};
+function myClean(s){
+  if(!s||typeof s!=='object'||!Array.isArray(s.items)) return null;
+  const items=[...new Set(s.items.filter(y=>typeof y==='string'&&/^[0-9A-Za-z]{4,12}$/.test(y)))];
+  return {id:String(s.id||('s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6))).slice(0,24),
+          name:String(s.name||'店舗').slice(0,20), color:(s.color|0)%MYCOL.length, items,
+          /* src … レセコンのCSVに書かれている店舗名。表示名（name）とは別に持ち、
+             CSVを読み込んだとき、どの店舗の分かを自動で見分けるのに使う。 */
+          src:String(s.src||'').slice(0,40)};
+}
+try{
+  const t=JSON.parse(localStorage.getItem('myph')||'null');
+  if(t&&Array.isArray(t.stores)){
+    MY={v:1,stores:t.stores.map(myClean).filter(Boolean).slice(0,MY_MAX),view:String(t.view||'none')};
+  }
+}catch(e){}
+const YJIDX=new Map(); R.forEach((r,i)=>{ const y=get(r,'yj'); if(y) YJIDX.set(y,i); });
+let MYMAP=new Map(), MYVIEW=new Set(), MYING=new Set(), MYLAB=[];
+function myRebuild(){
+  const first=MY.stores.length ? MY.stores[0].id : 'none';
+  if(!MY.stores.length) MY.view='none';
+  else if(MY.view==='all'){ if(MY.stores.length<2) MY.view=first; }
+  else if(MY.view!=='none' && !MY.stores.some(s=>s.id===MY.view)) MY.view=first;
+  MYMAP=new Map();
+  MY.stores.forEach((s,k)=>s.items.forEach(y=>{
+    const a=MYMAP.get(y); if(a) a.push(k); else MYMAP.set(y,[k]); }));
+  MYVIEW=new Set(MY.stores.map((s,k)=>k).filter(k=>
+    MY.view==='none'||MY.view==='all'||MY.stores[k].id===MY.view));
+  MYING=new Set();
+  MYMAP.forEach((a,y)=>{
+    if(!a.some(k=>MYVIEW.has(k))) return;
+    const i=YJIDX.get(y); if(i!==undefined) MYING.add(get(R[i],'i'));
+  });
+  /* 印の文字：頭文字。同じ頭文字の店舗があれば2文字にする */
+  const ini=MY.stores.map(s=>[...s.name.trim()]);
+  MYLAB=ini.map((c,k)=>{
+    const one=c[0]||'店';
+    const dup=ini.some((d,j)=>j!==k&&(d[0]||'店')===one);
+    return dup ? (c.slice(0,2).join('')||one) : one;
+  });
+}
+myRebuild();
+function mySave(){
+  try{ localStorage.setItem('myph', JSON.stringify(MY)); }catch(e){}
+  myRebuild();
+}
+const myOf=(r)=>MYMAP.get(get(r,'yj'))||[];             /* 全店舗での採用 */
+const myIn=(r)=>myOf(r).filter(k=>MYVIEW.has(k));        /* 表示中の店舗での採用 */
+const myHas=(r)=>myIn(r).length>0;
+const myMark=(k)=>{ const s=MY.stores[k]; if(!s) return '';
+  return `<span class="mym" style="background:${MYCOL[s.color%MYCOL.length]}" title="${esc(s.name)}">${esc(MYLAB[k]||'店')}</span>`; };
+const myMarks=(r)=>{ const a=myIn(r);
+  return a.length ? `<span class="myms">${a.map(myMark).join('')}</span>` : ''; };
+/* 店舗（または全店舗）を選んでいるか。選んでいる間は、採用薬に関係するものだけを出す */
+const myScoped=()=>MY.stores.length>0 && MY.view!=='none';
+const myOk=(r)=>!myScoped() || myHas(r);
+const myIngOk=(i)=>!myScoped() || MYING.has(i);
+const myUnad=(x)=>myScoped() && !myHas(x) ? '<span class="unad">未採用</span>' : '';
+const myToggles=(r)=>MY.stores.map((s,k)=>{
+  const on=myOf(r).includes(k);
+  return `<button type="button" class="myt" data-k="${k}" aria-pressed="${on}">${myMark(k)}${esc(s.name)}：${on?'採用中':'採用にする'}</button>`;
+}).join('');
+
+function drawMyBar(){
+  const bar=document.getElementById('mybar');
+  const on=MY.stores.length>=1;
+  bar.classList.toggle('on',on);
+  bar.innerHTML = !on ? '' :
+    `<button class="myv" data-v="none" aria-pressed="${MY.view==='none'}">すべての薬</button>`+
+    (MY.stores.length>=2 ? `<button class="myv" data-v="all" aria-pressed="${MY.view==='all'}">全店舗</button>` : '')+
+    MY.stores.map((s,k)=>`<button class="myv" data-v="${esc(s.id)}" aria-pressed="${MY.view===s.id}">${myMark(k)}${esc(s.name)}</button>`).join('');
+}
+/* 検索画面の帯：採用薬以外も出しているときに知らせる */
+function drawMyPeek(scoped, peek){
+  const el=document.getElementById('mypeek');
+  const mixed = peek && results.some(r=>!myHas(r));
+  el.classList.toggle('on', !!mixed);
+  el.innerHTML = !mixed ? '' :
+    (peek==='none' ? '採用薬には見つからないため、<b>採用薬以外</b>を表示しています。'
+                   : '候補を確かめられるよう、<b>採用薬以外も</b>表示しています。')+
+    (peek==='jump' ? '<button type="button" id="mypeekx">採用薬だけに戻す</button>' : '');
+}
+document.getElementById('mypeek').addEventListener('click',e=>{
+  if(e.target.id!=='mypeekx') return;
+  myTypedQ=state.q; run();
+});
+/* 採用薬や表示する店舗が変わったら、見えている画面を描き直す */
+function myRefresh(){
+  mySave(); drawMyBar();
+  myTypedQ=state.q;       /* 店舗を切り替えたら、採用薬だけの表示から始める */
+  redrawPage();
+}
+function redrawPage(){
+  if(curPage==='search') run();
+  else if(curPage==='board'){ drawMsw(); drawLow(); drawVt(); drawChg(); drawNews(); drawBoard(); }
+  else if(curPage==='ana') drawAna();
+}
+document.getElementById('mybar').addEventListener('click',e=>{
+  const b=e.target.closest('.myv'); if(!b) return;
+  MY.view=b.dataset.v; myRefresh();
+});
+/* ---- 設定の画面 ---- */
+let myImpOpen=-1, myMsg='', myDelArm=-1, myPending=null, myAuto=null;
+const myToday=()=>{ const d=new Date(); const p=(n)=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}`; };
+function myDownload(name, obj){
+  const blob=new Blob([JSON.stringify(obj)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+const myPack=(stores)=>({app:MY_APP, v:1, exported:new Date().toISOString().slice(0,10),
+  stores:stores.map(s=>({id:s.id,name:s.name,color:s.color,src:s.src||'',items:s.items}))});
+function drawMy(){
+  const n=MY.stores.length;
+  let h='<div class="mynote">採用薬の一覧は<b>この端末の中だけ</b>に保存されます。'+
+    '公開されているページには含まれず、どこにも送信されません。'+
+    '<br>ほかの人や別の端末で同じ表示にするには、下の<b>設定ファイル</b>を書き出して渡し、'+
+    '相手の端末で読み込んでください。<b>渡した店舗の分だけ</b>が相手に見えます。'+
+    '<br>ブラウザの閲覧データを消すと、この設定も消えます。</div>';
+  if(myMsg) h+=`<div class="mynote" id="mymsg" style="border-left-color:#0f8a5f">${myMsg}</div>`;
+  MY.stores.forEach((s,k)=>{
+    const miss=s.items.filter(y=>!YJIDX.has(y)).length;
+    h+=`<div class="mystore" data-k="${k}">
+      <div class="mysh">${myMark(k)}<input type="text" class="myname" maxlength="20"
+        value="${esc(s.name)}" aria-label="店舗名"></div>
+      <div class="mycol" role="group" aria-label="店舗の色">${MYCOL.map((c,ci)=>
+        `<button type="button" class="mycb" data-c="${ci}" style="background-color:${c}"
+          aria-pressed="${s.color===ci}" aria-label="色${ci+1}">${s.color===ci?'✓':''}</button>`).join('')}</div>
+      <label class="mysrcl">CSVの店舗名（自動判別用）
+        <input type="text" class="mysrc" maxlength="40" value="${esc(s.src||'')}"
+          placeholder="CSVを読み込むと自動で入ります"></label>
+      <div class="mysn">採用薬 <b>${s.items.length.toLocaleString()}</b>品目${
+        miss?`（うち${miss}品目は現在の供給状況データにありません）`:''}</div>
+      <div class="mybtns">
+        <button type="button" class="myb" data-act="imp">一覧を読み込む</button>
+        <button type="button" class="myb" data-act="exp">この店舗だけ書き出す</button>
+        <button type="button" class="myb dan" data-act="del">${myDelArm===k?'もう一度押すと削除':'削除'}</button>
+      </div>
+      ${myImpOpen===k?`<div class="myimp">
+        <div class="mysn">レセコンや在庫システムの<b>CSV</b>（見出しに「YJコード」の列があるもの）を
+          そのまま読み込めます。読むのは<b>YJコードと薬品名の列だけ</b>で、
+          原価や在庫数は保存しません。<br>手で入れる場合は、YJコードか品名を<b>1行に1つ</b>。</div>
+        <div class="mysn" id="mypv"></div>
+        <textarea class="mytxt" placeholder="例）&#10;2171022F1029&#10;アムロジピン錠５ｍｇ「サワイ」"></textarea>
+        <div class="mybtns" style="margin-top:7px">
+          <button type="button" class="myb" data-act="file">ファイルを選ぶ</button>
+          <button type="button" class="myb" data-act="zero" aria-pressed="${myNoZero}">${
+            myNoZero?'✓ 在庫0の品目は除く':'在庫0の品目も含める'}</button>
+          <button type="button" class="myb pri" data-act="add">追加する</button>
+          <button type="button" class="myb pri" data-act="rep">置き換える</button>
+        </div></div>`:''}
+    </div>`;
+  });
+  /* CSVの店舗名から、どの店舗の分かを自動で見分けて読み込む */
+  if(myAuto){
+    const a=myAuto, t=a.target>=0?MY.stores[a.target]:null;
+    h+=`<div class="mynote" id="myauto" style="border-left-color:#c2410c">
+      <b>${esc(a.fname)}</b><br>
+      ${!a.info.store ? 'このファイルには店舗名の行がありません。各店舗の「一覧を読み込む」から読み込んでください。'
+        : a.multi ? `CSVの店舗名「${esc(a.info.store)}」に当たる店舗が複数あります。各店舗の「一覧を読み込む」から読み込んでください。`
+        : t ? `CSVの店舗名「${esc(a.info.store)}」→ ${myMark(a.target)}<b>${esc(t.name)}</b> の採用薬として読み込みます。`
+        : (MY.stores.length<MY_MAX
+            ? `CSVの店舗名「${esc(a.info.store)}」は初めてです。<b>新しい店舗</b>として登録します。`+
+              '読み込んだあと、店舗名を付け直してください（次からは自動で見分けます）。'
+            : `店舗は${MY_MAX}つまでです。先に不要な店舗を削除してください。`)}
+      <br>採用薬として<b>${a.got.length.toLocaleString()}品目</b>を読み取れます`+
+      `${a.info.zero?`（在庫0の${a.info.zero.toLocaleString()}品目を除く）`:''}`+
+      `${a.miss.length?`。結び付かないもの ${a.miss.length.toLocaleString()}件`:''}。
+      <div class="mybtns" style="margin-top:8px">
+        ${(a.info.store&&!a.multi&&(t||MY.stores.length<MY_MAX))?`
+          <button type="button" class="myb pri" data-auto="rep">${t?'置き換える':'登録する'}</button>
+          ${t?'<button type="button" class="myb" data-auto="add">追加する</button>':''}`:''}
+        <button type="button" class="myb" data-auto="zero">${myNoZero?'✓ 在庫0の品目は除く':'在庫0の品目も含める'}</button>
+        <button type="button" class="myb" data-auto="cancel">やめる</button>
+      </div></div>`;
+  }
+  h+='<div class="mybtns">';
+  h+='<button type="button" class="myb pri" id="mycsv">CSVを読み込む（店舗を自動で判別）</button>';
+  if(n<MY_MAX) h+='<button type="button" class="myb" id="myadd">＋ 店舗を追加</button>';
+  h+='<button type="button" class="myb" id="myload">設定ファイルを読み込む</button>';
+  if(n) h+='<button type="button" class="myb" id="myall">全店舗の設定を書き出す</button>';
+  h+='</div>';
+  document.getElementById('mybody').innerHTML=h;
+}
+function openMy(){ myMsg=''; myImpOpen=-1; myDelArm=-1; drawMy();
+  document.getElementById('my').classList.add('on'); document.body.style.overflow='hidden'; }
+function closeMy(){
+  if(!document.getElementById('my').classList.contains('on')) return;
+  document.getElementById('my').classList.remove('on'); document.body.style.overflow='';
+  myRefresh();
+}
+document.getElementById('myx').addEventListener('click',closeMy);
+
+/* 一覧の文字列から採用薬を拾う。YJコードはそのまま、品名は表記を寄せて照合する。
+   同じ品名が複数ある場合は取り違えを避けて拾わない。 */
+const MYNAME=(()=>{ const m=new Map();
+  R.forEach(r=>{ const k=get(r,'s'), y=get(r,'yj'); if(!k||!y) return;
+    m.set(k, m.has(k) ? null : y); });
+  return m; })();
+/* CSV を行と列に分ける（"..." で囲まれた欄の中のカンマ・改行に対応） */
+function myCsv(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; }
+      else cur+=c;
+    }else if(c==='"') q=true;
+    else if(c===','||c==='\t'){ row.push(cur); cur=''; }
+    else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+    else if(c!=='\r') cur+=c;
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+/* 一覧から採用薬を拾う。
+   ① 見出し行に「YJコード」の列があるCSV（レセコンや在庫システムの出力）は、
+      その列だけを読む。見出しより上の行（店舗名・出力条件など）は無視する。
+      原価や在庫数などの列は読まず、保存もしない。
+   ② 見出しが無ければ、1行に1つのYJコードか品名として読む。 */
+function myParse(text, noZero){
+  const got=new Set(), miss=[];
+  const info={store:'', table:false, zero:0};
+  const rows=myCsv(String(text||''));
+  const cell=(v)=>HALF(String(v||'')).replace(/\s+/g,'').toUpperCase();
+  let hi=-1, cy=-1, cn=-1, cs=-1;
+  for(let i=0;i<Math.min(rows.length,60);i++){
+    const r=rows[i];
+    if(/^店舗名/.test((r[0]||'').trim()) && (r[1]||'').trim()) info.store=r[1].trim();
+    const j=r.findIndex(c=>/^YJ/.test(cell(c))||/個別医薬品コード/.test(c||''));
+    if(j>=0){ hi=i; cy=j;
+      cn=r.findIndex(c=>/薬品名|医薬品名|品名|名称/.test(c||''));
+      cs=r.findIndex(c=>/在庫/.test(c||''));
+      break; }
+  }
+  if(hi>=0){
+    info.table=true;
+    rows.slice(hi+1).forEach(r=>{
+      if(!r.some(c=>String(c||'').trim())) return;
+      const y=cell(r[cy]), nm=(cn>=0?String(r[cn]||'').trim():'')||y||'(名称なし)';
+      if(noZero && cs>=0 && !(parseFloat(r[cs])>0)){ info.zero++; return; }
+      if(YJIDX.has(y)){ got.add(y); return; }
+      const byName = cn>=0 ? MYNAME.get(norm(String(r[cn]||''))) : null;
+      if(byName){ got.add(byName); return; }
+      miss.push(nm+(y?`（データに無いYJコード ${y}）`:'（YJコードなし）'));
+    });
+  }else{
+    rows.forEach(r=>{
+      if(!r.some(c=>String(c||'').trim())) return;
+      let hit=false;
+      r.forEach(c=>{
+        const v=String(c||'').trim(); if(!v) return;
+        const y=cell(v);
+        if(YJIDX.has(y)){ got.add(y); hit=true; return; }
+        const nm=MYNAME.get(norm(v));
+        if(nm){ got.add(nm); hit=true; }
+      });
+      if(!hit) miss.push(r.join(',').trim());
+    });
+  }
+  return {got:[...got], miss, info};
+}
+/* ファイルの文字コード。レセコンのCSVはシフトJISが多いので、
+   UTF-8として読めなければシフトJISで読み直す。 */
+function myDecode(buf){
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+  catch(e){ try{ return new TextDecoder('shift_jis').decode(buf); }
+            catch(e2){ return new TextDecoder().decode(buf); } }
+}
+let myNoZero=false;
+function myApplyList(k, text, replace){
+  const s=MY.stores[k]; if(!s) return;
+  const {got,miss,info}=myParse(text, myNoZero);
+  if(!got.length && !miss.length){ myMsg='読み込む内容がありません。'; drawMy(); return; }
+  const before=s.items.length;
+  s.items = replace ? got : [...new Set([...s.items, ...got])];
+  /* 表示名は変えない。CSVの店舗名だけ控えておき、次からはこの店舗の分だと自動で見分ける */
+  if(info.store && !s.src) s.src=info.store.slice(0,40);
+  mySave();
+  myMsg=`<b>${esc(s.name)}</b>：${got.length.toLocaleString()}品目を読み取りました`+
+    `（${replace?'置き換え':'追加'}。${before.toLocaleString()} → ${s.items.length.toLocaleString()}品目）。`+
+    (info.zero?`<br>在庫が0の<b>${info.zero.toLocaleString()}品目</b>は読み込みませんでした。`:'')+
+    (miss.length?`<br>供給状況データと結び付かなかったものが<b>${miss.length.toLocaleString()}件</b>あります`+
+      (info.table?'（医療材料や、すでに供給状況の一覧から外れた薬など）。'
+                 :'（見出し行や、供給状況データに無い品名・コード）。')+
+      `<div class="myun">${miss.slice(0,60).map(esc).join('<br>')}${miss.length>60?'<br>…':''}</div>`:'');
+  myImpOpen=-1; drawMy();
+}
+/* CSVの店舗名から、読み込み先の店舗を決める */
+function myAutoSet(text, fname){
+  const r=myParse(text, myNoZero);
+  const hit=r.info.store ? MY.stores.map((s,k)=>k).filter(k=>MY.stores[k].src===r.info.store) : [];
+  myAuto={text, fname, got:r.got, miss:r.miss, info:r.info,
+          target:hit.length===1?hit[0]:-1, multi:hit.length>1};
+  myMsg=''; drawMy();
+  const el=document.getElementById('myauto'); if(el) el.scrollIntoView({block:'center'});
+}
+function myApplySettings(text){
+  let o=null; try{ o=JSON.parse(text); }catch(e){}
+  if(!o || o.app!==MY_APP || !Array.isArray(o.stores)){
+    myMsg='このファイルはマイ薬局の設定ファイルではありません。'; drawMy(); return; }
+  let add=0, upd=0, skip=0;
+  const was=MY.stores.length;
+  o.stores.map(myClean).filter(Boolean).forEach(s=>{
+    const j=MY.stores.findIndex(x=>x.id===s.id);
+    if(j>=0){ MY.stores[j]=s; upd++; }
+    else if(MY.stores.length<MY_MAX){ MY.stores.push(s); add++; }
+    else skip++;
+  });
+  /* 何も無かった端末に設定ファイルを入れたら、その店舗（複数なら全店舗）の表示にする */
+  if(!was && MY.stores.length) MY.view = MY.stores.length>=2 ? 'all' : MY.stores[0].id;
+  mySave();
+  myMsg=`設定ファイルを読み込みました（追加 ${add}店舗・更新 ${upd}店舗`+
+    (skip?`・上限${MY_MAX}店舗のため見送り ${skip}店舗`:'')+'）。';
+  drawMy();
+}
+document.getElementById('myfile').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0]; const p=myPending; myPending=null;
+  e.target.value='';
+  if(!f||!p) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const text=myDecode(rd.result);
+    if(p.type==='settings') myApplySettings(text);
+    else if(p.type==='auto'){ myAutoSet(text, f.name); }
+    else{
+      const ta=document.querySelector('#mybody .mytxt'); if(ta) ta.value=text;
+      /* 読み込んだ直後に、何件拾えるかを先に見せる（追加・置き換えはまだしない） */
+      const pv=myParse(text, myNoZero), el=document.getElementById('mypv');
+      if(el) el.innerHTML=`<b>${esc(f.name)}</b>：採用薬として<b>${pv.got.length.toLocaleString()}品目</b>を読み取れます`+
+        (pv.info.store?`（店舗名：${esc(pv.info.store)}）`:'')+
+        (pv.miss.length?`。結び付かないもの ${pv.miss.length.toLocaleString()}件`:'')+
+        '。下の「追加する」か「置き換える」で登録します。';
+    }
+  };
+  rd.readAsArrayBuffer(f);
+});
+document.getElementById('mybody').addEventListener('click',e=>{
+  if(e.target.id==='myadd'){
+    const used=new Set(MY.stores.map(s=>s.color));
+    const col=MYCOL.findIndex((c,i)=>!used.has(i));
+    MY.stores.push(myClean({name:`店舗${MY.stores.length+1}`,color:col<0?0:col,items:[]}));
+    mySave(); myMsg=''; drawMy(); return;
+  }
+  if(e.target.id==='myload'){ myPending={type:'settings'}; document.getElementById('myfile').click(); return; }
+  if(e.target.id==='mycsv'){ myPending={type:'auto'}; document.getElementById('myfile').click(); return; }
+  const au=e.target.closest('[data-auto]');
+  if(au && myAuto){
+    const act=au.dataset.auto, a=myAuto;
+    if(act==='cancel'){ myAuto=null; drawMy(); return; }
+    if(act==='zero'){ myNoZero=!myNoZero; myAutoSet(a.text, a.fname); return; }
+    let k=a.target;
+    if(k<0){
+      if(MY.stores.length>=MY_MAX) return;
+      const used=new Set(MY.stores.map(s=>s.color));
+      const col=MYCOL.findIndex((c,i)=>!used.has(i));
+      MY.stores.push(myClean({name:a.info.store, src:a.info.store, color:col<0?0:col, items:[]}));
+      k=MY.stores.length-1;
+      if(MY.stores.length===1) MY.view=MY.stores[0].id;
+    }
+    myAuto=null;
+    myApplyList(k, a.text, act==='rep');
+    return;
+  }
+  if(e.target.id==='myall'){
+    myDownload(`マイ薬局_全店舗_${myToday()}.json`, myPack(MY.stores)); return; }
+  const box=e.target.closest('.mystore'); if(!box) return;
+  const k=+box.dataset.k, s=MY.stores[k]; if(!s) return;
+  const cb=e.target.closest('.mycb');
+  if(cb){ s.color=+cb.dataset.c; mySave(); drawMy(); return; }
+  const b=e.target.closest('.myb'); if(!b) return;
+  const act=b.dataset.act;
+  if(act==='imp'){ myImpOpen = myImpOpen===k ? -1 : k; myDelArm=-1; drawMy(); }
+  else if(act==='exp'){ myDownload(`マイ薬局_${s.name}_${myToday()}.json`, myPack([s])); }
+  else if(act==='del'){
+    if(myDelArm===k){ MY.stores.splice(k,1); myDelArm=-1; myImpOpen=-1; mySave();
+      myMsg='店舗を削除しました。'; }
+    else myDelArm=k;
+    drawMy();
+  }
+  else if(act==='file'){ myPending={type:'list',k}; document.getElementById('myfile').click(); }
+  else if(act==='zero'){
+    /* 入力中の内容を消さないよう、描き直しの前後で写し取る */
+    const ta=box.querySelector('.mytxt'), keep=ta?ta.value:'';
+    myNoZero=!myNoZero; drawMy();
+    const t2=document.querySelector('#mybody .mytxt'); if(t2) t2.value=keep;
+  }
+  else if(act==='add'||act==='rep'){
+    const ta=box.querySelector('.mytxt'); myApplyList(k, ta?ta.value:'', act==='rep'); }
+});
+document.getElementById('mybody').addEventListener('change',e=>{
+  const sr=e.target.closest('.mysrc');
+  if(sr){ const s0=MY.stores[+sr.closest('.mystore').dataset.k];
+    if(s0){ s0.src=sr.value.trim().slice(0,40); mySave(); } return; }
+  const inp=e.target.closest('.myname'); if(!inp) return;
+  const s=MY.stores[+inp.closest('.mystore').dataset.k]; if(!s) return;
+  s.name=(inp.value.trim()||'店舗').slice(0,20); mySave(); drawMy();
+});
+/* カードの中の「採用にする／採用中」 */
+document.getElementById('list').addEventListener('click',e=>{
+  const b=e.target.closest('.myt'); if(!b) return;
+  const dd=b.closest('.mytg'), y=dd.dataset.yj, s=MY.stores[+b.dataset.k];
+  if(!s||!y) return;
+  const i=s.items.indexOf(y);
+  if(i>=0) s.items.splice(i,1); else s.items.push(y);
+  mySave();
+  const r=R[YJIDX.get(y)];
+  dd.innerHTML=myToggles(r);
+  const m=dd.closest('.card').querySelector('.nmmy');
+  if(m) m.innerHTML=myMarks(r);
+});
+
+/* =====================================================================
+   切替余地 ／ 残りわずかの成分
+   「同じ成分・規格・剤形」だけを見ていると、同じ成分の別の剤形や
+   あまり知られていない銘柄が通常出荷で残っていても気づけない
+   （実例：セファレキシンの小児用で通常出荷はラリキシンDSだけだった）。
+   探す範囲を3段に広げて見せる。
+   ===================================================================== */
+const SW_POWD=new Set(['散','細粒','顆粒','ドライシロップ','シロップ','内用液']);
+const SW_SOLID=new Set(['錠','OD錠','カプセル','チュアブル']);
+/* 剤形の群。内用薬は「粉・液」と「錠・カプセル」に分ける（小児や嚥下の都合で
+   行き来できない境目）。外用薬は剤形そのもの、注射薬は1つにまとめる。 */
+function swGroup(r){
+  const k=dv(r,'k'), f=dv(r,'fm')||'';
+  if(k==='内用薬') return SW_POWD.has(f)?'粉・液':SW_SOLID.has(f)?'錠・カプセル':'その他';
+  if(k==='外用薬') return f||'その他';
+  return '注射';
+}
+const SWG_NAME={'粉・液':'散・細粒・顆粒・DS・シロップ・液','錠・カプセル':'錠・OD錠・カプセル'};
+const swGName=(g)=>SWG_NAME[g]||g;
+let SWI=null;
+function swIdx(){
+  if(SWI) return SWI;
+  const by9=new Map(), byIng=new Map(), byCls=new Map(), byGrp=new Map();
+  const push=(m,k,r)=>{ const a=m.get(k); if(a) a.push(r); else m.set(k,[r]); };
+  R.forEach(r=>{
+    const y=get(r,'yj'); if(!y||y.length!==12) return;
+    const k=dv(r,'k'), g=swGroup(r), ing=get(r,'i');
+    push(by9, y.slice(0,9), r);
+    push(byIng, ing+'|'+k, r);
+    push(byCls, y.slice(0,4)+'|'+k+'|'+g, r);
+    push(byGrp, ing+'|'+k+'|'+g, r);
+  });
+  return (SWI={by9,byIng,byCls,byGrp});
+}
+const swOkSort=(a,b)=>{ const va=volOf(a), vb=volOf(b);
+  return ((va==null||va<0?9:va)-(vb==null||vb<0?9:vb)) || get(a,'n').localeCompare(get(b,'n'),'ja'); };
+function swTiers(r){
+  const I=swIdx(), y=get(r,'yj'), k=dv(r,'k'), g=swGroup(r), ing=get(r,'i'), y9=y.slice(0,9);
+  const same=(I.byIng.get(ing+'|'+k)||[]);
+  const t1=(I.by9.get(y9)||[]).filter(x=>x!==r);
+  const t2=same.filter(x=>get(x,'yj').slice(0,9)!==y9 && swGroup(x)===g);
+  const t2b=same.filter(x=>swGroup(x)!==g);
+  const oth=new Map();
+  (I.byCls.get(y.slice(0,4)+'|'+k+'|'+g)||[]).forEach(x=>{
+    const j=get(x,'i'); if(j===ing) return;
+    let o=oth.get(j); if(!o){ o={ing:j,n:0,ok:0}; oth.set(j,o); }
+    o.n++; if(get(x,'sc')===0) o.ok++;
+  });
+  return {g, t1, t2, t2b, t3:[...oth.values()]};
+}
+const swOk=(a)=>a.filter(x=>get(x,'sc')===0);
+/* カードを開く前に見せる一言（限定出荷・供給停止の薬だけ） */
+function swHint(r){
+  const t=swTiers(r);
+  const a=swOk(t.t1).length, b=swOk(t.t2).length, c=swOk(t.t2b).length;
+  const d=t.t3.filter(o=>o.ok>0).length;
+  if(a) return `同じ規格・剤形に通常出荷 ${a}品目`;
+  if(b) return `同じ成分の別の規格・剤形に通常出荷 ${b}品目`;
+  if(c) return `同じ成分の別の剤形に通常出荷 ${c}品目`;
+  if(d) return `同じ成分に通常出荷なし／同じ薬効分類の別成分 ${d}成分に通常出荷あり`;
+  return '同じ成分・同じ薬効分類とも、通常出荷が見つかりません';
+}
+const SW_MAX=6;
+function swItem(x){
+  return `<div class="swi" data-nm="${esc(get(x,'n'))}">
+    <span class="cmst s${get(x,'sc')}">${esc(SCNM[get(x,'sc')])}</span>${volBadge(x)}
+    <span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
+    <span class="swmk">${esc(dv(x,'m')||'')}</span></div>`;
+}
+function swTier(title, sub, how, rows, ingName){
+  if(!rows.length) return '';
+  const ok=swOk(rows).sort(swOkSort);
+  const lim=rows.filter(x=>get(x,'sc')===1).length, stop=rows.filter(x=>get(x,'sc')===2).length;
+  return `<div class="swt">
+    <div class="swth">${esc(title)}<span class="swtn">${esc(sub)}</span>
+      <span class="swcnt${ok.length?'':' zero'}">通常出荷 ${ok.length}／全${rows.length}</span></div>
+    <div class="swhow">${how}</div>
+    ${ok.slice(0,SW_MAX).map(swItem).join('')}
+    ${/* 通常出荷が1つも無い段では、限定出荷のものを見せる（供給停止よりは入手の見込みがある） */
+      (!ok.length&&lim)?`<div class="swhow"><b>通常出荷はありません。</b>限定出荷の薬：</div>`+
+        rows.filter(x=>get(x,'sc')===1).sort(swOkSort).slice(0,4).map(swItem).join(''):''}
+    ${ok.length>SW_MAX?`<div class="swing" data-ing="${esc(ingName)}">ほか通常出荷 ${ok.length-SW_MAX}品目（この成分で検索）</div>`:''}
+    ${(lim||stop)?`<div class="swmore">${ok.length?'ほか':'内訳'} ${[lim?`限定出荷 ${lim}`:'',stop?`供給停止 ${stop}`:''].filter(Boolean).join('・')}</div>`:''}
+  </div>`;
+}
+function swBox(r){
+  const t=swTiers(r), ingName=dv(r,'i')||'';
+  let h=swTier('① 同じ成分・規格・剤形','銘柄の変更','後発品への変更など、銘柄を替えるだけで済む範囲です。',t.t1,ingName)
+    + swTier('② 同じ成分で規格や剤形が違う',swGName(t.g),'規格や剤形を替える範囲です。多くは疑義照会が必要です。',t.t2,ingName)
+    + swTier('②′ 同じ成分の別の剤形',t.g==='粉・液'?'錠・カプセルなど':t.g==='錠・カプセル'?'散・細粒・DSなど':'別の剤形',
+        '飲める剤形が限られる患者さんには使えないことがあります。',t.t2b,ingName);
+  const o=t.t3.filter(x=>x.ok>0).sort((a,b)=>b.ok-a.ok||b.n-a.n);
+  if(t.t3.length){
+    h+=`<div class="swt">
+      <div class="swth">③ 同じ薬効分類の別の成分<span class="swtn">${esc(dv(r,'cls')||'')}・${esc(swGName(t.g))}</span>
+        <span class="swcnt${o.length?'':' zero'}">通常出荷あり ${o.length}／全${t.t3.length}成分</span></div>
+      <div class="swhow">成分が変わるので、<b>処方変更の疑義照会</b>が必要です。
+        薬効分類は大きな括りで、<b>世代や適応の違いは区別していません</b>。必ず内容を確かめてください。</div>
+      ${o.slice(0,10).map(x=>`<div class="swing" data-ing="${esc(D.i[x.ing]||'')}">
+        <b>${esc(D.i[x.ing]||'(成分名なし)')}</b><span class="swcnt">通常出荷 ${x.ok}／全${x.n}</span></div>`).join('')}
+      ${o.length>10?`<div class="swmore">ほか ${o.length-10}成分</div>`:''}
+    </div>`;
+  }
+  return h || '<div class="hint">同じ成分・同じ薬効分類の他剤は、供給状況データにありません。</div>';
+}
+document.getElementById('list').addEventListener('click',e=>{
+  const b=e.target.closest('.swbtn');
+  if(b){
+    const r=R[YJIDX.get(b.dataset.yj)]; if(!r) return;
+    const box=b.nextElementSibling;
+    const open=box.innerHTML==='';
+    box.innerHTML = open ? swBox(r) : '';
+    b.setAttribute('aria-expanded', open);
+    return;
+  }
+  const it=e.target.closest('.swi');
+  if(it){ toSearchByName(it.dataset.nm); return; }
+  const ig=e.target.closest('.swing');
+  if(ig && ig.dataset.ing) toSearchByIng(ig.dataset.ing);
+});
+function toSearchByName(nm){
+  state.qMode='n'; syncMode();
+  qEl.value=nm; state.q=nm;
+  document.getElementById('clr').classList.add('on');
+  switchPage('search'); run();
+}
+
+/* ---- 採用薬の切替候補（お知らせタブ。店舗を選んでいるときだけ） ----
+   採用薬のうち限定出荷・供給停止のものを並べ、それぞれについて
+   「通常出荷で残っている薬」を近い順に1段だけ示す。
+   残っている薬は未採用のことが多いので、採用中か未採用かを必ず添える。 */
+let mswView='2';      /* '2' = 供給停止 / '1' = 限定出荷 */
+function mswPick(r){
+  const t=swTiers(r);
+  const tiers=[['同じ規格・剤形',t.t1],['規格・剤形ちがい',t.t2],['別の剤形',t.t2b]];
+  const find=(sc)=>{
+    for(const [lab,rows] of tiers){
+      const ok=rows.filter(x=>get(x,'sc')===sc);
+      if(ok.length){
+        ok.sort((a,b)=>(myHas(b)-myHas(a))||swOkSort(a,b));
+        return {lab, ok, mine:ok.filter(myHas).length, st:sc};
+      }
+    }
+    return null;
+  };
+  /* まず通常出荷を探す。無ければ、供給停止の薬に限って限定出荷のものを挙げる
+     （限定出荷の薬に、別の限定出荷を勧めても意味が薄いため） */
+  return find(0) || (get(r,'sc')===2 && find(1)) ||
+         {lab:'', ok:[], mine:0, st:-1, other:t.t3.filter(o=>o.ok>0).length};
+}
+function drawMsw(){
+  const sec=document.getElementById('mswsec');
+  const on=myScoped();
+  sec.hidden=!on;
+  if(!on) return;
+  const all=R.filter(r=>myHas(r) && get(r,'sc')>0 && bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r)
+                        && get(r,'yj') && get(r,'yj').length===12);
+  document.querySelectorAll('#mswsub .chgs').forEach(b=>{
+    const n=all.filter(r=>String(get(r,'sc'))===b.dataset.v).length;
+    b.setAttribute('aria-pressed', b.dataset.v===mswView);
+    b.textContent=(b.dataset.v==='2'?'供給停止':'限定出荷')+`（${n}）`;
+  });
+  const list=all.filter(r=>String(get(r,'sc'))===mswView).map(r=>({r, c:mswPick(r)}));
+  /* 困る順：同じ成分に通常出荷が無い → 残りは未採用だけ → 採用中の代わりがある */
+  const rank=(x)=>!x.c.ok.length ? 0 : x.c.st===1 ? 1 : x.c.mine ? 3 : 2;
+  list.sort((a,b)=>rank(a)-rank(b) || get(a.r,'n').localeCompare(get(b.r,'n'),'ja'));
+  document.getElementById('mswcnt').textContent = list.length ? `${list.length.toLocaleString()}品目` : '';
+  const box=document.getElementById('mswlist');
+  if(!list.length){ box.innerHTML='<div class="chgempty">この条件に当てはまる採用薬はありません。</div>'; return; }
+  box.innerHTML=list.slice(0,300).map(({r,c})=>{
+    const k=rank({c});
+    return `<div class="mswrow k${k}">
+      <div class="lowi mswh" data-nm="${esc(get(r,'n'))}">
+        <span class="cmnm">${esc(get(r,'n'))}</span>${myMarks(r)}
+        <span class="cmst s${get(r,'sc')}">${esc(SCNM[get(r,'sc')])}</span>
+        <span class="swmk">${esc(dv(r,'m')||'')}</span></div>
+      ${c.ok.length ? `<div class="mswl">${c.st===1?'<b>通常出荷はありません。</b>':''}${esc(c.lab)}に${
+            c.st===1?'限定出荷':'通常出荷'} <b>${c.ok.length}</b>品目`+
+          `（${c.mine?`採用中 ${c.mine}`:'<b>すべて未採用</b>'}）</div>`+
+          c.ok.slice(0,2).map(x=>`<div class="lowi" data-nm="${esc(get(x,'n'))}">
+            ${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
+            <span class="swmk">${esc(dv(x,'m')||'')}</span></div>`).join('')+
+          (c.ok.length>2?`<div class="mswl">ほか ${c.ok.length-2}品目（薬名をタップして「切替余地」で確認）</div>`:'')
+        : `<div class="mswl"><b>同じ成分に${get(r,'sc')===2?'通常出荷も限定出荷も':'通常出荷が'}ありません。</b>${
+            c.other?`同じ薬効分類の別成分 ${c.other}成分に通常出荷があります（処方変更が必要）。`:''}</div>`}
+    </div>`;
+  }).join('') + (list.length>300?`<div class="chgempty">ほか ${list.length-300}品目</div>`:'');
+}
+document.getElementById('mswsub').addEventListener('click',e=>{
+  const b=e.target.closest('.chgs'); if(!b) return; mswView=b.dataset.v; drawMsw(); });
+document.getElementById('mswlist').addEventListener('click',e=>{
+  const it=e.target.closest('[data-nm]'); if(it) toSearchByName(it.dataset.nm); });
+
+/* ---- 残りわずかの成分（お知らせタブ） ---- */
+let lowView='few';
+const LOW_MIN=3, LOW_SHARE=0.6;   /* 3品目以上の群で、6割以上が限定・停止 */
+let LOWALL=null;
+function lowAll(){
+  if(LOWALL) return LOWALL;
+  const out=[];
+  swIdx().byGrp.forEach((rows,key)=>{
+    const ok=rows.filter(x=>get(x,'sc')===0);
+    const n=rows.length, bad=n-ok.length;
+    let type='';
+    if(n>=LOW_MIN && ok.length>=1 && ok.length<=2 && bad/n>=LOW_SHARE) type='few';
+    else if(n>=2 && ok.length===0) type='zero';
+    if(!type) return;
+    out.push({key, rows, ok:ok.sort(swOkSort), type, n,
+      lim:rows.filter(x=>get(x,'sc')===1).length, stop:rows.filter(x=>get(x,'sc')===2).length});
+  });
+  return (LOWALL=out);
+}
+function lowList(){
+  return lowAll().filter(g=>{
+    const r=g.rows[0];
+    if(!bdKinds.has(KIDX[dv(r,'k')]) || !kanOk(r)) return false;
+    if(myScoped() && !g.rows.some(myHas)) return false;
+    return true;
+  }).map(g=>{ const mine=g.rows.some(myHas);
+      /* 採用薬が関係するのに、残っている通常出荷品を1つも採用していない成分。
+         いまのうちに確保を考えるべきものなので、いちばん上に出す。 */
+      return {...g, mine, need: mine && g.ok.length>0 && !g.ok.some(myHas)}; })
+    .sort((a,b)=>(b.need-a.need)||(b.mine-a.mine)||(b.n-a.n)||
+      String(dv(a.rows[0],'i')).localeCompare(String(dv(b.rows[0],'i')),'ja'));
+}
+function drawLow(){
+  const all=lowList(), list=all.filter(g=>g.type===lowView);
+  document.querySelectorAll('#lowsub .chgs').forEach(b=>{
+    const n=all.filter(g=>g.type===b.dataset.v).length;
+    b.setAttribute('aria-pressed', b.dataset.v===lowView);
+    b.textContent=(b.dataset.v==='few'?'残り1〜2品目':'通常出荷なし')+`（${n}）`;
+  });
+  document.getElementById('lowcnt').textContent = list.length ? `${list.length}成分` : '';
+  const box=document.getElementById('lowlist');
+  if(!list.length){ box.innerHTML='<div class="chgempty">この条件に当てはまる成分はありません。</div>'; return; }
+  box.innerHTML=list.slice(0,200).map(g=>{
+    const r=g.rows[0], ks=new Set(); g.rows.forEach(x=>myIn(x).forEach(k=>ks.add(k)));
+    return `<div class="lowrow ${g.type==='zero'?'zero':''} ${g.mine?'mine':''}">
+      <div class="lowh" data-ing="${esc(dv(r,'i')||'')}">
+        <span>${esc(dv(r,'i')||'(成分名なし)')}</span>
+        <span class="lowg">${esc(dv(r,'k'))}・${esc(swGName(swGroup(r)))}</span>
+        ${ks.size?`<span class="myms">${[...ks].sort().map(myMark).join('')}</span>`:''}
+        ${g.need?'<span class="lowneed">残りの薬は未採用</span>':''}
+      </div>
+      <div class="lows">
+        <span class="cmst s0">通常出荷 ${g.ok.length}</span>
+        ${g.lim?`<span class="cmst s1">限定出荷 ${g.lim}</span>`:''}
+        ${g.stop?`<span class="cmst s2">供給停止 ${g.stop}</span>`:''}
+        <span class="chgday">全${g.n}品目</span>
+      </div>
+      ${g.ok.map(x=>`<div class="lowi" data-nm="${esc(get(x,'n'))}">
+        ${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
+        <span class="swmk">${esc(dv(x,'m')||'')}</span></div>`).join('')}
+      ${g.type==='zero'?'<div class="lowi" data-ing="'+esc(dv(r,'i')||'')+'">通常出荷の品目はありません（タップでこの成分を検索）</div>':''}
+    </div>`;
+  }).join('') + (list.length>200?`<div class="chgempty">ほか ${list.length-200}成分</div>`:'');
+}
+document.getElementById('lowsub').addEventListener('click',e=>{
+  const b=e.target.closest('.chgs'); if(!b) return; lowView=b.dataset.v; drawLow(); });
+document.getElementById('lowlist').addEventListener('click',e=>{
+  const it=e.target.closest('[data-nm]'); if(it){ toSearchByName(it.dataset.nm); return; }
+  const ig=e.target.closest('[data-ing]'); if(ig&&ig.dataset.ing) toSearchByIng(ig.dataset.ing);
+});
+
+/* =====================================================================
+   分析タブ：週次レポート／回復までの日数／供給不足の構造
+   どれも閲覧時に行データから数える。剤形・生薬漢方・マイ薬局の設定に従う。
+   ===================================================================== */
+const anaOk=(r)=>r && bdKinds.has(KIDX[dv(r,'k')]) && kanOk(r) && myOk(r);
+const isoD=(s)=>{ const m=/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(s||'');
+  return m ? Date.UTC(+m[1],+m[2]-1,+m[3]) : NaN; };
+const dayDiff=(a,b)=>Math.round((isoD(b)-isoD(a))/86400000);
+const addDays=(iso,n)=>new Date(isoD(iso)+n*86400000).toISOString().slice(0,10);
+const mdLabel=(iso)=>{ const m=/^\d{4}-(\d{2})-(\d{2})$/.exec(iso||''); return m?`${+m[1]}/${+m[2]}`:iso; };
+const median=(a)=>{ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), n=s.length;
+  return n%2 ? s[(n-1)/2] : Math.round((s[n/2-1]+s[n/2])/2); };
+const pctTxt=(v)=>(v*100).toFixed(v>0&&v<0.1?1:0)+'%';
+
+/* ---------- 週次レポート ---------- */
+let wkPer=7;
+function wkRange(){
+  const end = wkPer===14 ? addDays(DATA.date,-7) : DATA.date;
+  const start = addDays(end, wkPer===30 ? -29 : -6);
+  return [start,end];
+}
+/* 期間内の出来事を品目ごとにまとめ、期間の最初と最後で比べる
+   （途中で行って戻った品目を二重に数えないため） */
+function wkNet(evs, s, e){
+  const m=new Map();
+  (evs||[]).forEach(x=>{
+    if(x[1]<s || x[1]>e) return;
+    const r=R[x[0]]; if(!anaOk(r)) return;
+    const o=m.get(x[0]);
+    if(o){ o.to=x[3]; o.d=x[1]; } else m.set(x[0],{i:x[0],from:x[2],to:x[3],d:x[1]});
+  });
+  return [...m.values()].filter(o=>o.from!==o.to);
+}
+function wkData(){
+  const [s,e]=wkRange();
+  const sc=wkNet(DATA.ev,s,e), vc=wkNet(DATA.vev,s,e);
+  const byName=(a,b)=>get(R[a.i],'n').localeCompare(get(R[b.i],'n'),'ja');
+  const pick=(a,f)=>a.filter(f).sort(byName);
+  return {s,e, secs:[
+    {k:'stop',  t:'新たに供給停止',           c:'worse',  kind:'sc', a:pick(sc,o=>o.to===2)},
+    {k:'lim',   t:'新たに限定出荷',           c:'worse',  kind:'sc', a:pick(sc,o=>o.to===1&&o.from===0)},
+    {k:'back',  t:'通常出荷に戻った',         c:'better', kind:'sc', a:pick(sc,o=>o.to===0)},
+    {k:'ease',  t:'供給停止から限定出荷へ',   c:'better', kind:'sc', a:pick(sc,o=>o.to===1&&o.from===2)},
+    {k:'del',   t:'新たに薬価削除予定',       c:'worse',  kind:'vc', a:pick(vc,o=>o.to===4)},
+    {k:'vdown', t:'出荷量が減った・止まった', c:'worse',  kind:'vc', a:pick(vc,o=>o.to<4&&o.from<4&&o.to>o.from)},
+    {k:'vup',   t:'出荷量が増えた・戻った',   c:'better', kind:'vc', a:pick(vc,o=>o.to<4&&o.from<4&&o.to<o.from)},
+  ]};
+}
+const WK_MAX=60;
+function drawWk(){
+  document.querySelectorAll('#wkper .chgs').forEach(b=>
+    b.setAttribute('aria-pressed', +b.dataset.p===wkPer));
+  const w=wkData();
+  document.getElementById('wkcnt').textContent=`${mdLabel(w.s)}〜${mdLabel(w.e)}`;
+  const n=(k)=>w.secs.find(x=>x.k===k).a.length;
+  const low=lowList();
+  const scope=[[...bdKinds].sort().map(i=>KLABEL[i]).join('・'),
+    bdNoKan?'生薬・漢方を除く':'', myScoped()?
+      ('採用薬のみ（'+(MY.view==='all'?'全店舗':(MY.stores.find(s=>s.id===MY.view)||{}).name||'')+'）'):'']
+    .filter(Boolean).join('／');
+  let h=`<div class="anad">対象：${esc(scope)}。期間の最初と最後を比べた変化です。</div>
+    <div class="kpis">
+      <div class="kpi"><span>新たに供給停止</span><b>${n('stop')}<small> 品目</small></b></div>
+      <div class="kpi"><span>新たに限定出荷</span><b>${n('lim')}<small> 品目</small></b></div>
+      <div class="kpi"><span>通常出荷に戻った</span><b>${n('back')}<small> 品目</small></b></div>
+      <div class="kpi"><span>残りわずかの成分（現在）</span><b>${low.filter(g=>g.type==='few').length}<small> 成分</small></b></div>
+    </div>`;
+  const badge=(sec,o)=> sec.kind==='sc'
+    ? `<span class="cmst s${o.from}">${SCNM[o.from]}</span><span class="chgar">→</span><span class="cmst s${o.to}">${SCNM[o.to]}</span>`
+    : `<span class="vb v${o.from}">${esc(VOLLAB[o.from])}</span><span class="chgar">→</span><span class="vb v${o.to}">${esc(VOLLAB[o.to])}</span>`;
+  w.secs.forEach(sec=>{
+    h+=`<div class="wkh">${esc(sec.t)}<span class="vtgn">${sec.a.length}品目</span></div>`;
+    if(!sec.a.length){ h+='<div class="wknone">ありません。</div>'; return; }
+    h+=sec.a.slice(0,WK_MAX).map(o=>{ const r=R[o.i];
+      return `<div class="chgrow ${sec.c}" data-nm="${esc(get(r,'n'))}">
+        <div class="chgnm">${esc(get(r,'n'))}${myMarks(r)}</div>
+        <div class="chgmv">${badge(sec,o)}<span class="chgday">${esc(recDate(o.d))}</span>
+          <span class="chgmk">${esc(dv(r,'m')||'')}</span></div></div>`; }).join('');
+    if(sec.a.length>WK_MAX) h+=`<div class="wknone">ほか ${sec.a.length-WK_MAX}品目</div>`;
+  });
+  if(!(DATA.ev||[]).length && !(DATA.vev||[]).length)
+    h+='<div class="chgempty">変化の記録がまだありません。</div>';
+  document.getElementById('wkbody').innerHTML=h;
+}
+function wkText(){
+  const w=wkData();
+  const L=[`医薬品供給状況 週次レポート（${recDate(w.s)}〜${recDate(w.e)}）`,
+           `データ：厚生労働省 医療用医薬品供給状況（${recDate(DATA.date)}現在）を加工して作成`, ''];
+  w.secs.forEach(sec=>{
+    L.push(`■ ${sec.t}：${sec.a.length}品目`);
+    sec.a.slice(0,WK_MAX).forEach(o=>{ const r=R[o.i];
+      const mv = sec.kind==='sc' ? `${SCNM[o.from]}→${SCNM[o.to]}` : `${VOLLAB[o.from]}→${VOLLAB[o.to]}`;
+      L.push(`・${get(r,'n')}（${dv(r,'m')||''}）${mv} ${recDate(o.d)}`); });
+    if(sec.a.length>WK_MAX) L.push(`　ほか ${sec.a.length-WK_MAX}品目`);
+    L.push('');
+  });
+  return L.join('\n');
+}
+document.getElementById('wkper').addEventListener('click',e=>{
+  const b=e.target.closest('.chgs'); if(!b) return; wkPer=+b.dataset.p; drawWk(); });
+document.getElementById('wkbody').addEventListener('click',e=>{
+  const row=e.target.closest('.chgrow'); if(row) toSearchByName(row.dataset.nm); });
+document.getElementById('wkprint').addEventListener('click',()=>{
+  document.body.classList.add('printwk');
+  const done=()=>{ document.body.classList.remove('printwk'); window.removeEventListener('afterprint',done); };
+  window.addEventListener('afterprint',done);
+  window.print();
+  setTimeout(done, 1500);
+});
+document.getElementById('wkcopy').addEventListener('click',function(){
+  const t=wkText(), btn=this;
+  const ok=()=>{ btn.textContent='コピーしました'; setTimeout(()=>{ btn.textContent='文章をコピー'; },1600); };
+  const fb=()=>{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+    ta.select(); try{ document.execCommand('copy'); ok(); }catch(e){} ta.remove(); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok,fb); else fb();
+});
+
+/* ---------- 回復までの日数 ---------- */
+const RC_BINS=[[0,30,'30日以内'],[31,90,'31〜90日'],[91,180,'91〜180日'],
+               [181,365,'181〜365日'],[366,1e9,'366日以上']];
+let rcDim='from', rcTbl=false;
+const rcBin=(d)=>RC_BINS.findIndex(b=>d>=b[0]&&d<=b[1]);
+function hbars(rows, max, cls){
+  return rows.map(([lab,v,extra])=>`<div class="hb"><span class="hbl">${esc(lab)}</span>
+    <span class="hbt">${v?`<span class="${cls}" style="width:${Math.max(1,v/max*100)}%"></span>`:''}</span>
+    <span class="hbv">${v.toLocaleString()}${extra||''}</span></div>`).join('');
+}
+function drawRc(){
+  const E0=DATA.since0||'2025-05-13';
+  const evs=(DATA.rcv||[]).filter(x=>anaOk(R[x[0]]));
+  const known=[], old=[]; let nrec=0;
+  evs.forEach(x=>{
+    if(x[3]) known.push({x, d:Math.max(0,dayDiff(x[3],x[1]))});
+    else if(x[3]==='') old.push({x, d:dayDiff(E0,x[1])});
+    else nrec++;
+  });
+  document.getElementById('rccnt').textContent = evs.length ? `回復 ${evs.length.toLocaleString()}件` : '';
+  const box=document.getElementById('rcbody');
+  const first=(DATA.rcv||[]).length ? DATA.rcv[0][1] : '';
+  let h=`<div class="anad">限定出荷・供給停止の品目が<b>通常出荷に戻るまで</b>にかかった日数です。
+    ${first?`${esc(recDate(first))}以降に戻った品目を数えています。`:''}
+    日数は<b>出荷対応が最後に変わった日</b>（厚労省データの⑬）から数えるため、
+    途中で限定出荷の区分が変わった品目は、実際より短く出ます。</div>`;
+  if(!evs.length){
+    box.innerHTML=h+'<div class="chgempty">この条件に当てはまる回復の記録はありません。</div>'; return; }
+  const ds=known.map(o=>o.d), med=median(ds);
+  const q=(p)=>{ const s=[...ds].sort((a,b)=>a-b); return s.length?s[Math.min(s.length-1,Math.floor(s.length*p))]:null; };
+  const oldMin=old.length?Math.min(...old.map(o=>o.d)):0;
+  h+=`<div class="kpis">
+    <div class="kpi"><span>中央値（開始日が分かる${known.length}件）</span><b>${med==null?'—':med}<small> 日</small></b></div>
+    <div class="kpi"><span>半数が収まる範囲</span><b>${ds.length?q(0.25)+'〜'+q(0.75):'—'}<small> 日</small></b></div>
+    <div class="kpi"><span>開始が${esc(recDate(E0))}より前</span><b>${old.length}<small> 件（${oldMin}日以上）</small></b></div>
+  </div>`;
+  const cnt=RC_BINS.map(()=>0); ds.forEach(d=>{ const b=rcBin(d); if(b>=0) cnt[b]++; });
+  const rows=RC_BINS.map((b,i)=>[b[2],cnt[i]]);
+  rows.push([`開始が${recDate(E0)}より前`, old.length]);
+  const mx=Math.max(1,...rows.map(r=>r[1]));
+  h+=`<div class="anah">かかった日数の分布（件）</div>`+
+     hbars(rows.slice(0,-1), mx, 'c-one')+hbars(rows.slice(-1), mx, 'c-unk');
+  if(nrec) h+=`<div class="wknone">ほかに、開始日の記録が無い回復が${nrec}件あります（集計から除いています）。</div>`;
+  /* 内訳 */
+  const key = rcDim==='from' ? (o)=>SCNM[o.x[2]]+'から'
+            : rcDim==='rsn'  ? (o)=>o.x[4]||'（理由の記載なし）'
+            :                  (o)=>dv(R[o.x[0]],'m')||'（不明）';
+  const g=new Map();
+  known.forEach(o=>{ const k=key(o); let v=g.get(k); if(!v){ v={k,ds:[],old:0}; g.set(k,v); } v.ds.push(o.d); });
+  old.forEach(o=>{ const k=key(o); let v=g.get(k); if(!v){ v={k,ds:[],old:0}; g.set(k,v); } v.old++; });
+  let gl=[...g.values()].map(v=>({...v, n:v.ds.length+v.old, med:median(v.ds)}));
+  if(rcDim==='mk') gl=gl.filter(v=>v.n>=3);
+  gl.sort((a,b)=>b.n-a.n);
+  h+=`<div class="anah" style="margin-top:12px">内訳</div>
+    <div class="chgtabs" id="rcdim">
+      <button class="chgs" data-d="from" aria-pressed="${rcDim==='from'}">元の状態</button>
+      <button class="chgs" data-d="rsn" aria-pressed="${rcDim==='rsn'}">理由</button>
+      <button class="chgs" data-d="mk" aria-pressed="${rcDim==='mk'}">メーカー</button>
+    </div>
+    <table class="anat"><tr><th>${rcDim==='from'?'元の状態':rcDim==='rsn'?'理由':'メーカー（3件以上）'}</th>
+      <th>回復</th><th>中央値</th><th>開始が古い</th></tr>
+    ${gl.slice(0,25).map(v=>`<tr><td>${esc(v.k)}</td><td>${v.n}件</td>
+      <td>${v.med==null?'—':v.med+'日'}</td><td>${v.old?v.old+'件':'—'}</td></tr>`).join('')}
+    </table>`;
+  /* いま続いている限定出荷・供給停止 */
+  const cur=R.filter(r=>anaOk(r)&&get(r,'sc')>0);
+  const cb=RC_BINS.map(()=>[0,0]); const co=[0,0];
+  cur.forEach(r=>{
+    const j=get(r,'sc')===2?1:0, u=get(r,'upd');
+    const d=u?dayDiff(u.replace(/\//g,'-'),DATA.date):NaN;
+    if(isNaN(d)) co[j]++; else { const b=rcBin(Math.max(0,d)); if(b>=0) cb[b][j]++; }
+  });
+  const cr=RC_BINS.map((b,i)=>[b[2],cb[i]]); cr.push([`${recDate(E0)}より前から`,co]);
+  const cm=Math.max(1,...cr.map(r=>r[1][0]+r[1][1]));
+  h+=`<div class="anah" style="margin-top:14px">いま続いている限定出荷・供給停止（${cur.length.toLocaleString()}品目）は、何日続いているか</div>
+    <div class="lgd"><span><i class="c-lim"></i>限定出荷</span><span><i class="c-stop"></i>供給停止</span></div>
+    ${cr.map(([lab,v])=>`<div class="hb"><span class="hbl">${esc(lab)}</span>
+      <span class="hbt" style="gap:2px">${v[0]?`<span class="c-lim" style="width:${v[0]/cm*100}%;border-radius:0"></span>`:''}${
+        v[1]?`<span class="c-stop" style="width:${v[1]/cm*100}%"></span>`:''}</span>
+      <span class="hbv">${(v[0]+v[1]).toLocaleString()}</span></div>`).join('')}
+    <table class="anat"><tr><th>続いている日数</th><th>限定出荷</th><th>供給停止</th></tr>
+      ${cr.map(([lab,v])=>`<tr><td>${esc(lab)}</td><td>${v[0].toLocaleString()}</td><td>${v[1].toLocaleString()}</td></tr>`).join('')}
+    </table>`;
+  box.innerHTML=h;
+}
+document.getElementById('rcbody').addEventListener('click',e=>{
+  const b=e.target.closest('#rcdim .chgs'); if(!b) return; rcDim=b.dataset.d; drawRc(); });
+
+/* ---------- 供給不足の構造 ---------- */
+let stDim='price', stTbl=false;
+const ST_PRICE=[[0,10,'10円未満'],[10,20,'10〜20円'],[20,50,'20〜50円'],[50,100,'50〜100円'],
+                [100,500,'100〜500円'],[500,1e12,'500円以上']];
+const ST_NOTE={
+  price:'薬価（規格単位あたり）の帯ごとに、限定出荷・供給停止の割合を比べます。',
+  pc:'先発品・後発品などの製品区分ごとの割合です。',
+  fm:'剤形ごとの割合です（品目数の多い順に15種類）。',
+  kb:'基礎的医薬品（薬価が下支えされている品目）かどうかで比べます。',
+  mk:'品目数が30以上のメーカーを、限定出荷・供給停止の割合が高い順に20社まで。',
+  cls:'品目数が30以上の薬効分類を、割合が高い順に20分類まで。',
+};
+function stGroups(){
+  const rows=R.filter(anaOk), g=new Map();
+  const add=(k,ord,r)=>{ let v=g.get(k); if(!v){ v={k,ord,n:0,c:[0,0,0]}; g.set(k,v); }
+    v.n++; const sc=get(r,'sc'); if(sc>=0&&sc<=2) v.c[sc]++; };
+  rows.forEach(r=>{
+    if(stDim==='price'){ const p=get(r,'price');
+      if(p==null) add('薬価なし（未収載など）',99,r);
+      else { const i=ST_PRICE.findIndex(b=>p>=b[0]&&p<b[1]); add(ST_PRICE[i][2],i,r); } }
+    else if(stDim==='kb') add(get(r,'kb')?'基礎的医薬品':'それ以外', get(r,'kb')?0:1, r);
+    else add(dv(r,stDim==='mk'?'m':stDim)||'（記載なし）',0,r);
+  });
+  let a=[...g.values()].map(v=>({...v, rate:v.n?(v.c[1]+v.c[2])/v.n:0}));
+  if(stDim==='price'||stDim==='kb') a.sort((x,y)=>x.ord-y.ord);
+  else if(stDim==='fm') a=a.sort((x,y)=>y.n-x.n).slice(0,15);
+  else if(stDim==='pc') a.sort((x,y)=>y.n-x.n);
+  else a=a.filter(v=>v.n>=30).sort((x,y)=>y.rate-x.rate||y.n-x.n).slice(0,20);
+  return {a, total:rows.length, bad:rows.filter(r=>get(r,'sc')>0).length};
+}
+function drawSt(){
+  document.querySelectorAll('#stdim .chgs').forEach(b=>
+    b.setAttribute('aria-pressed', b.dataset.d===stDim));
+  const {a,total,bad}=stGroups();
+  document.getElementById('stcnt').textContent = total ? `${total.toLocaleString()}品目` : '';
+  const box=document.getElementById('stbody');
+  if(!total){ box.innerHTML='<div class="chgempty">この条件に当てはまる品目はありません。</div>'; return; }
+  let h=`<div class="anad">${ST_NOTE[stDim]}
+      全体では<b>${pctTxt(bad/total)}</b>（${bad.toLocaleString()}品目）が限定出荷・供給停止です。
+      右の数字は<b>限定出荷と供給停止を合わせた割合</b>。行をタップすると内訳が出ます。</div>
+    <div class="lgd"><span><i class="c-ok"></i>通常出荷</span><span><i class="c-lim"></i>限定出荷</span>
+      <span><i class="c-stop"></i>供給停止</span></div>`;
+  if(stTbl){
+    h+=`<table class="anat"><tr><th>区分</th><th>品目</th><th>通常</th><th>限定</th><th>停止</th><th>限定＋停止</th></tr>
+      ${a.map(v=>`<tr><td>${esc(v.k)}</td><td>${v.n.toLocaleString()}</td><td>${v.c[0].toLocaleString()}</td>
+        <td>${v.c[1].toLocaleString()}</td><td>${v.c[2].toLocaleString()}</td><td>${pctTxt(v.rate)}</td></tr>`).join('')}</table>`;
+  }else{
+    h+=a.map(v=>{
+      const seg=(i,cls)=>v.c[i]?`<span class="${cls}" style="flex:${v.c[i]} 0 0"></span>`:'';
+      return `<div class="sbr">
+        <div class="sbl"><b>${esc(v.k)}</b><span class="sbn">${v.n.toLocaleString()}品目</span>
+          <span class="sbv">${pctTxt(v.rate)}</span></div>
+        <div class="sbb">${seg(0,'c-ok')}${seg(1,'c-lim')}${seg(2,'c-stop')}</div>
+        <div class="sbd">通常出荷 ${v.c[0].toLocaleString()}（${pctTxt(v.c[0]/v.n)}）・
+          限定出荷 ${v.c[1].toLocaleString()}（${pctTxt(v.c[1]/v.n)}）・
+          供給停止 ${v.c[2].toLocaleString()}（${pctTxt(v.c[2]/v.n)}）</div>
+      </div>`; }).join('');
+  }
+  h+=`<button type="button" class="tblbtn" id="sttbl">${stTbl?'図で見る':'表で見る'}</button>`;
+  box.innerHTML=h;
+}
+document.getElementById('stdim').addEventListener('click',e=>{
+  const b=e.target.closest('.chgs'); if(!b) return; stDim=b.dataset.d; drawSt(); });
+document.getElementById('stbody').addEventListener('click',e=>{
+  if(e.target.id==='sttbl'){ stTbl=!stTbl; drawSt(); return; }
+  const r=e.target.closest('.sbr'); if(r) r.classList.toggle('open');
+});
+
+function drawAna(){
+  document.querySelectorAll('#anak .kb2').forEach(b=>
+    b.setAttribute('aria-pressed', bdKinds.has(+b.dataset.ak)));
+  drawWk(); drawRc(); drawSt();
+}
+document.getElementById('anak').addEventListener('click',e=>{
+  const b=e.target.closest('.kb2'); if(!b) return;
+  const k=+b.dataset.ak;
+  if(bdKinds.has(k)){ if(bdKinds.size>1) bdKinds.delete(k); } else bdKinds.add(k);
+  drawAna();
 });
 
 /* ---------- 凡例 ---------- */
@@ -2958,7 +3982,63 @@ document.getElementById('chglist').addEventListener('click',e=>{
      '右のボタンで<b>差額順／名前の昇順・降順</b>を切り替えられます。'+
      '</div>';
   h+='<div class="lgnote">'+
-     '<b>「お知らせ」タブ</b>は5段です。'+
+     '<b>切替余地</b>（カードを開いた中のボタン）：その薬の代わりになりうる薬の出荷状況を、'+
+     '探す範囲を広げながら3段で示します。'+
+     '<br>・<b>① 同じ成分・規格・剤形</b>＝銘柄を替えるだけで済む範囲'+
+     '<br>・<b>② 同じ成分で規格や剤形が違う</b>＝多くは疑義照会が必要。'+
+     '内用薬は<b>「散・細粒・顆粒・DS・シロップ・液」</b>と<b>「錠・OD錠・カプセル」</b>を分けて示します'+
+     '（小児や嚥下の都合で行き来できないことが多いため）'+
+     '<br>・<b>③ 同じ薬効分類の別の成分</b>＝処方変更の疑義照会が必要。'+
+     '薬効分類は大きな括りで、<b>世代や適応の違いは区別していません</b>'+
+     '<br>限定出荷・供給停止の薬では、開く前に要点が一言で出ます。'+
+     '候補をタップすると、その薬（または成分）の検索に移ります。'+
+     '<br><b>残りわずかの成分</b>（「お知らせ」タブの最上段）：同じ成分・同じ剤形の群で、'+
+     `<b>${LOW_MIN}品目以上あるうち${Math.round(LOW_SHARE*100)}%以上が限定出荷・供給停止</b>になり、`+
+     '通常出荷が<b>1〜2品目しか残っていない</b>ものを、残っている品名つきで出します。'+
+     '困ってから探すのではなく、<b>残っている薬を先に知っておく</b>ための一覧です。'+
+     '「通常出荷なし」は、その群に通常出荷が1つも無い成分です。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>マイ薬局</b>：自分の薬局の<b>採用薬</b>を登録すると、採用薬だけに絞った表示ができます。'+
+     '<br>・一覧は<b>この端末の中だけ</b>に保存されます。公開されているページには含まれず、どこにも送信されません'+
+     '<br>・登録は、カードを開いて<b>「採用にする」</b>を押すか、設定画面で一覧を読み込みます。'+
+     'レセコンや在庫システムの<b>CSV</b>（見出しに「YJコード」の列があるもの）は、そのまま読み込めます。'+
+     '読むのは<b>YJコードと薬品名の列だけ</b>で、原価や在庫数は保存しません。シフトJISのファイルにも対応しています'+
+     '<br>・<b>「CSVを読み込む（店舗を自動で判別）」</b>は、CSVに書かれた店舗名から読み込み先の店舗を決めます。'+
+     '初めての店舗名なら新しい店舗として登録されるので、そのあと<b>表示用の店舗名</b>に付け直してください'+
+     '（例：CSVの「○○薬局」→ 表示は「△△店」）。対応は端末に保存され、次からは自動で見分けます'+
+     '<br>・「残りわずかの成分」で<b>「残りの薬は未採用」</b>と出るのは、採用薬がその成分に含まれるのに、'+
+     '通常出荷で残っている薬を1つも採用していないものです。いちばん上に並びます'+
+     `<br>・店舗は<b>${MY_MAX}つ</b>まで。色と<b>店舗名の頭文字</b>の印で見分けます。`+
+     '店舗があると、画面上部に<b>「すべての薬」と各店舗</b>（2店舗以上なら「全店舗」も）の切り替えが出ます'+
+     '<br>・<b>店舗を選ぶ</b>と、検索・お知らせ・分析のすべてが<b>その店舗の採用薬に関係するものだけ</b>になります。'+
+     '「すべての薬」に戻すと、採用薬には印だけが付きます'+
+     '<br>・店舗を選んでいても、<b>切替候補は採用薬以外も出します</b>'+
+     '（通常出荷で残っている薬は未採用のことが多いため）。候補には<b>「未採用」</b>の印が付き、'+
+     'タップすると採用薬以外も含めた検索に移ります。自分で打った検索語は採用薬だけを探し、'+
+     '1件も無いときは採用薬以外を出してその旨を知らせます'+
+     '<br>・<b>採用薬の切替候補</b>（「お知らせ」タブの最上段。店舗を選んでいるときだけ）：'+
+     '採用薬のうち供給停止・限定出荷のものについて、通常出荷で残っている薬を近い順に示し、'+
+     'それが<b>採用中か未採用か</b>を添えます。同じ成分に通常出荷が無いものが先頭、'+
+     '次に残りが未採用だけのもの、の順です'+
+     '<br>・<b>設定ファイル</b>を書き出して渡すと、相手の端末でも同じ表示になります。'+
+     '「この店舗だけ書き出す」で作ったファイルには、その店舗の分しか入りません'+
+     '<br>・成分単位の一覧（お知らせ掲示板など）は、採用薬と同じ成分のものを出します'+
+     '<br>ブラウザの閲覧データを消すと、この設定も消えます。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>「分析」タブ</b>は3段です。どれも剤形・生薬漢方・マイ薬局の設定に従います。'+
+     '<br><b>週次レポート</b>：期間の<b>最初と最後を比べた</b>変化を、供給停止・限定出荷・回復・出荷量・薬価削除予定に分けて出します。'+
+     '印刷と、文章のコピーができます。'+
+     '<br><b>回復までの日数</b>：通常出荷に戻った品目が、限定出荷・供給停止の状態で何日過ごしたかです。'+
+     '日数は厚労省データの<b>⑬（出荷対応を更新した日）</b>から数えるため、'+
+     '途中で限定出荷の区分が変わった品目は実際より短く出ます。'+
+     `⑬は${esc(recDate(DATA.since0||'2025-05-13'))}から記録が始まった項目で、それより前から続いていたものは「○日以上」と表します。`+
+     '<br><b>供給不足の構造</b>：薬価・製品区分・剤形・基礎的医薬品・メーカー・薬効分類ごとに、'+
+     '限定出荷と供給停止の割合を比べます。割合は<b>品目数</b>で数えたもので、処方量の重みは入っていません。'+
+     '</div>';
+  h+='<div class="lgnote">'+
+     '<b>「お知らせ」タブ</b>は6段です（最上段は上の「残りわずかの成分」）。'+
      '<br><b>出荷量の動き</b>：<b>⑰出荷量</b>が、取得している'+
      '<b>全期間の並び</b>から見て、いまどの途上にあるかを出します。'+
      '直近の1回だけでは判断しません。'+
@@ -2991,7 +4071,7 @@ document.getElementById('chglist').addEventListener('click',e=>{
      '漢方製剤（520）を「漢方製剤」としています。'+
      '「表示の設定」で<b>一覧から除く</b>こともできます（端末に保存されます）。'+
      '<br>最上部の<b>「表示の設定」</b>（折りたたみ）で剤形を選ぶと、'+
-     '<b>4段すべて</b>に反映されます。既定は<b>内用薬・外用薬</b>です。'+
+     '<b>すべての段</b>に反映されます。既定は<b>内用薬・外用薬</b>です。'+
      '<b>生薬・漢方を除く</b>設定も同じく一覧すべてに効きます'+
      '（成分単位の一覧では、その成分の品目がすべて生薬・漢方のときに除きます）。'+
      '<br><b>最上段＝通常出荷に戻った薬</b>：'+
@@ -3192,10 +4272,11 @@ document.getElementById('lgbtn').addEventListener('click',openLg);
 document.getElementById('lgx').addEventListener('click',closeLg);
 
 document.getElementById('ovx').addEventListener('click',closeCmp);
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); closeAl(); closeCmv2(); closePick(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCmp(); closeLg(); closeRv(); closeAl(); closeCmv2(); closePick(); closeMy(); } });
 
 loadChipOrder();
 renderChips();
+drawMyBar();
 syncOrd();
 (function(){
   const w=(DATA.alerts||[]).filter(a=>a.w>0).length;

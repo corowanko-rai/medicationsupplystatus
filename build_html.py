@@ -26,6 +26,12 @@ def serial_to_date(v):
     except (ValueError, TypeError): pass
     return clean(v)
 
+def _slash_to_iso(s):
+    """'2026/09/18' → '2026-09-18'。日付でなければ空文字。"""
+    m = re.match(r"^(\d{4})/(\d{1,2})/(\d{1,2})$", s or "")
+    return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else ""
+
+
 def to_half(s):
     """全角英数・記号（U+FF01〜U+FF5E）をASCIIへ畳む。
     テンプレート側のJavaScript HALF() と必ず同じ規則にすること。
@@ -217,6 +223,11 @@ KAN_CLS = {
 # 出荷量の動きに載せる上限。画面側でまとめて表示するので件数は多くてよい。
 # 上限を超えた分は、上の並び（生薬・漢方と通常出荷を後ろ）で後ろから切る。
 VT_CAP = 2000
+# 週次レポートに使う出来事を、何日前まで画面に渡すか
+EV_DAYS = 45
+# ⑬（出荷対応を更新した日）が報告項目に加わった日。
+# ⑬が空欄の品目は、この日より前から状態が変わっていない。
+SINCE_EPOCH = "2025-05-13"
 
 JP_DATE = re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日")
 ISO_DATE = re.compile(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})")
@@ -714,6 +725,28 @@ def datadoc_values(rows, dicts, data, as_of, prices, ippan, cm_stat):
     vals["vt_n"] = f(len(vt))
     vals["vt_kan"] = f(vt_kan)
     vals["vt_other"] = f(len(vt) - vt_kan)
+
+    # 回復までの日数
+    rcv = data.get("rcv") or []
+    days = []
+    for x in rcv:
+        if x[3]:
+            try:
+                days.append((datetime.date.fromisoformat(x[1])
+                             - datetime.date.fromisoformat(x[3])).days)
+            except Exception:
+                pass
+    days.sort()
+    med = "—"
+    if days:
+        k = len(days)
+        med = str(days[k // 2] if k % 2 else round((days[k // 2 - 1] + days[k // 2]) / 2))
+    vals["rc_n"] = f(len(rcv))
+    vals["rc_known"] = f(len(days))
+    vals["rc_old"] = f(sum(1 for x in rcv if x[3] == ""))
+    vals["rc_med"] = med
+    vals["rc_from_ja"] = _ja_date(rcv[0][1]) if rcv else "記録開始"
+    vals["since0_ja"] = _ja_date(SINCE_EPOCH)
     return vals
 
 
@@ -1115,10 +1148,49 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
                 if len(h) > 40:
                     vhist[yj] = h[-40:]
 
+        # since … 限定出荷・供給停止の品目が「いまの状態になった日」（⑬）と理由。
+        #         通常出荷に戻ったとき、この日付から回復までの日数を出す。
+        #         ⑬が空欄＝令和7年5月13日より前から変わっていない、を意味する。
+        # rec   … 通常出荷に戻った記録。履歴（hist）は40点で間引くので別に積む。
+        #         s は限定・停止の開始日。""＝令和7年5月13日より前、None＝記録なし。
+        prev_since, rec = {}, []
+        if os.path.exists(snapshot_out):
+            try:
+                _sj2 = json.load(open(snapshot_out, encoding="utf-8"))
+                prev_since = _sj2.get("since")
+                rec = _sj2.get("rec") or []
+            except Exception:
+                prev_since, rec = None, []
+        if not isinstance(prev_since, dict):
+            # 導入直後は前回のスナップショットに since が無い。
+            # 履歴から起こした控え（recover_seed.json）で補い、
+            # 導入した日に戻った品目の日数が欠けないようにする。
+            try:
+                prev_since = json.load(open(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "recover_seed.json"),
+                    encoding="utf-8")).get("since")
+            except Exception:
+                prev_since = None
+        rsn_rev = {v: k for k, v in dicts["rsn"].items()}
+        since = {}
+        seen_rec = {(x.get("yj"), x.get("e")) for x in rec}
+        for row in rows:
+            yj, sc = row[4], row[8]
+            if sc and sc > 0:
+                since[yj] = [_slash_to_iso(row[13]), rsn_rev.get(row[10], "")]
+            elif sc == 0 and (old_map.get(yj) or 0) > 0 and (yj, today) not in seen_rec:
+                ps = prev_since.get(yj) if isinstance(prev_since, dict) else None
+                rec.append({"yj": yj, "e": today, "f": old_map[yj],
+                            "s": ps[0] if ps else None,
+                            "r": ps[1] if ps else ""})
+        rec = rec[-5000:]
+
         with open(snapshot_out, "w", encoding="utf-8") as f:
             json.dump({
                 "date": today,
                 "dates": dates,
+                "since": since,
+                "rec": rec,
                 "sc": snap,
                 "vc": vsnap,
                 "vhist": vhist,
@@ -1435,6 +1507,59 @@ def build(xlsx_path, out_path, as_of=None, source_label="", source_url="",
     # 新しい順。同じ日なら品名順
     recover.sort(key=lambda x: (x["d"], rows[x["i"]][0]), reverse=True)
     data["recover"] = recover[:400]
+
+    # ---- 回復までの日数・週次レポート用の出来事 ----
+    # rcv … 通常出荷に戻った記録 [行番号, 戻った日, 元の状況, 開始日, 理由]
+    #        開始日：""＝令和7年5月13日より前（⑬が空欄）、None＝記録なし
+    #        リポジトリの履歴から起こした分（recover_seed.json）と、
+    #        スナップショットに積んだ分（rec）を合わせる。
+    # ev  … 出荷対応の変化 [行番号, 日付, 前, 後]（直近 EV_DAYS 日）
+    # vev … 出荷量の変化   [行番号, 日付, 前, 後]（同上）
+    rcv, ev, vev, vdates = [], [], [], []
+    try:
+        idx_of2 = {r[4]: n for n, r in enumerate(rows)}
+        evs = []
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "recover_seed.json")
+        if os.path.exists(seed_path):
+            evs += json.load(open(seed_path, encoding="utf-8")).get("rec") or []
+        sj3 = {}
+        if src and os.path.exists(src):
+            sj3 = json.load(open(src, encoding="utf-8"))
+            evs += sj3.get("rec") or []
+        seen = set()
+        for x in evs:
+            key = (x.get("yj"), x.get("e"))
+            i = idx_of2.get(x.get("yj"))
+            if i is None or key in seen:
+                continue
+            seen.add(key)
+            rcv.append([i, x.get("e"), x.get("f"), x.get("s"), x.get("r") or ""])
+        rcv.sort(key=lambda t: t[1])
+        vdates = sj3.get("dates") or []
+        base = data["date"]
+        try:
+            cut = (datetime.date.fromisoformat(base)
+                   - datetime.timedelta(days=EV_DAYS)).isoformat()
+        except Exception:
+            cut = ""
+        for key, out in (("hist", ev), ("vhist", vev)):
+            for yj, pts in (sj3.get(key) or {}).items():
+                i = idx_of2.get(yj)
+                if i is None:
+                    continue
+                for k in range(1, len(pts)):
+                    if pts[k][0] >= cut:
+                        out.append([i, pts[k][0], pts[k - 1][1], pts[k][1]])
+        ev.sort(key=lambda t: t[1]); vev.sort(key=lambda t: t[1])
+    except Exception as e:
+        print(f"  警告: 回復・週次の集計に失敗しました（{e}）")
+        rcv, ev, vev = [], [], []
+    data["rcv"] = rcv
+    data["ev"] = ev
+    data["vev"] = vev
+    data["vdates"] = vdates
+    data["since0"] = SINCE_EPOCH
 
     # ---- お知らせ掲示板（事実の提示） ----
     # 履歴から読み取れる「起きたこと」を、ジャンル別に文章化する。

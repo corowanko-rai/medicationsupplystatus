@@ -52,6 +52,179 @@ header{
   align-items:center;justify-content:center}
 .ptbadge.on{display:inline-flex}
 .ptab[aria-selected="true"] .ptbadge{background:rgba(255,255,255,.3)}
+/* タブが4つになったので、狭い端末でも1行に収まるよう詰める。
+   件数の印はタブの右上に重ねる（横に並べると「お知らせ」が2行に折れる）。 */
+.ptab{position:relative;white-space:nowrap;padding:6px 2px}
+.ptbadge{position:absolute;top:-5px;right:1px;min-width:18px;height:18px;padding:0 5px;
+  font-size:10.5px;box-shadow:0 0 0 2px var(--bg)}
+.ptab[aria-selected="true"] .ptbadge{background:#e8734a}
+@media (max-width:359px){.ptab{font-size:13px}}
+/* ---- マイ薬局 ---- */
+/* 店舗の印。色だけに頼らず、店舗名の頭文字を必ず入れる
+   （色の見分けにくい組み合わせがあっても店舗を取り違えないため）。 */
+.mym{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  min-width:20px;height:20px;padding:0 4px;border-radius:6px;font-size:11px;
+  font-weight:800;color:#fff;line-height:1;vertical-align:middle}
+.mym+.mym{margin-left:3px}
+.myms{display:inline-flex;margin-left:6px;vertical-align:middle}
+.mybar{display:none;gap:5px;margin-bottom:9px;overflow-x:auto;scrollbar-width:none}
+.mybar.on{display:flex}
+.mybar::-webkit-scrollbar{display:none}
+.myv{flex:1 0 auto;min-height:40px;padding:0 10px;border-radius:9px;font-size:12.5px;
+  font-weight:700;background:var(--surface);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit;white-space:nowrap;display:inline-flex;
+  align-items:center;justify-content:center;gap:5px}
+.myv[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+#my{position:fixed;inset:0;z-index:112;background:var(--bg);display:none;flex-direction:column}
+#my.on{display:flex}
+.mynote{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.7;color:var(--ink2);margin:6px 0 12px}
+.mystore{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:11px;margin-bottom:10px}
+.mysh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.mysh input{flex:1;min-width:0;height:44px;padding:0 10px;font-size:16px;font-weight:700;
+  font-family:inherit;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+  background:var(--surface)}
+.mysn{font-size:12px;color:var(--ink3);margin-bottom:8px}
+.mysrcl{display:block;font-size:11px;font-weight:700;color:var(--ink3);margin-bottom:8px}
+.mysrcl input{display:block;width:100%;height:44px;margin-top:3px;padding:0 10px;font-size:16px;
+  font-family:inherit;color:var(--ink);border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.mybtns{display:flex;flex-wrap:wrap;gap:6px}
+.myb{flex:1 1 auto;min-height:44px;padding:0 12px;border-radius:9px;font-size:12.5px;
+  font-weight:700;background:var(--surface2);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit}
+.myb.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.myb.dan{color:var(--stop)}
+.mycol{display:flex;gap:6px;margin:0 0 8px}
+.mycb{width:44px;height:44px;border-radius:9px;border:2px solid transparent;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:800;
+  font-size:13px;font-family:inherit;background-clip:padding-box}
+.mycb[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 2px var(--surface) inset}
+.myimp{margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.myimp textarea{width:100%;min-height:92px;padding:9px;font-size:16px;font-family:inherit;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
+.myres{margin-top:8px;font-size:12px;line-height:1.7;color:var(--ink2)}
+.myres b{color:var(--ink)}
+.myun{max-height:140px;overflow-y:auto;margin-top:5px;padding:7px 9px;background:var(--surface2);
+  border-radius:8px;font-size:11.5px;color:var(--ink2)}
+/* カードの中：採用の付け外し */
+.myt{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 11px;margin:0 6px 6px 0;
+  border-radius:9px;font-size:12.5px;font-weight:700;background:var(--surface2);
+  border:1px solid var(--line);color:var(--ink3);cursor:pointer;font-family:inherit}
+.myt[aria-pressed="true"]{background:var(--surface);border-color:var(--ink2);color:var(--ink)}
+.myt .mym{opacity:.35}
+.myt[aria-pressed="true"] .mym{opacity:1}
+/* ---- 切替余地（カードの中） ---- */
+.swbtn{display:block;width:100%;min-height:44px;margin:10px 0 0;border-radius:10px;
+  font-size:13px;font-weight:700;background:var(--surface2);border:1px solid var(--line);
+  color:var(--ink2);cursor:pointer;font-family:inherit}
+.swbox{margin-top:8px}
+.swt{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.swth{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:var(--ink)}
+.swtn{font-size:11px;font-weight:700;color:var(--ink3)}
+.swcnt{margin-left:auto;font-size:11px;font-weight:800;border-radius:99px;padding:1px 9px;
+  background:#e8f5ec;color:#1f6a45}
+.swcnt.zero{background:#fdecec;color:#a02c2c}
+.swhow{font-size:11px;color:var(--ink3);margin:3px 0 6px;line-height:1.6}
+.swi{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:7px 0;border-top:1px solid var(--line);
+  font-size:12.5px;cursor:pointer;min-height:40px}
+.swi .cmnm{font-weight:700;color:var(--ink)}
+/* 品名は1行目に全幅で。バッジと並べると、狭い画面で1文字ずつ折れてしまう */
+.swi .cmnm,.lowi .cmnm{order:-2;flex:1 1 100%;min-width:0;overflow-wrap:anywhere}
+.swi .myms,.lowi .myms{order:-1;margin-left:0}
+.swi .swmk{margin-left:auto;font-size:11px;color:var(--ink3)}
+.swmore{font-size:11.5px;color:var(--ink3);padding-top:6px;border-top:1px solid var(--line)}
+.swing{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line);
+  font-size:12.5px;cursor:pointer;min-height:40px}
+.swing b{color:var(--ink)}
+/* ---- 残りわずかの成分（お知らせ） ---- */
+.lowrow{background:var(--surface);border:1px solid var(--line);border-left:4px solid #c98a2b;
+  border-radius:10px;padding:9px 11px;margin-bottom:6px}
+.lowrow.zero{border-left-color:#a53b3b}
+.lowrow.mine{background:#fffaf0}
+.lowh{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--ink)}
+.lowg{font-size:11px;font-weight:700;color:var(--ink3);background:var(--surface2);border-radius:5px;padding:1px 7px}
+.lows{display:flex;flex-wrap:wrap;gap:5px;margin:5px 0 2px;font-size:11.5px}
+/* 未採用の印（店舗を選んでいるとき、候補の薬が採用薬でないことを示す） */
+.unad{order:-1;flex:0 0 auto;font-size:10.5px;font-weight:800;color:#8a3a12;background:#fde7d6;
+  border-radius:5px;padding:1px 6px}
+/* 採用薬以外も出しているときの帯（検索画面） */
+.mypeek{display:none;margin:0 12px 8px;padding:8px 11px;border-radius:10px;font-size:12px;line-height:1.6;
+  background:#fff6e5;border:1px solid #ecd9ae;color:var(--ink2)}
+.mypeek.on{display:block}
+.mypeek button{display:block;min-height:40px;margin-top:6px;padding:0 12px;border-radius:9px;font-size:12.5px;
+  font-weight:700;background:var(--surface);border:1px solid var(--line);color:var(--ink2);
+  cursor:pointer;font-family:inherit}
+/* 採用薬の切替候補 */
+.mswrow{background:var(--surface);border:1px solid var(--line);border-left:4px solid #c98a2b;
+  border-radius:10px;padding:4px 11px 8px;margin-bottom:6px}
+.mswrow.k0{border-left-color:#a53b3b}
+.mswrow.k1{border-left-color:#a53b3b}
+.mswrow.k3{border-left-color:#2f7a52}
+.mswrow .mswh{border-top:0}
+.mswrow .mswh .cmst{order:-1}
+.mswl{font-size:11.5px;color:var(--ink2);padding:5px 0 3px;border-top:1px solid var(--line)}
+/* 採用薬が関係するのに、残りの通常出荷品を採用していない成分の印 */
+.lowneed{font-size:11px;font-weight:800;color:#8a3a12;background:#fde7d6;border-radius:5px;padding:1px 7px}
+.lowi{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-height:40px;padding:6px 0;
+  border-top:1px solid var(--line);font-size:12.5px;cursor:pointer}
+.lowi .cmnm{font-weight:700}
+.lowi .swmk{margin-left:auto;font-size:11px;color:var(--ink3)}
+/* ---- 分析タブ ---- */
+#ana{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px);
+  content-visibility:auto;contain-intrinsic-size:0 1200px}
+#ana.on{display:block}
+.anacfg{margin-bottom:11px}
+.anah{font-size:11px;font-weight:800;color:var(--ink3);margin:0 0 5px}
+.anad{font-size:12px;line-height:1.7;color:var(--ink2);margin:0 0 9px}
+/* 図の約束：数値や見出しは文字色、色は印だけ。帯どうしは2pxの隙間で区切る。 */
+.lgd{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--ink2);margin:2px 0 8px}
+.lgd i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.c-ok{background:#cfd8e3}.c-lim{background:#1f9ea8}.c-stop{background:#c0398f}.c-one{background:#2563eb}
+.c-unk{background:#9aa9b8}
+.sbr{padding:7px 0;border-top:1px solid var(--line);cursor:pointer}
+.sbr:first-of-type{border-top:0}
+.sbl{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ink)}
+.sbl b{font-weight:700;min-width:0;overflow-wrap:anywhere}
+.sbl .sbn{margin-left:auto;flex:0 0 auto;font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.sbl .sbv{flex:0 0 auto;font-size:12px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.sbb{display:flex;gap:2px;height:14px;margin-top:4px}
+.sbb span{display:block;height:100%;min-width:2px}
+.sbb span:first-child{border-radius:4px 0 0 4px}
+.sbb span:last-child{border-radius:0 4px 4px 0}
+.sbb span:only-child{border-radius:4px}
+.sbd{display:none;font-size:11.5px;color:var(--ink2);margin-top:5px;line-height:1.6}
+.sbr.open .sbd{display:block}
+.hb{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;color:var(--ink2)}
+.hb .hbl{flex:0 0 96px;text-align:right;white-space:nowrap}
+.hb .hbt{flex:1;height:16px;display:flex;align-items:center}
+.hb .hbt span{display:block;height:16px;border-radius:0 4px 4px 0;min-width:2px}
+.hb .hbv{flex:0 0 auto;min-width:34px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.kpis{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.kpi{flex:1 1 90px;background:var(--surface2);border-radius:10px;padding:9px 10px}
+.kpi span{display:block;font-size:11px;color:var(--ink3)}
+.kpi b{display:block;font-size:19px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.3}
+.kpi small{font-size:11px;font-weight:700;color:var(--ink3)}
+.anat{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.anat th,.anat td{padding:6px 5px;border-top:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.anat th:first-child,.anat td:first-child{text-align:left}
+.anat th{font-size:11px;color:var(--ink3);font-weight:700}
+.tblbtn{min-height:40px;padding:0 12px;margin-top:8px;border-radius:9px;font-size:12px;font-weight:700;
+  background:var(--surface2);border:1px solid var(--line);color:var(--ink2);cursor:pointer;font-family:inherit}
+.wkh{font-size:12.5px;font-weight:800;color:var(--ink);margin:12px 0 5px;display:flex;align-items:center;gap:7px}
+.wkh .vtgn{font-size:11px}
+.wkact{display:flex;gap:6px;margin-top:10px}
+.wkact button{flex:1}
+.wknone{font-size:12px;color:var(--ink3);padding:2px 0 4px}
+/* 週次レポートの印刷：レポートだけを紙に出す */
+@media print{
+  body.printwk>*{display:none!important}
+  body.printwk>#ana{display:block!important;padding:0}
+  body.printwk #ana .bdsec:not(#wksec),body.printwk .anacfg,body.printwk #wkper,
+  body.printwk .wkact{display:none!important}
+  body.printwk #wksec{border:0;box-shadow:none;padding:0}
+  body.printwk .chgrow{break-inside:avoid}
+}
 /* ---- お知らせ掲示板 ---- */
 /* ---- 計算ページ ---- */
 #calc{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
@@ -208,6 +381,9 @@ header{
 .chgday{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#2f7a52;
   background:#e8f5ec;border-radius:5px;padding:2px 7px}
 #vtlist .chgday{font-weight:600;color:var(--ink3);background:none;padding:2px 0}
+#lowlist .chgday,#wkbody .chgday{font-weight:600;color:var(--ink3);background:none;padding:2px 0}
+/* 通常出荷に戻るまでにかかった日数。日付より控えめに */
+.chgtook{flex:0 0 auto;font-size:11px;font-weight:600;color:var(--ink3)}
 /* 出荷量の動き：まとめ行（同じメーカー・同じ分類・同じ動き）。
    個々の品目の行と見分けがつくよう、背景を一段沈め、件数を目立たせる。 */
 .vtgrp,.vtfold{display:block;width:100%;text-align:left;font-family:inherit;
@@ -901,7 +1077,7 @@ header{
   display:flex;align-items:flex-start;gap:10px;box-shadow:0 1px 3px rgba(16,32,48,.05)}
 .ovh h2{margin:0;font-size:15.5px;font-weight:800;line-height:1.45;flex:1;word-break:break-word}
 .ovh .sc{display:block;font-size:11.5px;color:var(--ink3);font-weight:600;margin-top:3px}
-#ovx{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);
+#ovx,#myx{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);
   background:var(--surface);color:var(--ink2);font-size:19px;cursor:pointer;line-height:1}
 .ovb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:10px 12px calc(env(safe-area-inset-bottom) + 26px)}
@@ -983,7 +1159,11 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="ptab" role="tab" data-p="board" aria-selected="false">
       お知らせ<span class="ptbadge" id="ptbadge"></span></button>
     <button class="ptab" role="tab" data-p="calc" aria-selected="false">計算</button>
+    <button class="ptab" role="tab" data-p="ana" aria-selected="false">分析</button>
   </div>
+  <!-- マイ薬局：店舗が2つ以上あるときだけ出る切り替え。
+       採用薬の一覧はこの端末の中だけにあり、ページには含まれない。 -->
+  <div class="mybar" id="mybar"></div>
   <div id="searchui">
   <div class="smode" id="smode">
     <button class="sm" data-m="n" aria-pressed="true">品名</button>
@@ -1045,6 +1225,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
   </div>
 </header>
 <div class="nochg" id="nochg"></div>
+<div class="mypeek" id="mypeek"></div>
 <div class="count">
   <span id="cnt">読み込み中…</span>
   <button class="ordbtn" id="ordbtn" data-o="std">並び順</button>
@@ -1083,6 +1264,56 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <div class="cares" id="cares"></div>
   </div>
 </div>
+<div id="ana">
+  <div class="bdwrap">
+    <div class="anacfg">
+      <div class="anah">剤形（お知らせタブの設定と共通）</div>
+      <div class="kwrap" id="anak">
+        <button class="kb2" data-ak="0" aria-pressed="true">内用薬</button>
+        <button class="kb2" data-ak="1" aria-pressed="true">外用薬</button>
+        <button class="kb2" data-ak="2" aria-pressed="false">注射薬</button>
+      </div>
+    </div>
+    <section class="bdsec" id="wksec">
+      <div class="bdhd">
+        <h2>週次レポート</h2>
+        <span class="bdcnt" id="wkcnt"></span>
+      </div>
+      <div class="chgtabs" id="wkper">
+        <button class="chgs" data-p="7" aria-pressed="true">直近7日</button>
+        <button class="chgs" data-p="14" aria-pressed="false">その前の7日</button>
+        <button class="chgs" data-p="30" aria-pressed="false">直近30日</button>
+      </div>
+      <div id="wkbody"></div>
+      <div class="wkact">
+        <button class="myb" id="wkprint">印刷する</button>
+        <button class="myb" id="wkcopy">文章をコピー</button>
+      </div>
+    </section>
+    <section class="bdsec" id="rcsec">
+      <div class="bdhd">
+        <h2>回復までの日数</h2>
+        <span class="bdcnt" id="rccnt"></span>
+      </div>
+      <div id="rcbody"></div>
+    </section>
+    <section class="bdsec" id="stsec">
+      <div class="bdhd">
+        <h2>供給不足の構造</h2>
+        <span class="bdcnt" id="stcnt"></span>
+      </div>
+      <div class="chgtabs" id="stdim">
+        <button class="chgs" data-d="price" aria-pressed="true">薬価</button>
+        <button class="chgs" data-d="pc" aria-pressed="false">製品区分</button>
+        <button class="chgs" data-d="fm" aria-pressed="false">剤形</button>
+        <button class="chgs" data-d="kb" aria-pressed="false">基礎的医薬品</button>
+        <button class="chgs" data-d="mk" aria-pressed="false">メーカー</button>
+        <button class="chgs" data-d="cls" aria-pressed="false">薬効分類</button>
+      </div>
+      <div id="stbody"></div>
+    </section>
+  </div>
+</div>
 <div id="board">
   <div class="bdwrap">
     <!-- 通常出荷に戻った薬。掲示板が悪い知らせばかりなので、
@@ -1092,7 +1323,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
       <details class="cfg" id="cfg">
         <summary>表示の設定（剤形・生薬漢方・割合・まとめ）</summary>
         <div class="cfgin">
-          <div class="cfglb">剤形<span class="cfgnote">この下の3つすべてに効きます</span></div>
+          <div class="cfglb">剤形<span class="cfgnote">この下の一覧すべてに効きます</span></div>
           <div class="kwrap" id="bdk">
             <button class="kb2" data-k="0" aria-pressed="true">内用薬</button>
             <button class="kb2" data-k="1" aria-pressed="true">外用薬</button>
@@ -1132,6 +1363,32 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
           <div class="cfghint">同じメーカー・同じ薬効分類で、同じ動きをした品目がこの件数以上あれば1行にまとめます（タップで開きます）。</div>
         </div>
       </details>
+    <!-- 残りわずかの成分。限定出荷・供給停止が広がり、通常出荷の品目が
+         1〜2つしか残っていない成分を、残っている品名つきで先に知らせる。
+         （実例：セファレキシンの小児用で通常出荷はラリキシンDSだけ、を事前に知る） -->
+    <!-- 採用薬の切替候補。マイ薬局で店舗を選んでいるときだけ出る。 -->
+    <section class="bdsec" id="mswsec" hidden>
+      <div class="bdhd">
+        <h2>採用薬の切替候補</h2>
+        <span class="bdcnt" id="mswcnt"></span>
+      </div>
+      <div class="chgtabs" id="mswsub">
+        <button class="chgs" data-v="2" aria-pressed="true">供給停止</button>
+        <button class="chgs" data-v="1" aria-pressed="false">限定出荷</button>
+      </div>
+      <div class="bdscroll" id="mswlist"></div>
+    </section>
+    <section class="bdsec" id="lowsec">
+      <div class="bdhd">
+        <h2>残りわずかの成分</h2>
+        <span class="bdcnt" id="lowcnt"></span>
+      </div>
+      <div class="chgtabs" id="lowsub">
+        <button class="chgs" data-v="few" aria-pressed="true">残り1〜2品目</button>
+        <button class="chgs" data-v="zero" aria-pressed="false">通常出荷なし</button>
+      </div>
+      <div class="bdscroll" id="lowlist"></div>
+    </section>
     <!-- 出荷量の傾向と、新たに薬価削除予定になった品目。
          出荷対応だけを見ていると気づけない動きをここに集める。 -->
     <section class="bdsec" id="vtsec">
@@ -1269,6 +1526,14 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="sortb" data-k="注射薬" aria-pressed="false">注射薬</button>
   </div>
   <div class="lgb" id="rvbody"></div>
+</div>
+<div id="my" role="dialog" aria-modal="true" aria-labelledby="myt">
+  <div class="ovh">
+    <h2 id="myt">マイ薬局</h2>
+    <button id="myx" aria-label="閉じる">×</button>
+  </div>
+  <div class="lgb" id="mybody"></div>
+  <input type="file" id="myfile" accept=".json,.csv,.tsv,.txt,application/json,text/csv,text/plain" hidden>
 </div>
 <div id="lg" role="dialog" aria-modal="true" aria-labelledby="lgt">
   <div class="ovh">

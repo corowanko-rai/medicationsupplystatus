@@ -49,6 +49,10 @@ DOC_TERMS = [
     "経過措置",       # 使用期限
     "販売中止",       # 手動登録
     "規制区分",       # 毒・劇・麻などのバッジ（regulation.json）
+    "生薬・漢方",     # 出荷量の動きの折りたたみ・除外
+    "切替余地",       # カードの切替余地／残りわずかの成分
+    "回復までの日数", # 分析タブ
+    "マイ薬局",       # 採用薬（端末内保存）
 ]
 
 GOOD_TYPES = {"clear", "uncross", "fall", "up"}
@@ -565,6 +569,552 @@ def check_device(browser, p, name, url):
         fails.append("出荷量の傾向に履歴2点未満の行が %d件ある" % vt["noseq"])
     if vt["deldup"]:
         fails.append("薬価削除予定が傾向に混じっている（%d件）" % vt["deldup"])
+
+    # 出荷量の動き：並び・まとめ・生薬漢方の折りたたみ・設定。
+    # 期待値は画面の関数を使わず、DATA と行データから独立に作る
+    # （画面と同じ関数で期待値を作ると、分岐の誤りを見逃すため）。
+    VT_EXPECT = r"""(T) => {
+      const KAN={'漢方製剤':1,'生薬':2,'その他の生薬及び漢方処方に基づく医薬品':2};
+      const KI={'内用薬':0,'外用薬':1,'注射薬':2};
+      const on=new Set([0,1]);
+      const kan=(r)=>KAN[D.cls[r[6]]]||0;
+      const all=[...(DATA.voltrend||[]), ...(DATA.newdel||[])]
+        .filter(x=>{const r=R[x.i]; return r && on.has(KI[D.k[r[5]]]);});
+      const sec=[[],[],[]]; all.forEach(x=>sec[kan(R[x.i])].push(x));
+      const grp=(items)=>{const m={}; items.forEach(x=>{
+          const r=R[x.i]; const mv = x.from!==undefined ? 'd'+x.from : x.p+x.a+x.b;
+          const k=r[2]+'_'+r[6]+'_'+mv; m[k]=(m[k]||0)+1;});
+        const big=Object.values(m).filter(n=>n>=T);
+        return {groups:big.length, grouped:big.reduce((a,b)=>a+b,0)};};
+      return {n:all.length, s0:sec[0].length, s1:sec[1].length, s2:sec[2].length,
+              g0:grp(sec[0]), g2:grp(sec[2]),
+              s0sc: sec[0].map(x=>R[x.i][8])};
+    }"""
+    VT_SHOWN = r"""() => {
+      const box=document.getElementById('vtlist');
+      const top=[...box.children];
+      const iFold=top.findIndex(e=>e.classList.contains('vtfold'));
+      const head= iFold<0 ? top : top.slice(0,iFold);
+      const KAN={'漢方製剤':1,'生薬':2,'その他の生薬及び漢方処方に基づく医薬品':2};
+      const byName={}; R.forEach(r=>{byName[r[0]]=r;});
+      const rows=head.filter(e=>e.classList.contains('chgrow'))
+        .map(e=>byName[e.dataset.nm]).filter(Boolean);
+      return {
+        folds: top.filter(e=>e.classList.contains('vtfold')).map(e=>+e.dataset.f),
+        open: box.querySelectorAll('.vtfbody').length,
+        headGrp: head.filter(e=>e.classList.contains('vtgrp')).length,
+        headKan: rows.filter(r=>KAN[D.cls[r[6]]]).length,
+        headSc: rows.map(r=>r[8]),
+        anyGrp: box.querySelectorAll('.vtgrp').length,
+      };
+    }"""
+    pg.click('.ptab[data-p="board"]')
+    pg.wait_for_timeout(400)
+    exp = pg.evaluate(VT_EXPECT, 5)
+    got = pg.evaluate(VT_SHOWN)
+    if got["headKan"]:
+        fails.append("出荷量の動き：生薬・漢方が折りたたみの外に %d件出ている" % got["headKan"])
+    if got["headSc"] != sorted(got["headSc"], reverse=True):
+        fails.append("出荷量の動き：出荷対応の悪い順に並んでいない（%s）" % got["headSc"][:12])
+    want_f = [k for k, n in ((1, exp["s1"]), (2, exp["s2"])) if n]
+    if got["folds"] != want_f:
+        fails.append("出荷量の動き：折りたたみが %s（期待 %s：漢方製剤→生薬）" % (got["folds"], want_f))
+    if got["open"]:
+        fails.append("出荷量の動き：生薬・漢方の折りたたみが最初から開いている")
+    if got["headGrp"] != exp["g0"]["groups"]:
+        fails.append("出荷量の動き：生薬・漢方以外のまとめが %d行（期待 %d）"
+                     % (got["headGrp"], exp["g0"]["groups"]))
+    # 生薬を開き、まとめの行数と品目数を確かめる
+    if exp["s2"]:
+        pg.click('.vtfold[data-f="2"]')
+        pg.wait_for_timeout(300)
+        g2 = pg.evaluate("""() => {
+          const b=document.querySelector('#vtlist .vtfbody');
+          if(!b) return null;
+          const gs=[...b.querySelectorAll(':scope > .vtgrp')];
+          return {groups: gs.length,
+                  grouped: gs.reduce((n,e)=>n+parseInt(e.querySelector('.vtgn').textContent),0),
+                  singles: b.querySelectorAll(':scope > .chgrow').length};
+        }""")
+        if not g2:
+            fails.append("出荷量の動き：生薬の折りたたみが開かない")
+        else:
+            if g2["groups"] != exp["g2"]["groups"] or g2["grouped"] != exp["g2"]["grouped"]:
+                fails.append("出荷量の動き：生薬のまとめが %d行・%d品目（期待 %d行・%d品目）"
+                             % (g2["groups"], g2["grouped"],
+                                exp["g2"]["groups"], exp["g2"]["grouped"]))
+            if g2["grouped"] + g2["singles"] != exp["s2"]:
+                fails.append("出荷量の動き：生薬の品目数が合わない（%d＋%d≠%d）"
+                             % (g2["grouped"], g2["singles"], exp["s2"]))
+            # まとめを開くと中身が出ること
+            if g2["groups"]:
+                pg.locator('#vtlist .vtfbody > .vtgrp').first.click()
+                pg.wait_for_timeout(250)
+                if not pg.locator('#vtlist .vtgbody .chgrow').count():
+                    fails.append("出荷量の動き：まとめを開いても中身が出ない")
+        if ovf() != 0:
+            fails.append(f"出荷量の動きを開いて横溢れ {ovf()}px")
+    # まとめる件数の設定：99なら1つもまとめない／2なら2件以上をまとめる
+    pg.evaluate("document.getElementById('cfg').open=true")
+    pg.wait_for_timeout(200)
+    for T in (99, 2):
+        pg.fill("#vtgm", str(T))
+        pg.dispatch_event("#vtgm", "change")
+        pg.wait_for_timeout(300)
+        e2 = pg.evaluate(VT_EXPECT, T)
+        shown = pg.evaluate(VT_SHOWN)
+        if T == 99 and shown["anyGrp"]:
+            fails.append("まとめる件数を99にしてもまとめ行が残る")
+        if T == 2 and shown["headGrp"] != e2["g0"]["groups"]:
+            fails.append("まとめる件数2で、まとめ行が %d（期待 %d）"
+                         % (shown["headGrp"], e2["g0"]["groups"]))
+    saved = pg.evaluate("() => { try { return localStorage.getItem('vtGroupMin'); } catch(e) { return 'x'; } }")
+    if saved not in ("2", "x"):
+        fails.append("まとめる件数が端末に保存されていない（%s）" % saved)
+    pg.click("#vtgmup")                        # 2 → 3
+    pg.wait_for_timeout(250)
+    if pg.input_value("#vtgm") != "3":
+        fails.append("まとめる件数の＋ボタンが効かない（%s）" % pg.input_value("#vtgm"))
+    pg.fill("#vtgm", "1")                      # 下限未満は2に寄せる
+    pg.dispatch_event("#vtgm", "change")
+    pg.wait_for_timeout(250)
+    if pg.input_value("#vtgm") != "2":
+        fails.append("まとめる件数が下限2未満を受け付けた（%s）" % pg.input_value("#vtgm"))
+    pg.fill("#vtgm", "5")                      # 既定に戻す
+    pg.dispatch_event("#vtgm", "change")
+    pg.wait_for_timeout(250)
+    # 設定欄の操作要素が押しやすく、枠からはみ出していないこと
+    cfg = pg.evaluate(f"""() => {{
+      const c=document.querySelector('#cfg .cfgin').getBoundingClientRect();
+      const out=[], small=[];
+      document.querySelectorAll('#cfg .cfgin *').forEach(el=>{{
+        const r=el.getBoundingClientRect();
+        if(r.width>0 && r.right>c.right+1) out.push(el.id||el.className||el.tagName);
+      }});
+      document.querySelectorAll('.gmb,#vtgm,#bdkan .kb2,.vtfold,.vtgrp').forEach(el=>{{
+        const r=el.getBoundingClientRect();
+        if(r.width>0 && r.height<{MIN_TAP}) small.push((el.id||el.className)+' h='+Math.round(r.height));
+      }});
+      return {{out:[...new Set(out)], small:[...new Set(small)]}};
+    }}""")
+    if cfg["out"]:
+        fails.append("表示の設定で枠からはみ出す要素：%s" % "／".join(cfg["out"][:4]))
+    if cfg["small"]:
+        fails.append("出荷量の動き・設定のタップ領域が小さい：%s" % "／".join(cfg["small"][:4]))
+    # 生薬・漢方を一覧から除く
+    before_news = pg.inner_text("#nwcnt")
+    pg.click('#bdkan .kb2[data-v="1"]')
+    pg.wait_for_timeout(450)
+    ex = pg.evaluate(r"""() => {
+      const KAN={'漢方製剤':1,'生薬':2,'その他の生薬及び漢方処方に基づく医薬品':2};
+      const byName={}; R.forEach(r=>{byName[r[0]]=r;});
+      const kanRows=(sel)=>[...document.querySelectorAll(sel)]
+        .map(e=>byName[e.dataset.nm]).filter(r=>r && KAN[D.cls[r[6]]]).length;
+      /* 成分単位：その成分の品目がすべて生薬・漢方なら除かれているはず */
+      const all=new Map();
+      R.forEach(r=>{const k=KAN[D.cls[r[6]]]?1:0, p=all.get(r[1]);
+        all.set(r[1], p===undefined?k:(p&k));});
+      const kanIng=new Set([...all].filter(([i,v])=>v).map(([i])=>i));
+      return {
+        vtFold: document.querySelectorAll('#vtlist .vtfold').length,
+        vtKan: kanRows('#vtlist .chgrow'),
+        chgKan: kanRows('#chglist .chgrow'),
+        bdKan: [...document.querySelectorAll('#bdlist .bdrow')]
+          .filter(e=>kanIng.has(+e.dataset.ing)).length,
+        saved: (()=>{ try { return localStorage.getItem('bdNoKan'); } catch(e) { return 'x'; } })(),
+      };
+    }""")
+    if ex["vtFold"] or ex["vtKan"] or ex["chgKan"] or ex["bdKan"]:
+        fails.append("生薬・漢方を除いても残っている（動き%d・折りたたみ%d・通常出荷に戻った%d・逼迫%d）"
+                     % (ex["vtKan"], ex["vtFold"], ex["chgKan"], ex["bdKan"]))
+    if ex["saved"] not in ("1", "x"):
+        fails.append("生薬・漢方を除く設定が端末に保存されていない")
+    pg.click('#bdkan .kb2[data-v="0"]')        # 元に戻す
+    pg.wait_for_timeout(450)
+    if pg.inner_text("#nwcnt") != before_news:
+        fails.append("生薬・漢方を含めに戻しても、お知らせの件数が戻らない")
+    if pg.locator('#vtlist .vtfold').count() != len(want_f):
+        fails.append("生薬・漢方を含めに戻しても、折りたたみが戻らない")
+    pg.evaluate("document.getElementById('cfg').open=false")
+    pg.wait_for_timeout(150)
+
+    # ===== v45：残りわずかの成分／切替余地／マイ薬局／分析タブ =====
+    # 期待値は画面の関数を使わず、行データから独立に数える。
+    GRP_JS = r"""
+      const POWD=new Set(['散','細粒','顆粒','ドライシロップ','シロップ','内用液']);
+      const SOLID=new Set(['錠','OD錠','カプセル','チュアブル']);
+      const grpOf=(r)=>{ const k=D.k[r[5]], f=D.fm[r[23]]||'';
+        if(k==='内用薬') return POWD.has(f)?'粉・液':SOLID.has(f)?'錠・カプセル':'その他';
+        if(k==='外用薬') return f||'その他'; return '注射'; };
+    """
+    # タブが4つになっても1行に収まり、文字が切れていないこと
+    tabs = pg.evaluate("""() => [...document.querySelectorAll('.ptab')].map(b => ({
+        t: b.dataset.p, h: Math.round(b.getBoundingClientRect().height),
+        cut: b.scrollWidth > b.clientWidth + 1}))""")
+    if len(tabs) != 4:
+        fails.append("画面のタブが %d個（期待 4）" % len(tabs))
+    if any(t["cut"] for t in tabs) or len({t["h"] for t in tabs}) != 1 or tabs[0]["h"] > 52:
+        fails.append("タブが1行に収まっていない（%s）" % tabs)
+
+    # 残りわずかの成分：件数が独立に数えた値と合うこと
+    pg.click('.ptab[data-p="board"]')
+    pg.wait_for_timeout(450)
+    low = pg.evaluate("() => {" + GRP_JS + r"""
+      const KAN={'漢方製剤':1,'生薬':2,'その他の生薬及び漢方処方に基づく医薬品':2};
+      const g=new Map();
+      R.forEach(r=>{ if(!r[4]||r[4].length!==12) return;
+        const k=D.k[r[5]]; if(k!=='内用薬'&&k!=='外用薬') return;
+        const key=r[1]+'|'+k+'|'+grpOf(r);
+        let v=g.get(key); if(!v){ v={n:0,ok:0}; g.set(key,v); }
+        v.n++; if(r[8]===0) v.ok++; });
+      let few=0, zero=0;
+      g.forEach(v=>{ if(v.n>=3&&v.ok>=1&&v.ok<=2&&(v.n-v.ok)/v.n>=0.6) few++;
+                     else if(v.n>=2&&v.ok===0) zero++; });
+      const lab=[...document.querySelectorAll('#lowsub .chgs')].map(b=>b.textContent);
+      return {few, zero, lab, rows: document.querySelectorAll('#lowlist .lowrow').length};
+    }""")
+    want_lab = ["残り1〜2品目（%d）" % low["few"], "通常出荷なし（%d）" % low["zero"]]
+    if low["lab"] != want_lab:
+        fails.append("残りわずかの成分の件数が合わない（表示 %s / 期待 %s）" % (low["lab"], want_lab))
+    if low["rows"] != min(low["few"], 200):
+        fails.append("残りわずかの成分の行数が %d（期待 %d）" % (low["rows"], min(low["few"], 200)))
+    if low["zero"]:
+        pg.click('#lowsub .chgs[data-v="zero"]')
+        pg.wait_for_timeout(250)
+        if pg.locator('#lowlist .lowrow.zero').count() != min(low["zero"], 200):
+            fails.append("「通常出荷なし」の行数が合わない")
+        pg.click('#lowsub .chgs[data-v="few"]')
+        pg.wait_for_timeout(200)
+    if ovf() != 0:
+        fails.append(f"残りわずかの成分で横溢れ {ovf()}px")
+
+    # 切替余地：限定出荷・供給停止の品目を1つ選び、①②の件数が独立計算と合うこと
+    pg.click('.ptab[data-p="search"]')
+    pg.wait_for_timeout(350)
+    pg.click('.sm[data-m="n"]')
+    pg.wait_for_timeout(250)
+    sw = pg.evaluate("() => {" + GRP_JS + r"""
+      const pick = R.find(r=>r[4]==='6132002R1141'&&r[8]>0) ||
+                   R.find(r=>r[8]>0&&r[4]&&r[4].length===12&&D.k[r[5]]==='内用薬');
+      if(!pick) return null;
+      const k=D.k[pick[5]], g=grpOf(pick), y9=pick[4].slice(0,9);
+      const same=R.filter(r=>r[4]&&r[4].length===12&&r[1]===pick[1]&&D.k[r[5]]===k);
+      const t1=R.filter(r=>r!==pick&&r[4]&&r[4].length===12&&r[4].slice(0,9)===y9);
+      const t2=same.filter(r=>r[4].slice(0,9)!==y9&&grpOf(r)===g);
+      const t2b=same.filter(r=>grpOf(r)!==g);
+      const f=(a)=>a.length?`通常出荷 ${a.filter(r=>r[8]===0).length}／全${a.length}`:null;
+      return {name: pick[0], want:[f(t1),f(t2),f(t2b)].filter(Boolean),
+              ok1: t1.filter(r=>r[8]===0).map(r=>r[0]).sort()};
+    }""")
+    if sw:
+        pg.fill("#q", sw["name"])
+        pg.wait_for_timeout(450)
+        card = pg.locator(".card").first
+        card.click()
+        pg.wait_for_timeout(200)
+        if card.locator(".swbtn").count() != 1:
+            fails.append("カードに切替余地のボタンが無い")
+        else:
+            card.locator(".swbtn").click()
+            pg.wait_for_timeout(250)
+            got = card.locator(".swt .swcnt").all_inner_texts()
+            if got[:len(sw["want"])] != sw["want"]:
+                fails.append("切替余地の件数が合わない（表示 %s / 期待 %s）" % (got, sw["want"]))
+            if "open" not in (card.get_attribute("class") or ""):
+                fails.append("切替余地を押すとカードが閉じてしまう")
+            shown1 = sorted(card.locator(".swt").first.locator(".swi .cmnm").all_inner_texts()) if sw["ok1"] else []
+            if sw["ok1"] and shown1 != sw["ok1"][:6] and len(sw["ok1"]) <= 6:
+                fails.append("切替余地①の品名が合わない（%s / 期待 %s）" % (shown1, sw["ok1"]))
+            if ovf() != 0:
+                fails.append(f"切替余地を開いて横溢れ {ovf()}px")
+            cut = pg.evaluate("""() => [...document.querySelectorAll('.swi .cmnm')]
+                .filter(e => e.getBoundingClientRect().width < 90).length""")
+            if cut:
+                fails.append("切替余地の品名が細く折れている（%d件）" % cut)
+        pg.fill("#q", "")
+        pg.wait_for_timeout(250)
+
+    # マイ薬局：店舗の作成・一覧の読み込み・絞り込み・切り替え・書き出し/読み込み
+    pg.evaluate("() => { try { localStorage.removeItem('myph'); localStorage.removeItem('myOnly'); } catch(e) {} }")
+    pg.reload()
+    pg.wait_for_timeout(2600)
+    if pg.locator('#mybar.on').count() != 0:
+        fails.append("店舗が無いのに店舗の切り替えが出ている")
+    pg.click('.chip.myset')
+    pg.wait_for_timeout(300)
+    pg.click('#myadd'); pg.wait_for_timeout(150)
+    pg.click('#myadd'); pg.wait_for_timeout(150)
+    for i, nm in enumerate(("本店", "駅前店")):
+        inp = pg.locator('.mystore').nth(i).locator('.myname')
+        inp.fill(nm); inp.dispatch_event('change'); pg.wait_for_timeout(150)
+    yjs = pg.evaluate("""() => {
+      const a=R.filter(r=>r[4]&&r[4].length===12&&r[8]===0).slice(0,2).map(r=>r[4]);
+      const b=R.filter(r=>r[4]&&r[4].length===12&&r[8]>0).slice(0,2).map(r=>r[4]);
+      const nm=R.find(r=>r[8]===0&&R.filter(x=>x[0]===r[0]).length===1&&!a.includes(r[4]));
+      return {a, b, nm:[nm[0], nm[4]]};
+    }""")
+    pg.locator('.mystore').nth(0).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    pg.fill('.mytxt', "品名,コード\n,%s\n%s\n%s\n存在しない薬ＸＹＺ\n%s" % (
+        yjs["a"][0], yjs["b"][0], yjs["nm"][0], yjs["a"][1].lower()))
+    pg.locator('.mystore').nth(0).locator('[data-act="rep"]').click(); pg.wait_for_timeout(250)
+    # レセコンのCSV（シフトJIS・見出しより上に出力条件の行・在庫0の行つき）を読めること
+    csv_path = "/tmp/_dc_list.csv"
+    with open(csv_path, "w", encoding="cp932", newline="") as f:
+        f.write("店舗名：,検査用薬局,,\r\n日付：,2026/10/ 4,,\r\n")
+        f.write("管理区分,YJコード,薬品名,論理在庫\r\n")
+        f.write("調剤,%s,何かの薬,12\r\n" % yjs["a"][0])
+        f.write("調剤,%s,何かの薬,0\r\n" % yjs["b"][0])
+        f.write('調剤,,"%s",3\r\n' % yjs["nm"][0])
+        f.write("調剤,9999999X9999,一覧に無い薬,5\r\n調剤,,ペンニードル,1\r\n")
+    pg.click('#myadd'); pg.wait_for_timeout(150)
+    pg.locator('.mystore').nth(2).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    with pg.expect_file_chooser() as fc:
+        pg.locator('.mystore').nth(2).locator('[data-act="file"]').click()
+    fc.value.set_files(csv_path); pg.wait_for_timeout(500)
+    pv = pg.inner_text('#mypv')
+    if "3品目" not in pv or "検査用薬局" not in pv or "2件" not in pv:
+        fails.append("レセコンCSVの読み取りが合わない（%s）" % pv[:70])
+    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click(); pg.wait_for_timeout(200)
+    pg.locator('.mystore').nth(2).locator('[data-act="rep"]').click(); pg.wait_for_timeout(300)
+    s3 = pg.evaluate("() => [MY.stores[2].name, MY.stores[2].src, MY.stores[2].items.slice().sort()]")
+    if s3 != ["店舗3", "検査用薬局", sorted([yjs["a"][0], yjs["nm"][1]])]:
+        fails.append("レセコンCSV（在庫0を除く）の登録が合わない（%s）" % s3)
+    # 表示名を付け直しても、CSVの店舗名から同じ店舗だと自動で見分けること
+    inp = pg.locator('.mystore').nth(2).locator('.myname')
+    inp.fill("古淵店"); inp.dispatch_event('change'); pg.wait_for_timeout(200)
+    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click() if pg.locator('.mystore').nth(2).locator('[data-act="zero"]').count() else None
+    with pg.expect_file_chooser() as fc:
+        pg.click('#mycsv')
+    fc.value.set_files(csv_path); pg.wait_for_timeout(500)
+    au = pg.inner_text('#myauto') if pg.locator('#myauto').count() else ""
+    if "検査用薬局" not in au or "古淵店" not in au:
+        fails.append("CSVの店舗名から店舗を自動で見分けていない（%s）" % au[:60])
+    else:
+        if pg.locator('#myauto [data-auto="zero"]').inner_text().startswith("✓"):
+            pg.click('#myauto [data-auto="zero"]'); pg.wait_for_timeout(250)
+        pg.click('#myauto [data-auto="rep"]'); pg.wait_for_timeout(350)
+        s4 = pg.evaluate("() => [MY.stores.length, MY.stores[2].name, MY.stores[2].items.length, MYLAB[2]]")
+        if s4 != [3, "古淵店", 3, "古"]:   # 印は頭文字の「古」
+            fails.append("自動判別での読み込み結果が合わない（%s）" % s4)
+    if ovf() != 0:
+        fails.append(f"CSVの自動判別で横溢れ {ovf()}px")
+    if "何かの薬" in pg.inner_text('#mymsg') or "文字化け" in pg.inner_text('#mymsg'):
+        fails.append("レセコンCSVの結果表示がおかしい")
+    pg.locator('.mystore').nth(2).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click(); pg.wait_for_timeout(150)  # 既定に戻す
+    for _ in range(2):   # 検査用の店舗を消す（2回押しで削除）
+        pg.locator('.mystore').nth(2).locator('[data-act="del"]').click(); pg.wait_for_timeout(200)
+    if pg.evaluate("() => MY.stores.length") != 2:
+        fails.append("店舗の削除（2回押し）が効かない")
+    pg.locator('.mystore').nth(1).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    pg.fill('.mytxt', "%s\n%s" % (yjs["b"][0], yjs["b"][1]))
+    pg.locator('.mystore').nth(1).locator('[data-act="add"]').click(); pg.wait_for_timeout(250)
+    st = pg.evaluate("() => MY.stores.map(s => [s.name, s.items.slice().sort()])")
+    want0 = sorted([yjs["a"][0], yjs["b"][0], yjs["nm"][1], yjs["a"][1]])
+    if len(st) != 2 or st[0][1] != want0 or st[1][1] != sorted(yjs["b"]):
+        fails.append("マイ薬局の一覧読み込みが合わない（%s）" % [[x[0], len(x[1])] for x in st])
+    small = pg.evaluate(f"""() => [...document.querySelectorAll('#my .myb,#my .mycb,#my .myname,#myx')]
+        .filter(e => e.getBoundingClientRect().height>0 && e.getBoundingClientRect().height < {MIN_TAP})
+        .map(e => e.className||e.id)""")
+    if small:
+        fails.append("マイ薬局の設定でタップ領域が小さい：%s" % "／".join(sorted(set(small))[:3]))
+    if ovf() != 0:
+        fails.append(f"マイ薬局の設定で横溢れ {ovf()}px")
+    exp_all = exp_one = None
+    try:
+        with pg.expect_download(timeout=8000) as dl:
+            pg.click('#myall')
+        exp_all = "/tmp/_dc_all.json"; dl.value.save_as(exp_all)
+        with pg.expect_download(timeout=8000) as dl:
+            pg.locator('.mystore').nth(1).locator('[data-act="exp"]').click()
+        exp_one = "/tmp/_dc_one.json"; dl.value.save_as(exp_one)
+    except Exception as e:
+        fails.append("設定ファイルの書き出しに失敗：%s" % str(e)[:50])
+    if exp_one:
+        import json as _json
+        one = _json.load(open(exp_one, encoding="utf-8"))
+        if [x["name"] for x in one.get("stores", [])] != ["駅前店"]:
+            fails.append("店舗別の書き出しに、ほかの店舗が混じっている")
+        if len(_json.load(open(exp_all, encoding="utf-8")).get("stores", [])) != 2:
+            fails.append("全店舗の書き出しが2店舗になっていない")
+    pg.click('#myx'); pg.wait_for_timeout(400)
+    # 切り替えは「すべての薬・全店舗・本店・駅前店」。手で作った直後は「すべての薬」のまま
+    if pg.locator('#mybar.on .myv').all_inner_texts()[:2] != ["すべての薬", "全店舗"] or \
+            pg.locator('#mybar.on .myv').count() != 4:
+        fails.append("店舗の切り替え（すべての薬・全店舗・各店舗）が出ていない")
+    total_all = pg.evaluate("() => R.length")
+    if num(pg.inner_text("#cnt")) != total_all:
+        fails.append("「すべての薬」なのに件数が絞られている（%s）" % pg.inner_text("#cnt"))
+    pg.locator('#mybar .myv').nth(1).click(); pg.wait_for_timeout(450)       # 全店舗
+    if num(pg.inner_text("#cnt")) != 5:
+        fails.append("全店舗を選んでも採用薬5件にならない（%s）" % pg.inner_text("#cnt"))
+    both = pg.evaluate("""(y) => { const c=[...document.querySelectorAll('.card')]
+        .find(e => ((e.querySelector('.nm')||{}).textContent||'').includes(R.find(r=>r[4]===y)[0]));
+        return c ? c.querySelectorAll('.nmmy .mym').length : -1; }""", yjs["b"][0])
+    if both != 2:
+        fails.append("2店舗で採用している薬の印が %d個（期待 2）" % both)
+    pg.locator('#mybar .myv').nth(3).click(); pg.wait_for_timeout(450)       # 駅前店
+    if num(pg.inner_text("#cnt")) != 2:
+        fails.append("駅前店に切り替えても2件にならない（%s）" % pg.inner_text("#cnt"))
+    if ovf() != 0:
+        fails.append(f"マイ薬局の表示で横溢れ {ovf()}px")
+    card = pg.locator(".card").first
+    card.click(); pg.wait_for_timeout(200)
+    before = pg.evaluate("() => MY.stores[0].items.length")
+    card.locator('.myt').nth(0).click(); pg.wait_for_timeout(250)
+    after = pg.evaluate("() => MY.stores[0].items.length")
+    if abs(after - before) != 1 or "open" not in (card.get_attribute("class") or ""):
+        fails.append("カードの「採用にする」が効かない、またはカードが閉じる")
+    card.locator('.myt').nth(0).click(); pg.wait_for_timeout(250)   # 元に戻す
+    # 店舗を選んでいるとき：打った検索語は採用薬だけ。採用薬に無ければ採用薬以外を出して知らせる
+    un = pg.evaluate("""() => { const mine=new Set(MY.stores.flatMap(s=>s.items));
+        const r=R.find(r=>r[4]&&r[4].length===12&&!mine.has(r[4])&&R.filter(x=>x[0]===r[0]).length===1);
+        return r[0]; }""")
+    pg.fill("#q", un); pg.wait_for_timeout(500)
+    if num(pg.inner_text("#cnt")) < 1 or "採用薬には見つからない" not in pg.inner_text("#mypeek"):
+        fails.append("採用薬に無い薬を検索したとき、採用薬以外を出していない")
+    pg.fill("#q", ""); pg.wait_for_timeout(400)
+    if pg.locator('#mypeek.on').count():
+        fails.append("検索語を消しても「採用薬以外も表示」の帯が残る")
+    # お知らせ：採用薬に関係するものだけ。切替候補の段が出て、数が独立計算と合う
+    pg.locator('#mybar .myv').nth(1).click(); pg.wait_for_timeout(350)       # 全店舗
+    pg.click('.ptab[data-p="board"]'); pg.wait_for_timeout(500)
+    ms = pg.evaluate("""() => {
+      const mine=new Set(MY.stores.flatMap(s=>s.items));
+      const byName={}; R.forEach(r=>{byName[r[0]]=r;});
+      const rows=[...document.querySelectorAll('#vtlist .chgrow,#chglist .chgrow')]
+        .map(e=>byName[e.dataset.nm]).filter(Boolean);
+      const want=(sc)=>R.filter(r=>mine.has(r[4])&&r[8]===sc&&r[4].length===12&&
+        (D.k[r[5]]==='内用薬'||D.k[r[5]]==='外用薬')).length;
+      return {bad: rows.filter(r=>!mine.has(r[4])).length,
+              hidden: document.getElementById('mswsec').hidden,
+              lab: [...document.querySelectorAll('#mswsub .chgs')].map(b=>b.textContent),
+              want: [`供給停止（${want(2)}）`, `限定出荷（${want(1)}）`]}; }""")
+    if ms["bad"]:
+        fails.append("店舗を選んでも、採用していない薬が %d件残る" % ms["bad"])
+    if ms["hidden"] or ms["lab"] != ms["want"]:
+        fails.append("採用薬の切替候補が合わない（表示 %s / 期待 %s）" % (ms["lab"], ms["want"]))
+    # 切替候補の「未採用」の薬をタップすると、採用薬以外も含めた検索に移ること
+    for v in ("2", "1"):
+        pg.click(f'#mswsub .chgs[data-v="{v}"]'); pg.wait_for_timeout(250)
+        if pg.locator('#mswlist .lowi:has(.unad)').count():
+            break
+    if pg.locator('#mswlist .lowi:has(.unad)').count():
+        nm = pg.locator('#mswlist .lowi:has(.unad)').first.get_attribute("data-nm")
+        pg.locator('#mswlist .lowi:has(.unad)').first.click(); pg.wait_for_timeout(550)
+        first = pg.locator(".card .nm").first.inner_text() if pg.locator(".card").count() else ""
+        if nm not in first or "採用薬以外も" not in pg.inner_text("#mypeek"):
+            fails.append("未採用の候補へ移っても表示されない（%s）" % first[:20])
+        pg.click("#mypeekx"); pg.wait_for_timeout(400)
+        pg.click("#clr"); pg.wait_for_timeout(350)
+    if ovf() != 0:
+        fails.append(f"採用薬の切替候補で横溢れ {ovf()}px")
+    small = pg.evaluate(f"""() => [...document.querySelectorAll('#mybar .myv,#mypeek button,#mswsub .chgs')]
+        .filter(e => e.getBoundingClientRect().height>0 && e.getBoundingClientRect().height < {MIN_TAP})
+        .map(e => e.className||e.id)""")
+    if small:
+        fails.append("マイ薬局の切り替えでタップ領域が小さい：%s" % "／".join(sorted(set(small))[:3]))
+    pg.locator('#mybar .myv').nth(0).click(); pg.wait_for_timeout(350)       # すべての薬
+    pg.click('.ptab[data-p="board"]'); pg.wait_for_timeout(400)
+    if not pg.evaluate("document.getElementById('mswsec').hidden"):
+        fails.append("「すべての薬」なのに採用薬の切替候補が出ている")
+    # 再読み込みで残り、消してから設定ファイルで戻せること
+    pg.reload(); pg.wait_for_timeout(2600)
+    if pg.evaluate("() => MY.stores.length") != 2:
+        fails.append("再読み込みでマイ薬局の設定が消える")
+    pg.evaluate("() => { try { localStorage.removeItem('myph'); } catch(e) {} }")
+    pg.reload(); pg.wait_for_timeout(2600)
+    if exp_one:
+        pg.click('.chip.myset'); pg.wait_for_timeout(300)
+        with pg.expect_file_chooser() as fc:
+            pg.click('#myload')
+        fc.value.set_files(exp_one); pg.wait_for_timeout(450)
+        got = pg.evaluate("() => MY.stores.map(s => [s.name, s.items.length])")
+        if got != [["駅前店", 2]]:
+            fails.append("設定ファイルの読み込みが合わない（%s）" % got)
+        pg.click('#myx'); pg.wait_for_timeout(450)
+        # 何も無い端末に店舗別のファイルを入れたら、その店舗の表示から始まる
+        if pg.locator('#mybar.on .myv').count() != 2 or num(pg.inner_text("#cnt")) != 2:
+            fails.append("設定ファイルを入れた直後に、その店舗の表示になっていない（%s）"
+                         % pg.inner_text("#cnt"))
+    pg.evaluate("() => { try { localStorage.removeItem('myph'); } catch(e) {} }")
+    pg.reload(); pg.wait_for_timeout(2600)
+
+    # 分析タブ：3つの段が出て、数が独立計算と合うこと
+    pg.click('.ptab[data-p="ana"]'); pg.wait_for_timeout(600)
+    an = pg.evaluate(r"""() => {
+      const KI={'内用薬':0,'外用薬':1,'注射薬':2}, on=new Set([0,1]);
+      const ok=(r)=>r&&on.has(KI[D.k[r[5]]]);
+      const rows=R.filter(ok);
+      const iso=(s)=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return Date.UTC(+m[1],+m[2]-1,+m[3]);};
+      const s=new Date(iso(DATA.date)-6*86400000).toISOString().slice(0,10), e=DATA.date;
+      const net=new Map();
+      (DATA.ev||[]).forEach(x=>{ if(x[1]<s||x[1]>e||!ok(R[x[0]])) return;
+        const o=net.get(x[0]); if(o) o.to=x[3]; else net.set(x[0],{from:x[2],to:x[3]}); });
+      const a=[...net.values()].filter(o=>o.from!==o.to);
+      return {
+        total: rows.length, bad: rows.filter(r=>r[8]>0).length,
+        stop: a.filter(o=>o.to===2).length,
+        lim: a.filter(o=>o.to===1&&o.from===0).length,
+        back: a.filter(o=>o.to===0).length,
+        rc: (DATA.rcv||[]).filter(x=>ok(R[x[0]])).length,
+        kpi: [...document.querySelectorAll('#wkbody .kpi b')].map(b=>parseInt(b.textContent)),
+        st: document.getElementById('stcnt').textContent,
+        rccnt: document.getElementById('rccnt').textContent,
+        bars: document.querySelectorAll('#stbody .sbr').length,
+        hist: document.querySelectorAll('#rcbody .hb').length,
+      };
+    }""")
+    if an["kpi"][:3] != [an["stop"], an["lim"], an["back"]]:
+        fails.append("週次レポートの件数が合わない（表示 %s / 期待 %s）"
+                     % (an["kpi"][:3], [an["stop"], an["lim"], an["back"]]))
+    if an["st"] != "{:,}品目".format(an["total"]):
+        fails.append("供給不足の構造の品目数が合わない（%s / 期待 %d）" % (an["st"], an["total"]))
+    if an["rc"] and an["rccnt"] != "回復 {:,}件".format(an["rc"]):
+        fails.append("回復までの日数の件数が合わない（%s / 期待 %d）" % (an["rccnt"], an["rc"]))
+    if not an["bars"] or (an["rc"] and not an["hist"]):
+        fails.append("分析タブの図が描かれていない")
+    for d in ("pc", "fm", "kb", "mk", "cls", "price"):
+        pg.click(f'#stdim .chgs[data-d="{d}"]'); pg.wait_for_timeout(200)
+        if not pg.locator('#stbody .sbr').count():
+            fails.append(f"供給不足の構造（{d}）が空")
+    # 薬価の帯の合計が全体と一致すること（帯の取りこぼしが無い）
+    ssum = pg.evaluate("""() => [...document.querySelectorAll('#stbody .sbn')]
+        .reduce((n,e)=>n+parseInt(e.textContent.replace(/,/g,'')),0)""")
+    if ssum != an["total"]:
+        fails.append("薬価の帯の合計が全体と合わない（%d / %d）" % (ssum, an["total"]))
+    pg.click('#sttbl'); pg.wait_for_timeout(200)
+    if not pg.locator('#stbody table.anat').count():
+        fails.append("供給不足の構造が表に切り替わらない")
+    pg.click('#sttbl'); pg.wait_for_timeout(200)
+    pg.click('#wkper .chgs[data-p="30"]'); pg.wait_for_timeout(250)
+    pg.click('#wkper .chgs[data-p="7"]'); pg.wait_for_timeout(250)
+    if ovf() != 0:
+        fails.append(f"分析タブで横溢れ {ovf()}px")
+    anx = pg.evaluate(f"""() => {{
+      const sec=[...document.querySelectorAll('#ana .bdsec')];
+      const out=[], small=[];
+      sec.forEach(s=>{{ const b=s.getBoundingClientRect();
+        s.querySelectorAll('*').forEach(el=>{{ const r=el.getBoundingClientRect();
+          if(r.width>0 && r.right>b.right+1) out.push(el.className||el.tagName); }}); }});
+      document.querySelectorAll('#ana .chgs,#ana .kb2,#ana .myb,#ana .tblbtn').forEach(el=>{{
+        const r=el.getBoundingClientRect();
+        if(r.width>0 && r.height<{MIN_TAP}) small.push((el.className||el.id)+' h='+Math.round(r.height)); }});
+      return {{out:[...new Set(out)], small:[...new Set(small)]}};
+    }}""")
+    if anx["out"]:
+        fails.append("分析タブで枠からはみ出す要素：%s" % "／".join(anx["out"][:4]))
+    if anx["small"]:
+        fails.append("分析タブのタップ領域が小さい：%s" % "／".join(anx["small"][:4]))
+    # 凡例に新機能の説明があること
+    pg.click('.ptab[data-p="search"]'); pg.wait_for_timeout(350)
+    pg.click("#lgbtn"); pg.wait_for_timeout(400)
+    lg = pg.inner_text("#lgbody")
+    for t in ("切替余地", "残りわずかの成分", "マイ薬局", "週次レポート", "回復までの日数", "供給不足の構造"):
+        if t not in lg:
+            fails.append(f"凡例に「{t}」の説明が無い")
+    pg.click("#lgx"); pg.wait_for_timeout(300)
+    pg.click('.ptab[data-p="board"]'); pg.wait_for_timeout(400)
 
     # ⑰出荷量。バッジ・絞り込み・並び替えが動くこと。
     # 直前でお知らせタブに移っているので、検索画面へ戻す。
