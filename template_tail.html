@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-04-v48';
+const TPL_VER='2026-10-04-v49';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2861,6 +2861,7 @@ function drawMy(){
     '公開されているページには含まれず、どこにも送信されません。'+
     '<br>ほかの人や別の端末で同じ表示にするには、下の<b>設定ファイル</b>を書き出して渡し、'+
     '相手の端末で読み込んでください。<b>渡した店舗の分だけ</b>が相手に見えます。'+
+    '<br>変更は<b>その場で自動保存</b>されます（保存ボタンはありません）。右上の×で閉じてください。'+
     '<br>ブラウザの閲覧データを消すと、この設定も消えます。</div>';
   if(myMsg) h+=`<div class="mynote" id="mymsg" style="border-left-color:#0f8a5f">${myMsg}</div>`;
   MY.stores.forEach((s,k)=>{
@@ -3112,7 +3113,7 @@ document.getElementById('mybody').addEventListener('click',e=>{
   const box=e.target.closest('.mystore'); if(!box) return;
   const k=+box.dataset.k, s=MY.stores[k]; if(!s) return;
   const cb=e.target.closest('.mycb');
-  if(cb){ s.color=+cb.dataset.c; mySave(); drawMy(); return; }
+  if(cb){ s.color=+cb.dataset.c; mySave(); myMsg='色を保存しました。'; drawMy(); return; }
   const b=e.target.closest('.myb'); if(!b) return;
   const act=b.dataset.act;
   if(act==='imp'){ myImpOpen = myImpOpen===k ? -1 : k; myDelArm=-1; drawMy(); }
@@ -3136,10 +3137,15 @@ document.getElementById('mybody').addEventListener('click',e=>{
 document.getElementById('mybody').addEventListener('change',e=>{
   const sr=e.target.closest('.mysrc');
   if(sr){ const s0=MY.stores[+sr.closest('.mystore').dataset.k];
-    if(s0){ s0.src=sr.value.trim().slice(0,40); mySave(); } return; }
+    if(s0){ s0.src=sr.value.trim().slice(0,40); mySave();
+      myMsg='CSVの店舗名を保存しました。'; drawMy(); } return; }
   const inp=e.target.closest('.myname'); if(!inp) return;
   const s=MY.stores[+inp.closest('.mystore').dataset.k]; if(!s) return;
-  s.name=(inp.value.trim()||'店舗').slice(0,20); mySave(); drawMy();
+  s.name=(inp.value.trim()||'店舗').slice(0,20); mySave();
+  /* 読み込み結果の表示は付け直す前の名前のままなので残さない。
+     保存ボタンが無いぶん、保存されたことを言葉で知らせる。 */
+  myMsg=`店舗名を「<b>${esc(s.name)}</b>」にしました。<b>保存済み</b>です（採用薬 ${s.items.length.toLocaleString()}品目）。`;
+  drawMy();
 });
 /* カードの中の「採用にする／採用中」 */
 document.getElementById('list').addEventListener('click',e=>{
@@ -3335,7 +3341,7 @@ function drawMsw(){
             c.st===1?'限定出荷':'通常出荷'} <b>${c.ok.length}</b>品目`+
           `（${c.mine?`採用中 ${c.mine}`:'<b>すべて未採用</b>'}）</div>`+
           c.ok.slice(0,2).map(x=>`<div class="lowi" data-nm="${esc(get(x,'n'))}">
-            ${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
+            <span class="cmst s${get(x,'sc')}">${esc(SCNM[get(x,'sc')])}</span>${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
             <span class="swmk">${esc(dv(x,'m')||'')}</span></div>`).join('')+
           (c.ok.length>2?`<div class="mswl">ほか ${c.ok.length-2}品目（薬名をタップして「切替余地」で確認）</div>`:'')
         : `<div class="mswl"><b>同じ成分に${get(r,'sc')===2?'通常出荷も限定出荷も':'通常出荷が'}ありません。</b>${
@@ -3406,7 +3412,7 @@ function drawLow(){
         <span class="chgday">全${g.n}品目</span>
       </div>
       ${g.ok.map(x=>`<div class="lowi" data-nm="${esc(get(x,'n'))}">
-        ${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
+        <span class="cmst s${get(x,'sc')}">${esc(SCNM[get(x,'sc')])}</span>${volBadge(x)}<span class="cmnm">${esc(get(x,'n'))}</span>${myMarks(x)}${myUnad(x)}
         <span class="swmk">${esc(dv(x,'m')||'')}</span></div>`).join('')}
       ${g.type==='zero'?'<div class="lowi" data-ing="'+esc(dv(r,'i')||'')+'">通常出荷の品目はありません（タップでこの成分を検索）</div>':''}
     </div>`;

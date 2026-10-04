@@ -909,6 +909,11 @@ def check_device(browser, p, name, url):
     pg.locator('.mystore').nth(1).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
     pg.fill('.mytxt', "%s\n%s" % (yjs["b"][0], yjs["b"][1]))
     pg.locator('.mystore').nth(1).locator('[data-act="add"]').click(); pg.wait_for_timeout(250)
+    # 店舗名を変えると、保存されたことが表示されること
+    inp = pg.locator('.mystore').nth(0).locator('.myname')
+    inp.fill("本店"); inp.dispatch_event('change'); pg.wait_for_timeout(200)
+    if "保存済み" not in (pg.inner_text('#mymsg') if pg.locator('#mymsg').count() else ""):
+        fails.append("店舗名を変えても「保存済み」と出ない")
     st = pg.evaluate("() => MY.stores.map(s => [s.name, s.items.slice().sort()])")
     want0 = sorted([yjs["a"][0], yjs["b"][0], yjs["nm"][1], yjs["a"][1]])
     if len(st) != 2 or st[0][1] != want0 or st[1][1] != sorted(yjs["b"]):
@@ -992,6 +997,19 @@ def check_device(browser, p, name, url):
               want: [`供給停止（${want(2)}）`, `限定出荷（${want(1)}）`]}; }""")
     if ms["bad"]:
         fails.append("店舗を選んでも、採用していない薬が %d件残る" % ms["bad"])
+    # 切替候補・残りわずかの候補の薬に、出荷状況のバッジが付いていること
+    nob = pg.evaluate("""() => {
+      let n=0;
+      for(const v of ['2','1']){
+        document.querySelector(`#mswsub .chgs[data-v="${v}"]`).click();
+        n+=[...document.querySelectorAll('#mswlist .mswrow .lowi:not(.mswh)')]
+            .filter(e=>!e.querySelector('.cmst')).length;
+      }
+      n+=[...document.querySelectorAll('#lowlist .lowi[data-nm]')].filter(e=>!e.querySelector('.cmst')).length;
+      return n; }""")
+    if nob:
+        fails.append("候補の薬に出荷状況のバッジが無いものが %d件ある" % nob)
+    pg.wait_for_timeout(200)
     if ms["hidden"] or ms["lab"] != ms["want"]:
         fails.append("採用薬の切替候補が合わない（表示 %s / 期待 %s）" % (ms["lab"], ms["want"]))
     # 切替候補の「未採用」の薬をタップすると、採用薬以外も含めた検索に移ること
