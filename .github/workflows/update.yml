@@ -267,6 +267,26 @@ jobs:
               && echo "::notice::更新停止のIssueを作成しました。"
           fi
 
+      # 「○月○日現在」の日付の根拠（リンク文字・ファイル名・Excelの中身）が
+      # 食い違ったときや、どれからも読めなかったときに知らせる。
+      # 【2026-10】10月13日版でファイル名の規則が変わり、日付を誤読した事故を受けて追加。
+      - name: 基準日の食い違いをIssueで知らせる
+        if: always() && hashFiles('_date.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="【要確認】供給状況の基準日（○月○日現在）"
+          FOUND=$(gh issue list --state open --search "$TITLE in:title" \
+                    --json number --jq '.[0].number' 2>/dev/null || true)
+          # 開いている間は重ねて作らない（1日4回の確認で同じ内容が積み上がるため）
+          if [ -n "$FOUND" ]; then
+            echo "::notice::既にIssue #$FOUND が開いています。重ねて作りません。"
+          else
+            gh issue create --title "$TITLE" --body-file _date.md \
+              && echo "::notice::基準日のIssueを作成しました。"
+          fi
+
       - name: 定期実行の自動停止を防ぐ（キープアライブ）
         if: always()
         env:
