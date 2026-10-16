@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-04-v49';
+const TPL_VER='2026-10-16-v51';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2741,7 +2741,10 @@ const MY_APP='medsupply-myph';
      'none' = すべての薬（採用薬には印だけ付く）
      'all'  = 全店舗の採用薬に関係するものだけ（2店舗以上のとき）
      店舗id = その店舗の採用薬に関係するものだけ */
-let MY={v:1,stores:[],view:'none'};
+/* zm … 在庫表を読み込むときの在庫0の薬の扱い（端末に保存）
+     'short' … 在庫0は除くが、限定出荷・供給停止の薬は残す（初期設定）
+     'all'   … 在庫0も全部読み込む */
+let MY={v:1,stores:[],view:'none',zm:'short'};
 function myClean(s){
   if(!s||typeof s!=='object'||!Array.isArray(s.items)) return null;
   const items=[...new Set(s.items.filter(y=>typeof y==='string'&&/^[0-9A-Za-z]{4,12}$/.test(y)))];
@@ -2754,7 +2757,8 @@ function myClean(s){
 try{
   const t=JSON.parse(localStorage.getItem('myph')||'null');
   if(t&&Array.isArray(t.stores)){
-    MY={v:1,stores:t.stores.map(myClean).filter(Boolean).slice(0,MY_MAX),view:String(t.view||'none')};
+    MY={v:1,stores:t.stores.map(myClean).filter(Boolean).slice(0,MY_MAX),view:String(t.view||'none'),
+        zm:t.zm==='all'?'all':'short'};
   }
 }catch(e){}
 const YJIDX=new Map(); R.forEach((r,i)=>{ const y=get(r,'yj'); if(y) YJIDX.set(y,i); });
@@ -2884,14 +2888,13 @@ function drawMy(){
       </div>
       ${myImpOpen===k?`<div class="myimp">
         <div class="mysn">レセコンや在庫システムの<b>CSV</b>（見出しに「YJコード」の列があるもの）を
-          そのまま読み込めます。読むのは<b>YJコードと薬品名の列だけ</b>で、
-          原価や在庫数は保存しません。<br>手で入れる場合は、YJコードか品名を<b>1行に1つ</b>。</div>
+          そのまま読み込めます。使うのは<b>YJコード・薬品名・在庫数・経過措置日の列だけ</b>で、
+          保存するのは採用薬のYJコードだけです（原価や在庫数は保存しません）。<br>手で入れる場合は、YJコードか品名を<b>1行に1つ</b>。</div>
         <div class="mysn" id="mypv"></div>
         <textarea class="mytxt" placeholder="例）&#10;2171022F1029&#10;アムロジピン錠５ｍｇ「サワイ」"></textarea>
+        ${myZmHtml('data-zm')}
         <div class="mybtns" style="margin-top:7px">
           <button type="button" class="myb" data-act="file">ファイルを選ぶ</button>
-          <button type="button" class="myb" data-act="zero" aria-pressed="${myNoZero}">${
-            myNoZero?'✓ 在庫0の品目は除く':'在庫0の品目も含める'}</button>
           <button type="button" class="myb pri" data-act="add">追加する</button>
           <button type="button" class="myb pri" data-act="rep">置き換える</button>
         </div></div>`:''}
@@ -2909,14 +2912,14 @@ function drawMy(){
             ? `CSVの店舗名「${esc(a.info.store)}」は初めてです。<b>新しい店舗</b>として登録します。`+
               '読み込んだあと、店舗名を付け直してください（次からは自動で見分けます）。'
             : `店舗は${MY_MAX}つまでです。先に不要な店舗を削除してください。`)}
-      <br>採用薬として<b>${a.got.length.toLocaleString()}品目</b>を読み取れます`+
-      `${a.info.zero?`（在庫0の${a.info.zero.toLocaleString()}品目を除く）`:''}`+
-      `${a.miss.length?`。結び付かないもの ${a.miss.length.toLocaleString()}件`:''}。
+      ${a.info.table?myZmHtml('data-azm'):''}
+      採用薬として<b>${a.got.length.toLocaleString()}品目</b>を読み取れます`+
+      `${myZeroSum(a.info)?`（${myZeroSum(a.info)}）`:''}`+
+      `${a.miss.length?`。結び付かないもの ${a.miss.length.toLocaleString()}件（${myCatSum(a.info)}）`:''}。
       <div class="mybtns" style="margin-top:8px">
         ${(a.info.store&&!a.multi&&(t||MY.stores.length<MY_MAX))?`
           <button type="button" class="myb pri" data-auto="rep">${t?'置き換える':'登録する'}</button>
           ${t?'<button type="button" class="myb" data-auto="add">追加する</button>':''}`:''}
-        <button type="button" class="myb" data-auto="zero">${myNoZero?'✓ 在庫0の品目は除く':'在庫0の品目も含める'}</button>
         <button type="button" class="myb" data-auto="cancel">やめる</button>
       </div></div>`;
   }
@@ -2964,12 +2967,44 @@ function myCsv(text){
       その列だけを読む。見出しより上の行（店舗名・出力条件など）は無視する。
       原価や在庫数などの列は読まず、保存もしない。
    ② 見出しが無ければ、1行に1つのYJコードか品名として読む。 */
-function myParse(text, noZero){
+/* 在庫表の日付（2026/03/31・2026-3-31・20260331 など）を YYYY-MM-DD に */
+function myDate(v){
+  const t=HALF(String(v||'')).trim();
+  let m=t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/) || t.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if(!m) return null;
+  return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+}
+const MY_CAT=[
+  ['exp', '経過措置切れ（薬価削除済み）', '在庫が残っていても、厚労省の供給状況の一覧からは外れています。'],
+  ['gone','供給状況の一覧に無い薬',       '販売中止・統合などで一覧から外れたもの、またはYJコードの誤り。'],
+  ['noyj','YJコードなし',                 '医療材料・自費品など。もともと供給状況の対象外です。'],
+  ['etc', '見つからない行',               '見出し行や、供給状況データに無い品名・コード。']];
+/* 「経過措置切れ18・YJコードなし9」のような短い内訳 */
+function myCatSum(info){
+  return MY_CAT.filter(([k])=>info.cat[k].length)
+    .map(([k,l])=>`${l.replace(/（.*）/,'')} ${info.cat[k].length.toLocaleString()}`).join('・');
+}
+/* 理由ごとに折りたたんだ一覧 */
+function myCatHtml(info){
+  return MY_CAT.filter(([k])=>info.cat[k].length).map(([k,l,d])=>{
+    const a=info.cat[k];
+    return `<details class="mycat"><summary><b>${esc(l)}</b> ${a.length.toLocaleString()}件</summary>`+
+      `<div class="mysn">${esc(d)}</div>`+
+      `<div class="myun">${a.slice(0,60).map(esc).join('<br>')}${a.length>60?'<br>…':''}</div></details>`;
+  }).join('');
+}
+function myParse(text, zm){
   const got=new Set(), miss=[];
-  const info={store:'', table:false, zero:0};
+  /* cat … 結び付かなかったものの理由別（メッセージを分けて、問題の無いものと見分けやすくする）
+       exp  … YJコードはあるが、在庫表の経過措置日が過ぎている（薬価削除済み）
+       gone … YJコードはあるが、供給状況の一覧に無い（販売中止・統合など）
+       noyj … YJコードが空欄（医療材料・自費品など。もともと対象外）
+       etc  … 見出しの無い一覧で、品名・コードが見つからないもの */
+  /* zero … 在庫0のため読み込まなかった品目数 / keep … 在庫0でも出荷停止中のため残した品目数 */
+  const info={store:'', table:false, zero:0, keep:0, cat:{exp:[],gone:[],noyj:[],etc:[]}};
   const rows=myCsv(String(text||''));
   const cell=(v)=>HALF(String(v||'')).replace(/\s+/g,'').toUpperCase();
-  let hi=-1, cy=-1, cn=-1, cs=-1;
+  let hi=-1, cy=-1, cn=-1, cs=-1, ce=-1;
   for(let i=0;i<Math.min(rows.length,60);i++){
     const r=rows[i];
     if(/^店舗名/.test((r[0]||'').trim()) && (r[1]||'').trim()) info.store=r[1].trim();
@@ -2977,6 +3012,7 @@ function myParse(text, noZero){
     if(j>=0){ hi=i; cy=j;
       cn=r.findIndex(c=>/薬品名|医薬品名|品名|名称/.test(c||''));
       cs=r.findIndex(c=>/在庫/.test(c||''));
+      ce=r.findIndex(c=>/経過措置/.test(c||''));
       break; }
   }
   if(hi>=0){
@@ -2984,11 +3020,20 @@ function myParse(text, noZero){
     rows.slice(hi+1).forEach(r=>{
       if(!r.some(c=>String(c||'').trim())) return;
       const y=cell(r[cy]), nm=(cn>=0?String(r[cn]||'').trim():'')||y||'(名称なし)';
-      if(noZero && cs>=0 && !(parseFloat(r[cs])>0)){ info.zero++; return; }
-      if(YJIDX.has(y)){ got.add(y); return; }
-      const byName = cn>=0 ? MYNAME.get(norm(String(r[cn]||''))) : null;
-      if(byName){ got.add(byName); return; }
-      miss.push(nm+(y?`（データに無いYJコード ${y}）`:'（YJコードなし）'));
+      const hit = YJIDX.has(y) ? y : (cn>=0 ? MYNAME.get(norm(String(r[cn]||''))) : null);
+      if(zm!=='all' && cs>=0 && !(parseFloat(String(r[cs]).replace(/,/g,''))>0)){
+        /* 在庫0：採用をやめた薬や経過措置切れが多いので除く。ただし今まさに
+           限定出荷・供給停止の薬は、入荷できずに在庫が切れている可能性が高いので残す */
+        const i = hit ? YJIDX.get(hit) : undefined;
+        if(i!==undefined && (get(R[i],'sc')|0)>0){ got.add(hit); info.keep++; return; }
+        info.zero++; return;
+      }
+      if(hit){ got.add(hit); return; }
+      if(!y){ miss.push(nm); info.cat.noyj.push(nm); return; }
+      const ed = ce>=0 ? myDate(r[ce]) : null;
+      const t = nm+`（${y}${ed?`・経過措置 ${ed.replace(/-/g,'/')}まで`:''}）`;
+      miss.push(t);
+      (ed && ed.replace(/-/g,'') < myToday() ? info.cat.exp : info.cat.gone).push(t);
     });
   }else{
     rows.forEach(r=>{
@@ -3001,7 +3046,7 @@ function myParse(text, noZero){
         const nm=MYNAME.get(norm(v));
         if(nm){ got.add(nm); hit=true; }
       });
-      if(!hit) miss.push(r.join(',').trim());
+      if(!hit){ const t=r.join(',').trim(); miss.push(t); info.cat.etc.push(t); }
     });
   }
   return {got:[...got], miss, info};
@@ -3013,10 +3058,32 @@ function myDecode(buf){
   catch(e){ try{ return new TextDecoder('shift_jis').decode(buf); }
             catch(e2){ return new TextDecoder().decode(buf); } }
 }
-let myNoZero=false;
+const myZm=()=>MY.zm==='all'?'all':'short';
+/* 在庫0の扱いの切り替えと、その説明 */
+function myZmHtml(attr){
+  const z=myZm();
+  return `<div class="myzm"><div class="myzh">在庫0の薬の扱い</div>
+    <div class="mybtns">
+      <button type="button" class="myb myzb" ${attr}="short" aria-pressed="${z==='short'}">在庫0は除く（出荷停止中は残す）</button>
+      <button type="button" class="myb myzb" ${attr}="all" aria-pressed="${z==='all'}">在庫0も全部入れる</button>
+    </div>
+    <div class="mysn myzd">${z==='short'
+      ? '<b>おすすめ（初期設定）</b>。在庫が0の薬は、採用をやめた薬や経過措置が切れた薬であることが多いので読み込みません。'+
+        'ただし、読み込んだ時点で<b>限定出荷・供給停止</b>の薬は、入荷できずに在庫が切れている可能性が高いので、在庫0でも採用薬として残します。'+
+        '<br>注意：在庫0で通常出荷の薬は外れるため、その薬があとで出荷停止になっても印は付きません。'+
+        '出荷状況は読み込んだ時点で判定するので、ときどき在庫表を読み込み直してください。'
+      : '在庫が0の薬も<b>すべて</b>採用薬として読み込みます。漏れはありませんが、採用をやめた薬や経過措置が切れた薬も混ざります。'}
+      <br>在庫数の列が無いCSVや手入力では、この設定に関係なく全部読み込みます。</div></div>`;
+}
+/* 「在庫0の318品目を除く・出荷停止中の62品目は残す」のような短い説明 */
+function myZeroSum(info){
+  return [info.zero?`在庫0の${info.zero.toLocaleString()}品目を除く`:'',
+          info.keep?`在庫0でも出荷停止中の${info.keep.toLocaleString()}品目は残す`:'']
+         .filter(Boolean).join('・');
+}
 function myApplyList(k, text, replace){
   const s=MY.stores[k]; if(!s) return;
-  const {got,miss,info}=myParse(text, myNoZero);
+  const {got,miss,info}=myParse(text, myZm());
   if(!got.length && !miss.length){ myMsg='読み込む内容がありません。'; drawMy(); return; }
   const before=s.items.length;
   s.items = replace ? got : [...new Set([...s.items, ...got])];
@@ -3025,16 +3092,17 @@ function myApplyList(k, text, replace){
   mySave();
   myMsg=`<b>${esc(s.name)}</b>：${got.length.toLocaleString()}品目を読み取りました`+
     `（${replace?'置き換え':'追加'}。${before.toLocaleString()} → ${s.items.length.toLocaleString()}品目）。`+
-    (info.zero?`<br>在庫が0の<b>${info.zero.toLocaleString()}品目</b>は読み込みませんでした。`:'')+
-    (miss.length?`<br>供給状況データと結び付かなかったものが<b>${miss.length.toLocaleString()}件</b>あります`+
-      (info.table?'（医療材料や、すでに供給状況の一覧から外れた薬など）。'
-                 :'（見出し行や、供給状況データに無い品名・コード）。')+
-      `<div class="myun">${miss.slice(0,60).map(esc).join('<br>')}${miss.length>60?'<br>…':''}</div>`:'');
+    (info.zero?`<br>在庫が0の<b>${info.zero.toLocaleString()}品目</b>は読み込みませんでした`+
+      (info.keep?`（在庫0でも、限定出荷・供給停止の<b>${info.keep.toLocaleString()}品目</b>は採用薬に残しました）`:'')+'。'
+     :(info.keep?`<br>在庫0でも、限定出荷・供給停止の<b>${info.keep.toLocaleString()}品目</b>は採用薬に残しました。`:''))+
+    (miss.length?`<br>供給状況データと結び付かなかったものが<b>${miss.length.toLocaleString()}件</b>あります。`+
+      (info.cat.etc.length?'':'多くは対処の要らないものです（理由ごとに開けます）。')+
+      myCatHtml(info):'');
   myImpOpen=-1; drawMy();
 }
 /* CSVの店舗名から、読み込み先の店舗を決める */
 function myAutoSet(text, fname){
-  const r=myParse(text, myNoZero);
+  const r=myParse(text, myZm());
   const hit=r.info.store ? MY.stores.map((s,k)=>k).filter(k=>MY.stores[k].src===r.info.store) : [];
   myAuto={text, fname, got:r.got, miss:r.miss, info:r.info,
           target:hit.length===1?hit[0]:-1, multi:hit.length>1};
@@ -3072,10 +3140,11 @@ document.getElementById('myfile').addEventListener('change',e=>{
     else{
       const ta=document.querySelector('#mybody .mytxt'); if(ta) ta.value=text;
       /* 読み込んだ直後に、何件拾えるかを先に見せる（追加・置き換えはまだしない） */
-      const pv=myParse(text, myNoZero), el=document.getElementById('mypv');
+      const pv=myParse(text, myZm()), el=document.getElementById('mypv');
       if(el) el.innerHTML=`<b>${esc(f.name)}</b>：採用薬として<b>${pv.got.length.toLocaleString()}品目</b>を読み取れます`+
         (pv.info.store?`（店舗名：${esc(pv.info.store)}）`:'')+
-        (pv.miss.length?`。結び付かないもの ${pv.miss.length.toLocaleString()}件`:'')+
+        (myZeroSum(pv.info)?`。${myZeroSum(pv.info)}`:'')+
+        (pv.miss.length?`。結び付かないもの ${pv.miss.length.toLocaleString()}件（${myCatSum(pv.info)}）`:'')+
         '。下の「追加する」か「置き換える」で登録します。';
     }
   };
@@ -3090,11 +3159,25 @@ document.getElementById('mybody').addEventListener('click',e=>{
   }
   if(e.target.id==='myload'){ myPending={type:'settings'}; document.getElementById('myfile').click(); return; }
   if(e.target.id==='mycsv'){ myPending={type:'auto'}; document.getElementById('myfile').click(); return; }
+  const az=e.target.closest('[data-azm]');
+  if(az && myAuto){ MY.zm=az.dataset.azm; mySave(); myAutoSet(myAuto.text, myAuto.fname); return; }
+  const zb=e.target.closest('[data-zm]');
+  if(zb){
+    /* 入力中の内容を消さないよう、描き直しの前後で写し取る */
+    const ta=document.querySelector('#mybody .mytxt'), keep=ta?ta.value:'';
+    MY.zm=zb.dataset.zm; mySave(); drawMy();
+    const t2=document.querySelector('#mybody .mytxt');
+    if(t2){ t2.value=keep;
+      if(keep.trim()){ const pv=myParse(keep, myZm()), el=document.getElementById('mypv');
+        if(el) el.innerHTML=`採用薬として<b>${pv.got.length.toLocaleString()}品目</b>を読み取れます`+
+          (myZeroSum(pv.info)?`（${myZeroSum(pv.info)}）`:'')+
+          (pv.miss.length?`。結び付かないもの ${pv.miss.length.toLocaleString()}件（${myCatSum(pv.info)}）`:'')+'。'; } }
+    return;
+  }
   const au=e.target.closest('[data-auto]');
   if(au && myAuto){
     const act=au.dataset.auto, a=myAuto;
     if(act==='cancel'){ myAuto=null; drawMy(); return; }
-    if(act==='zero'){ myNoZero=!myNoZero; myAutoSet(a.text, a.fname); return; }
     let k=a.target;
     if(k<0){
       if(MY.stores.length>=MY_MAX) return;
@@ -3125,12 +3208,6 @@ document.getElementById('mybody').addEventListener('click',e=>{
     drawMy();
   }
   else if(act==='file'){ myPending={type:'list',k}; document.getElementById('myfile').click(); }
-  else if(act==='zero'){
-    /* 入力中の内容を消さないよう、描き直しの前後で写し取る */
-    const ta=box.querySelector('.mytxt'), keep=ta?ta.value:'';
-    myNoZero=!myNoZero; drawMy();
-    const t2=document.querySelector('#mybody .mytxt'); if(t2) t2.value=keep;
-  }
   else if(act==='add'||act==='rep'){
     const ta=box.querySelector('.mytxt'); myApplyList(k, ta?ta.value:'', act==='rep'); }
 });
@@ -4009,7 +4086,15 @@ document.getElementById('anak').addEventListener('click',e=>{
      '<br>・一覧は<b>この端末の中だけ</b>に保存されます。公開されているページには含まれず、どこにも送信されません'+
      '<br>・登録は、カードを開いて<b>「採用にする」</b>を押すか、設定画面で一覧を読み込みます。'+
      'レセコンや在庫システムの<b>CSV</b>（見出しに「YJコード」の列があるもの）は、そのまま読み込めます。'+
-     '読むのは<b>YJコードと薬品名の列だけ</b>で、原価や在庫数は保存しません。シフトJISのファイルにも対応しています'+
+     '使うのは<b>YJコード・薬品名・在庫数・経過措置日の列だけ</b>で、保存するのは採用薬のYJコードだけです'+
+     '（原価や在庫数は保存しません）。シフトJISのファイルにも対応しています'+
+     '<br>・供給状況データと結び付かなかったものは、<b>理由ごとに</b>分けて表示します。'+
+     '経過措置切れ（薬価削除済み）・YJコードなし（医療材料など）は、もともと供給状況の対象外なので対処は要りません。'+
+     'YJコードが空欄でも、品名が供給状況データと同じなら結び付けます'+
+     '<br>・<b>在庫0の薬の扱い</b>（在庫数の列があるCSVのとき）：初期設定は<b>「在庫0は除く（出荷停止中は残す）」</b>。'+
+     '在庫0の薬は採用をやめた薬や経過措置切れが多いので読み込みませんが、読み込んだ時点で限定出荷・供給停止の薬は、'+
+     '入荷できずに在庫が切れている可能性が高いので残します。<b>「在庫0も全部入れる」</b>に切り替えると、在庫0の薬もすべて読み込みます。'+
+     '選んだ扱いは端末に保存され、次回も同じになります'+
      '<br>・<b>「CSVを読み込む（店舗を自動で判別）」</b>は、CSVに書かれた店舗名から読み込み先の店舗を決めます。'+
      '初めての店舗名なら新しい店舗として登録されるので、そのあと<b>表示用の店舗名</b>に付け直してください'+
      '（例：CSVの「○○薬局」→ 表示は「△△店」）。対応は端末に保存され、次からは自動で見分けます'+

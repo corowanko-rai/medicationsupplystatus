@@ -857,32 +857,60 @@ def check_device(browser, p, name, url):
     pg.fill('.mytxt', "品名,コード\n,%s\n%s\n%s\n存在しない薬ＸＹＺ\n%s" % (
         yjs["a"][0], yjs["b"][0], yjs["nm"][0], yjs["a"][1].lower()))
     pg.locator('.mystore').nth(0).locator('[data-act="rep"]').click(); pg.wait_for_timeout(250)
-    # レセコンのCSV（シフトJIS・見出しより上に出力条件の行・在庫0の行つき）を読めること
+    # レセコンのCSV（シフトJIS・見出しより上に出力条件の行・在庫0の行・経過措置日つき）を読めること
+    # 【v51】在庫0の扱い：初期設定は「在庫0は除く（出荷停止中は残す）」、切り替えで「在庫0も全部入れる」
     csv_path = "/tmp/_dc_list.csv"
     with open(csv_path, "w", encoding="cp932", newline="") as f:
-        f.write("店舗名：,検査用薬局,,\r\n日付：,2026/10/ 4,,\r\n")
-        f.write("管理区分,YJコード,薬品名,論理在庫\r\n")
-        f.write("調剤,%s,何かの薬,12\r\n" % yjs["a"][0])
-        f.write("調剤,%s,何かの薬,0\r\n" % yjs["b"][0])
-        f.write('調剤,,"%s",3\r\n' % yjs["nm"][0])
-        f.write("調剤,9999999X9999,一覧に無い薬,5\r\n調剤,,ペンニードル,1\r\n")
+        f.write("店舗名：,検査用薬局,,,\r\n日付：,2026/10/ 4,,,\r\n")
+        f.write("管理区分,YJコード,薬品名,論理在庫,経過措置日\r\n")
+        f.write("調剤,%s,何かの薬,12,\r\n" % yjs["a"][0])
+        f.write("調剤,%s,何かの薬,0,\r\n" % yjs["a"][1])          # 在庫0・通常出荷 → 除く
+        f.write("調剤,%s,何かの薬,0,\r\n" % yjs["b"][0])          # 在庫0・出荷停止中 → 残す
+        f.write('調剤,,"%s",3,\r\n' % yjs["nm"][0])              # YJ空欄・品名で結び付く
+        f.write("調剤,9999999X9999,一覧に無い薬,5,\r\n")           # 一覧に無い
+        f.write("調剤,8888888X8888,切れた薬,5,2026/03/31\r\n")     # 経過措置切れ
+        f.write("調剤,,ペンニードル,1,\r\n")                      # YJコードなし
+    if pg.evaluate("() => myZm()") != "short":
+        fails.append("在庫0の扱いの初期設定が「出荷停止中は残す」になっていない")
     pg.click('#myadd'); pg.wait_for_timeout(150)
     pg.locator('.mystore').nth(2).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    if pg.locator('.mystore').nth(2).locator('.myzm [aria-pressed="true"]').inner_text().find("出荷停止中は残す") < 0:
+        fails.append("在庫0の扱いの切り替えが表示されていない")
     with pg.expect_file_chooser() as fc:
         pg.locator('.mystore').nth(2).locator('[data-act="file"]').click()
     fc.value.set_files(csv_path); pg.wait_for_timeout(500)
     pv = pg.inner_text('#mypv')
-    if "3品目" not in pv or "検査用薬局" not in pv or "2件" not in pv:
-        fails.append("レセコンCSVの読み取りが合わない（%s）" % pv[:70])
-    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click(); pg.wait_for_timeout(200)
+    if ("3品目" not in pv or "検査用薬局" not in pv or "在庫0の1品目を除く" not in pv
+            or "出荷停止中の1品目は残す" not in pv):
+        fails.append("レセコンCSVの読み取りが合わない（%s）" % pv[:90])
     pg.locator('.mystore').nth(2).locator('[data-act="rep"]').click(); pg.wait_for_timeout(300)
     s3 = pg.evaluate("() => [MY.stores[2].name, MY.stores[2].src, MY.stores[2].items.slice().sort()]")
-    if s3 != ["店舗3", "検査用薬局", sorted([yjs["a"][0], yjs["nm"][1]])]:
-        fails.append("レセコンCSV（在庫0を除く）の登録が合わない（%s）" % s3)
+    if s3 != ["店舗3", "検査用薬局", sorted([yjs["a"][0], yjs["b"][0], yjs["nm"][1]])]:
+        fails.append("レセコンCSV（在庫0は除く・出荷停止中は残す）の登録が合わない（%s）" % s3)
+    msg = pg.inner_text('#mymsg')
+    for w in ("経過措置切れ", "供給状況の一覧に無い薬", "YJコードなし", "3件"):
+        if w not in msg:
+            fails.append("結び付かない理由の表示に「%s」が無い（%s）" % (w, msg[:80])); break
+    if "何かの薬" in msg or "文字化け" in msg:
+        fails.append("レセコンCSVの結果表示がおかしい")
+    # 「在庫0も全部入れる」に切り替え（入力欄の中身は残ること・設定は端末に保存）
+    pg.locator('.mystore').nth(2).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
+    pg.fill('.mytxt', "%s" % yjs["a"][1])
+    pg.locator('.mystore').nth(2).locator('[data-zm="all"]').click(); pg.wait_for_timeout(200)
+    if pg.input_value('#mybody .mytxt') != yjs["a"][1]:
+        fails.append("在庫0の扱いを切り替えると入力欄の中身が消える")
+    if pg.evaluate("() => JSON.parse(localStorage.getItem('myph')).zm") != "all":
+        fails.append("在庫0の扱いが端末に保存されない")
+    with pg.expect_file_chooser() as fc:
+        pg.locator('.mystore').nth(2).locator('[data-act="file"]').click()
+    fc.value.set_files(csv_path); pg.wait_for_timeout(500)
+    pg.locator('.mystore').nth(2).locator('[data-act="rep"]').click(); pg.wait_for_timeout(300)
+    n_all = pg.evaluate("() => MY.stores[2].items.length")
+    if n_all != 4:
+        fails.append("「在庫0も全部入れる」で在庫0の薬が入らない（%s品目）" % n_all)
     # 表示名を付け直しても、CSVの店舗名から同じ店舗だと自動で見分けること
     inp = pg.locator('.mystore').nth(2).locator('.myname')
     inp.fill("古淵店"); inp.dispatch_event('change'); pg.wait_for_timeout(200)
-    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click() if pg.locator('.mystore').nth(2).locator('[data-act="zero"]').count() else None
     with pg.expect_file_chooser() as fc:
         pg.click('#mycsv')
     fc.value.set_files(csv_path); pg.wait_for_timeout(500)
@@ -890,18 +918,18 @@ def check_device(browser, p, name, url):
     if "検査用薬局" not in au or "古淵店" not in au:
         fails.append("CSVの店舗名から店舗を自動で見分けていない（%s）" % au[:60])
     else:
-        if pg.locator('#myauto [data-auto="zero"]').inner_text().startswith("✓"):
-            pg.click('#myauto [data-auto="zero"]'); pg.wait_for_timeout(250)
+        if "4品目" not in au:
+            fails.append("自動判別の見込みが「全部入れる」の設定に従っていない（%s）" % au[:90])
+        pg.click('#myauto [data-azm="short"]'); pg.wait_for_timeout(300)   # 既定に戻す
+        au = pg.inner_text('#myauto')
+        if "3品目" not in au or "出荷停止中の1品目は残す" not in au:
+            fails.append("自動判別で在庫0の扱いを切り替えても見込みが変わらない（%s）" % au[:90])
         pg.click('#myauto [data-auto="rep"]'); pg.wait_for_timeout(350)
-        s4 = pg.evaluate("() => [MY.stores.length, MY.stores[2].name, MY.stores[2].items.length, MYLAB[2]]")
-        if s4 != [3, "古淵店", 3, "古"]:   # 印は頭文字の「古」
+        s4 = pg.evaluate("() => [MY.stores.length, MY.stores[2].name, MY.stores[2].items.length, MYLAB[2], myZm()]")
+        if s4 != [3, "古淵店", 3, "古", "short"]:   # 印は頭文字の「古」
             fails.append("自動判別での読み込み結果が合わない（%s）" % s4)
     if ovf() != 0:
         fails.append(f"CSVの自動判別で横溢れ {ovf()}px")
-    if "何かの薬" in pg.inner_text('#mymsg') or "文字化け" in pg.inner_text('#mymsg'):
-        fails.append("レセコンCSVの結果表示がおかしい")
-    pg.locator('.mystore').nth(2).locator('[data-act="imp"]').click(); pg.wait_for_timeout(150)
-    pg.locator('.mystore').nth(2).locator('[data-act="zero"]').click(); pg.wait_for_timeout(150)  # 既定に戻す
     for _ in range(2):   # 検査用の店舗を消す（2回押しで削除）
         pg.locator('.mystore').nth(2).locator('[data-act="del"]').click(); pg.wait_for_timeout(200)
     if pg.evaluate("() => MY.stores.length") != 2:
