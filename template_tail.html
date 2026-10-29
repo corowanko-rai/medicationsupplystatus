@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-16-v51';
+const TPL_VER='2026-10-23-v52';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -529,6 +529,22 @@ function unitOf(r){
   return m ? m[0] : '';
 }
 
+/* 薬価バッジに添える単位（¥6.9/g・¥10.5/錠・¥30.2/10g）。
+   規格の末尾「数字＋単位」が薬価のかかる単位。末尾の（…）は注記なので外す。
+   取り違えを避けるため、単位として知っている語のときだけ出す
+   （「ー」「100単位1mLバイアル」などは単位を出さず金額だけ）。
+   数が1なら単位だけ、それ以外（10g・10mL・28錠など）は数も出す。 */
+const PU_OK=new Set(['錠','g','mL','瓶','管','カプセル','筒','袋','枚','キット','個','包','本','組',
+  'セット','シート','丸','缶','シリンジ','バイアル','カセット','ブリスター','L','mg','MBq','回分','患者当たり']);
+function priceUnit(r){
+  const t=HALF(String(get(r,'sp')||'')).trim().replace(/\([^()]*\)$/,'').trim();
+  const m=t.match(/(\d[\d,]*(?:\.\d+)?)([^\d.,%]+)$/);
+  if(!m || !PU_OK.has(m[2])) return '';
+  return (m[1]==='1' && !/^(回分|患者当たり)$/.test(m[2])) ? m[2] : m[1]+m[2];
+}
+const yenBadge=(r)=>{ const u=priceUnit(r);
+  return `<span class="yen">¥${fmtY(get(r,'price'))}${u?`<span class="yu">/${esc(u)}</span>`:''}</span>`; };
+
 /* 円 → 点（薬剤料の換算規則）。
    15円以下は1点、15円超は10円で割って五捨五超入。
    カード内の差額と「計算」タブの両方でこれを使う。 */
@@ -730,7 +746,7 @@ function render(){
       </div>
       <div class="nm">${hl(get(r,'n'),terms)}<span class="nmmy">${myMarks(r)}</span></div>
       <div class="sub">${hl(get(r,'sp'),terms)}<span class="sep">|</span>${hl(dv(r,'m'),terms)}${
-        get(r,'price')!=null?`<span class="yen">¥${fmtY(get(r,'price'))}</span>`:''}${
+        get(r,'price')!=null?yenBadge(r):''}${
         (()=>{const d=dcOf(r); return (d&&d[1])?`<span class="dcd">中止 ${esc(d[1])}</span>`:'';})()}</div>
       <div class="det">
         <dl style="margin:0">
@@ -4030,8 +4046,10 @@ document.getElementById('anak').addEventListener('click',e=>{
   h+=S_('その他の表示');
   h+=R_('<span class="kind">内用薬</span>','剤形（内用薬・外用薬・注射薬）',
         '「剤形（詳細）」の絞り込みでは、軟膏・クリーム・テープ・OD錠など38種に分類しています');
-  h+=R_('<span class="yen" style="margin-left:0">¥10.8</span>','薬価（円）',
-        '薬価基準収載品目リストから取得。適用日はカードを開くと表示されます');
+  h+=R_('<span class="yen" style="margin-left:0">¥10.8<span class="yu">/錠</span></span>','薬価（円）',
+        '薬価基準収載品目リストから取得。<b>／の後ろは薬価のかかる単位</b>で、規格の末尾から取っています'+
+        '（「1%1g」なら1gあたり＝/g、生薬の「10g」なら10gあたり＝/10g）。'+
+        '単位が決められない規格では金額だけを出します。適用日はカードを開くと表示されます');
 
   h+='<div class="lgnote">'+
      '<b>並び順</b>：件数バーの「並び：〜」を押すと3通りに切り替わります。'+

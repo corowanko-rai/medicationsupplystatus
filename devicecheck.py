@@ -738,6 +738,18 @@ def check_device(browser, p, name, url):
     pg.evaluate("document.getElementById('cfg').open=false")
     pg.wait_for_timeout(150)
 
+    # ===== v52：薬価バッジの単位（¥6.9/g など） =====
+    pu = pg.evaluate("""() => {
+      const f=(sp)=>priceUnit([].concat(Array(F.sp).fill(''),[sp]));
+      return [f('９０％１ｇ'), f('１０％１ｍＬ'), f('６０ｍｇ１錠'), f('１０ｇ'),
+              f('（０．７２ｍｇ）９ｃ㎡１枚'), f('２５０ｍｇ１錠（レボフロキサシンとして）'), f('ー'), f('２８錠')];
+    }""")
+    if pu != ["g", "mL", "錠", "10g", "枚", "錠", "", "28錠"]:
+        fails.append("薬価の単位の取り出しが合わない（%s）" % pu)
+    nu = pg.evaluate("() => [...document.querySelectorAll('.card .yen')].slice(0,30).filter(e=>e.querySelector('.yu')).length")
+    if pg.locator('.card .yen').count() and nu == 0:
+        fails.append("薬価バッジに単位が付いていない")
+
     # ===== v45：残りわずかの成分／切替余地／マイ薬局／分析タブ =====
     # 期待値は画面の関数を使わず、行データから独立に数える。
     GRP_JS = r"""
