@@ -53,6 +53,7 @@ DOC_TERMS = [
     "切替余地",       # カードの切替余地／残りわずかの成分
     "回復までの日数", # 分析タブ
     "マイ薬局",       # 採用薬（端末内保存）
+    "「変更」タブ",   # 変更調剤の候補（v53）
 ]
 
 GOOD_TYPES = {"clear", "uncross", "fall", "up"}
@@ -759,12 +760,12 @@ def check_device(browser, p, name, url):
         if(k==='内用薬') return POWD.has(f)?'粉・液':SOLID.has(f)?'錠・カプセル':'その他';
         if(k==='外用薬') return f||'その他'; return '注射'; };
     """
-    # タブが4つになっても1行に収まり、文字が切れていないこと
+    # タブが5つ（検索・お知らせ・計算・変更・分析）になっても1行に収まり、文字が切れていないこと
     tabs = pg.evaluate("""() => [...document.querySelectorAll('.ptab')].map(b => ({
         t: b.dataset.p, h: Math.round(b.getBoundingClientRect().height),
         cut: b.scrollWidth > b.clientWidth + 1}))""")
-    if len(tabs) != 4:
-        fails.append("画面のタブが %d個（期待 4）" % len(tabs))
+    if len(tabs) != 5:
+        fails.append("画面のタブが %d個（期待 5）" % len(tabs))
     if any(t["cut"] for t in tabs) or len({t["h"] for t in tabs}) != 1 or tabs[0]["h"] > 52:
         fails.append("タブが1行に収まっていない（%s）" % tabs)
 
@@ -1455,6 +1456,68 @@ def check_device(browser, p, name, url):
         pg.locator('.ptab[data-p="search"]').click()
         pg.wait_for_timeout(500)
 
+    # 変更ページ（変更調剤の候補。v53）
+    ht = pg.locator('.ptab[data-p="hc"]')
+    if ht.count() == 0:
+        fails.append("変更タブが無い")
+    else:
+        ht.click()
+        pg.wait_for_timeout(500)
+        if not pg.locator("#hcp").is_visible():
+            fails.append("変更ページが開かない")
+        pg.locator('[data-hc="pick"]').first.click()
+        pg.wait_for_timeout(400)
+        if not pg.locator("#capick").is_visible():
+            fails.append("変更タブで薬の選択画面が開かない")
+        elif "処方薬" not in pg.locator("#capt").inner_text():
+            fails.append("薬の選択画面の見出しが変更タブ用にならない")
+        pg.fill("#capinput", "シングレア錠１０")
+        pg.wait_for_timeout(500)
+        if pg.locator(".capitem").count() == 0:
+            fails.append("変更タブで処方薬の候補が出ない")
+        else:
+            pg.locator(".capitem").first.click()
+            pg.wait_for_timeout(600)
+            if pg.locator("#hcbody .hcct").count() != 4:
+                fails.append("変更タブの集計が出ない")
+            if pg.locator("#hcbody .card.hcc").count() == 0:
+                fails.append("変更調剤の候補が出ない")
+            if pg.locator('#hcbody .card.hcc.v-ok').count() == 0:
+                fails.append("◎（そのまま可）の候補が出ない")
+            pg.locator('[data-hc="tk"]').click()
+            pg.wait_for_timeout(300)
+            if pg.locator('[data-hc="tk"]').get_attribute("aria-pressed") != "true" or pg.locator(".hcban").count() == 0:
+                fails.append("特例のスイッチが効かない")
+            pg.locator("#hcbody .card.hcc").first.click()
+            pg.wait_for_timeout(300)
+            if "【変更調剤のお知らせ】" not in (pg.locator(".hctxt").first.inner_text() if pg.locator(".hctxt").count() else ""):
+                fails.append("情報提供の文面が出ない")
+            pg.locator('[data-hc="rt"][data-v="gn"]').click()
+            pg.wait_for_timeout(300)
+            if pg.locator('select[data-hc="cmp"]').count() == 0:
+                fails.append("一般名にしても比べる先発品が出ない")
+            if ovf() != 0:
+                fails.append(f"変更ページで横溢れ {ovf()}px")
+        # 検索カードからの導線
+        pg.locator('.ptab[data-p="search"]').click()
+        pg.wait_for_timeout(300)
+        pg.fill("#q", "サムスカＯＤ錠１５")
+        pg.wait_for_timeout(800)
+        if pg.locator("#list .card").count():
+            pg.locator("#list .card").first.click()
+            pg.wait_for_timeout(300)
+            hb = pg.locator("#list .card.open .hcbtn")
+            if hb.count() == 0:
+                fails.append("検索カードに「変更調剤の候補を見る」が無い")
+            else:
+                hb.first.click()
+                pg.wait_for_timeout(500)
+                if not pg.locator("#hcp").is_visible() or "サムスカ" not in pg.locator("#hcbody .hcsrc").inner_text():
+                    fails.append("検索カードから変更タブへ移れない")
+        pg.locator('.ptab[data-p="search"]').click()
+        pg.fill("#q", "")
+        pg.wait_for_timeout(500)
+
     # 画面タブ（検索／お知らせ）
     tb = pg.locator('.ptab[data-p="board"]')
     if tb.count() == 0:
@@ -1646,7 +1709,7 @@ def check_device(browser, p, name, url):
 
     # タップ領域（Androidは48dp推奨。主要な操作要素を確認）
     small = pg.evaluate(f"""() => {{
-      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort','.chip.cm','.cmitem','.sdq','.sdday','#cmvk .kb2','.gfb','#genk .kb2','#gob','#caadd','.caadddrug','.carb'];
+      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort','.chip.cm','.cmitem','.sdq','.sdday','#cmvk .kb2','.gfb','#genk .kb2','#gob','#caadd','.caadddrug','.carb','.hcstep','.hcfl','.hcsw','.hcre','.hcmore','.hcbtn','.hcpickbig'];
       const out=[];
       sels.forEach(s=>document.querySelectorAll(s).forEach(el=>{{
         const r=el.getBoundingClientRect();

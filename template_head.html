@@ -59,6 +59,128 @@ header{
   font-size:10.5px;box-shadow:0 0 0 2px var(--bg)}
 .ptab[aria-selected="true"] .ptbadge{background:#e8734a}
 @media (max-width:359px){.ptab{font-size:13px}}
+/* ---- 変更タブ（変更調剤の候補） ---- */
+#hcp{display:none;padding:0 0 calc(env(safe-area-inset-bottom) + 40px)}
+#hcp.on{display:block}
+#hcp{content-visibility:auto;contain-intrinsic-size:0 1200px}
+.hcpickbig{width:100%;min-height:56px;border-radius:12px;border:1px dashed var(--accent);
+  background:var(--surface);color:var(--accent);font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
+.hcsrc{background:#fbfdff;border:1px solid var(--line);border-left:4px solid var(--pur);
+  border-radius:11px;padding:10px 11px;margin-bottom:12px}
+.hcre{min-height:40px;padding:0 11px;border-radius:8px;background:var(--surface2);
+  border:1px solid var(--line);color:var(--ink2);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}
+.hcrow{margin-bottom:12px}
+.hclbl{display:block;font-size:12.5px;font-weight:800;color:var(--ink2);margin-bottom:6px}
+.hcseg{display:flex;gap:5px}
+.hcseg .carb{font-size:12.5px;min-height:40px;padding:0 4px}
+.hcauto{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.6}
+.hcauto.hcw{color:var(--warn)}
+.hccmp{margin-top:9px}
+.hccmp label{display:block;font-size:12px;font-weight:700;color:var(--ink2)}
+.hccmp select{display:block;width:100%;margin-top:4px;min-height:40px;padding:0 8px;font-size:13px;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font-family:inherit}
+.hcqrow{display:flex;gap:14px;flex-wrap:wrap}
+.hcus{flex:1;min-width:130px}
+.hcqty{display:flex;align-items:center;gap:6px}
+.hcstep{width:40px;height:40px;border-radius:9px;border:1px solid var(--line);flex:0 0 auto;
+  background:var(--surface);font-size:18px;font-weight:800;color:var(--ink2);font-family:inherit;cursor:pointer}
+.hcnum{width:64px;height:40px;border:1px solid var(--line);border-radius:9px;text-align:center;
+  font-size:17px;font-weight:800;background:#fff;color:var(--ink);font-family:inherit;-moz-appearance:textfield}
+.hcnum::-webkit-inner-spin-button,.hcnum::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.hcunit{font-size:13px;font-weight:700;color:var(--ink2)}
+.hcflags{display:flex;flex-wrap:wrap;gap:5px}
+.hcfl{min-height:40px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink2);font-family:inherit}
+.hcfl::before{content:'□ ';color:var(--ink3)}
+.hcfl[aria-pressed="true"]{background:#fde8e8;border-color:#f0b9b9;color:var(--stop)}
+.hcfl[aria-pressed="true"]::before{content:'☑ ';color:var(--stop)}
+.hctk{display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:11px;
+  background:#fdf6e8;border:1px solid #ecd9a8}
+.hctkt{flex:1;min-width:0}
+.hctkt b{display:block;font-size:13px;color:#6b4a0c}
+.hctkt span{display:block;font-size:11px;line-height:1.6;color:#7a5a17;margin-top:2px}
+.hctkt .hctks{font-weight:800;color:var(--stop)}
+.hcsw{flex:0 0 auto;width:56px;height:44px;position:relative;padding:0;
+  border:none;background:transparent;cursor:pointer}
+/* 見た目は52×30のスイッチ。押せる範囲は56×44に広げる */
+.hcsw::before{content:'';position:absolute;left:2px;top:7px;width:52px;height:30px;border-radius:999px;
+  background:#c9d3dd;transition:.15s}
+.hcsw::after{content:'';position:absolute;top:10px;left:5px;width:24px;height:24px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.15s}
+.hcsw[aria-pressed="true"]::before{background:#c27a00}
+.hcsw[aria-pressed="true"]::after{left:27px}
+.hcstop{font-size:12.5px;line-height:1.75;color:var(--stop);background:#fdf0f0;border:1px solid #f0c4c4;
+  border-radius:11px;padding:11px 12px;margin-bottom:12px}
+.hcsum{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:11px}
+.hcbase{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.hcbase .k{font-size:12px;font-weight:800;color:var(--ink2)}
+.hcbase .v{font-size:20px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.hcbnote{font-size:11px;color:var(--ink3);line-height:1.6;margin:3px 0 10px}
+.hccnt{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.hcct{border-radius:10px;padding:7px 3px;text-align:center;border:1px solid var(--line)}
+.hcct b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.hcct span{display:block;font-size:10.5px;font-weight:700;line-height:1.35}
+.hcct.ok{background:#e3f6ec;border-color:#bfe6d0;color:var(--ok)}
+.hcct.cond{background:#e8f2fb;border-color:#c5dcf0;color:#0a5a97}
+.hcct.tk{background:#fdf0d9;border-color:#ecd9a8;color:var(--warn)}
+.hcct.x{background:var(--surface2);color:var(--ink3)}
+.hcchkn{margin-top:7px;font-size:12px;font-weight:700;color:#5a6b7b}
+.hcban{margin-top:10px;font-size:11.5px;line-height:1.7;color:#6b4a0c;background:#fdf6e8;
+  border:1px solid #ecd9a8;border-radius:9px;padding:8px 10px}
+.hcfil{margin:4px 0 10px}
+.hcg{margin:16px 0 8px}
+.hcgh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hcgh h3{margin:0;font-size:14.5px;font-weight:800}
+.hcgh .n{font-size:12px;color:var(--ink3);font-weight:700}
+.hcgd{font-size:11.5px;color:var(--ink2);line-height:1.65;margin-top:3px}
+.hcg.ok h3{color:var(--ok)} .hcg.cond h3{color:#0a5a97} .hcg.tk h3{color:var(--warn)}
+.hcg.chk h3{color:#5a6b7b} .hcg.x h3{color:var(--ink3)}
+.hcnone{font-size:12px;color:var(--ink3);padding:4px 2px 6px}
+.card.hcc.v-ok{border-left-color:var(--ok)}
+.card.hcc.v-cond{border-left-color:#3d8fd1}
+.card.hcc.v-tk{border-left-color:#c98a2b}
+.card.hcc.v-chk{border-left-color:#9aa9b8}
+.vbadge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.vbadge.ok{background:#e3f6ec;color:var(--ok)}
+.vbadge.cond{background:#e8f2fb;color:#0a5a97}
+.vbadge.tk{background:#fdf0d9;color:var(--warn)}
+.vbadge.chk{background:var(--surface2);color:#5a6b7b}
+.hcq{font-weight:800;color:var(--ink)}
+.hcpt{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:12px;
+  color:var(--ink2);font-variant-numeric:tabular-nums}
+.hcpt .cmp{font-weight:800;padding:2px 7px;border-radius:6px}
+.hcpt .cmp.le{background:#e3f6ec;color:var(--ok)}
+.hcpt .cmp.gt{background:#fdf0d9;color:var(--warn)}
+.hcpt .cmp.free{background:var(--surface2);color:var(--ink3)}
+.hcrs{font-size:11.5px;color:var(--ink3);margin-top:4px;line-height:1.55}
+.hcmore{width:100%;min-height:40px;border-radius:10px;border:1px dashed var(--line);cursor:pointer;
+  background:transparent;color:var(--ink2);font-size:12.5px;font-weight:700;font-family:inherit;margin-bottom:6px}
+.hcx{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 12px}
+.hcxi{padding:9px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:1.6;cursor:pointer}
+.hcxi:first-child{border-top:none}
+.hcxi b{color:var(--ink)} .hcxi>span{display:block;color:var(--ink3);font-size:11.5px}
+.hcxl{margin-top:6px;font-size:12px;color:var(--ink2)}
+.hcxl div{padding:3px 0}
+.hcxl small{margin-left:6px;color:var(--ink3)}
+.hcsel{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);cursor:default}
+.hcselh{font-size:12.5px;font-weight:800;color:var(--ink2);margin-bottom:6px}
+.hctxt{font-size:12.5px;line-height:1.75;background:#fbfdff;border:1px solid var(--line);
+  border-radius:9px;padding:9px 10px;white-space:pre-wrap;color:var(--ink);user-select:text;-webkit-user-select:text}
+.hcact{display:flex;gap:6px;margin-top:8px}
+.hcchk{font-size:11.5px;line-height:1.7;color:var(--ink2);margin-top:8px}
+.hcwarn{font-size:11.5px;line-height:1.75;color:var(--ink2);background:var(--surface);
+  border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;padding:9px 11px;margin-top:14px}
+.hcwarn b{color:var(--ink)}
+.hcbtn{margin-top:8px;width:100%;min-height:46px;padding:8px;border-radius:10px;
+  background:var(--surface2);border:1px solid var(--line);color:var(--pur);
+  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.hcbtn:active{background:#efe9fb}
+/* タブが5つになったので、狭い端末ではさらに詰める */
+@media (max-width:359px){.ptab{font-size:12.5px}}
+/* 画面の高さが低い端末（iPhone mini など）で詳細の絞り込みを開くと、
+   固定した上部が画面のほぼ全部を覆い、検索結果や並び替えボタンが押せなくなる。
+   絞り込みを開いている間だけ、上部を固定せずに一緒にスクロールさせる。 */
+@media (max-height:760px){ header:has(#adv.on){position:relative} }
 /* ---- マイ薬局 ---- */
 /* 店舗の印。色だけに頼らず、店舗名の頭文字を必ず入れる
    （色の見分けにくい組み合わせがあっても店舗を取り違えないため）。 */
@@ -1167,6 +1289,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="ptab" role="tab" data-p="board" aria-selected="false">
       お知らせ<span class="ptbadge" id="ptbadge"></span></button>
     <button class="ptab" role="tab" data-p="calc" aria-selected="false">計算</button>
+    <button class="ptab" role="tab" data-p="hc" aria-selected="false">変更</button>
     <button class="ptab" role="tab" data-p="ana" aria-selected="false">分析</button>
   </div>
   <!-- マイ薬局：店舗が2つ以上あるときだけ出る切り替え。
@@ -1270,6 +1393,16 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button class="caadd" id="caadd">＋ 剤（Rp）を追加</button>
 
     <div class="cares" id="cares"></div>
+  </div>
+</div>
+<div id="hcp">
+  <div class="cawrap">
+    <div class="canote">
+      処方薬を選ぶと、<b>変更調剤できる候補</b>を判定します。<br>
+      厚労省の通知（後発医薬品への変更調剤）と、<b>供給不足時の特例</b>（令和6年3月15日 事務連絡）に沿って、
+      <b>薬剤料（点数）</b>で比べます。最終判断は薬剤師が行ってください。
+    </div>
+    <div id="hcbody"></div>
   </div>
 </div>
 <div id="ana">

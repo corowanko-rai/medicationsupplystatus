@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-23-v52';
+const TPL_VER='2026-10-30-v53';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -902,6 +902,8 @@ function render(){
         ${BY_ING.get(r[F.i]).length>1
           ? `<button class="cmpbtn" data-ing="${r[F.i]}" data-yj="${esc(get(r,'yj'))}">同一成分薬を比較（${BY_ING.get(r[F.i]).length}件）</button>`
           : '<div class="hint">同一成分の他剤はありません</div>'}
+        ${BY_ING.get(r[F.i]).length>1
+          ? `<button class="hcbtn" data-yj="${esc(get(r,'yj'))}">変更調剤の候補を見る</button>` : ''}
       </div>`;
     el.addEventListener('click',(e)=>{
       /* 差額欄の操作でカードを閉じない。
@@ -910,7 +912,7 @@ function render(){
       if(e.target.closest('.sendiff')) return;
       if(e.target.closest('.cmitem')) return; /* 併売品タップは開閉させない */
       /* マイ薬局の付け外し・切替余地の操作でもカードを閉じない */
-      if(e.target.closest('.mytg,.swbtn,.swbox')) return;
+      if(e.target.closest('.mytg,.swbtn,.swbox,.hcbtn')) return;
       el.classList.toggle('open');
     });
     frag.appendChild(el);
@@ -1299,6 +1301,9 @@ function closeCmp(){
   document.body.style.overflow='';
 }
 document.getElementById('list').addEventListener('click',e=>{
+  /* 変更調剤の候補を見る → 変更タブへ */
+  const hb=e.target.closest('.hcbtn');
+  if(hb){ e.stopPropagation(); hcSetSrc(hb.dataset.yj); switchPage('hc'); return; }
   /* 併売品をタップしたら、その薬を品名で検索する */
   const ci=e.target.closest('.cmitem');
   if(ci){
@@ -1342,12 +1347,14 @@ function switchPage(k){
   document.getElementById('board').classList.toggle('on', k==='board');
   document.getElementById('calc').classList.toggle('on', k==='calc');
   document.getElementById('ana').classList.toggle('on', k==='ana');
+  document.getElementById('hcp').classList.toggle('on', k==='hc');
   const nc=document.getElementById('nochg');
   if(nc) nc.style.display = k==='search' ? '' : 'none';
   document.getElementById('mypeek').style.display = k==='search' ? '' : 'none';
   if(k==='board'){ drawMsw(); drawLow(); drawVt(); drawChg(); drawNews(); drawBoard(); }
   if(k==='calc') drawCalc();
   if(k==='ana') drawAna();
+  if(k==='hc') drawHc();
   window.scrollTo({top:0});
 }
 document.querySelector('.ptabs').addEventListener('click',e=>{
@@ -2157,7 +2164,14 @@ document.getElementById('calist').addEventListener('input',e=>{
 });
 
 /* --- 薬を選ぶ --- */
-function openPick(){
+/* 計算タブ（選定療養の対象品だけ）と変更タブ（すべての薬）で共用する */
+let pickMode='calc';
+function openPick(mode){
+  pickMode = mode==='hc' ? 'hc' : 'calc';
+  document.getElementById('capt').textContent =
+    pickMode==='hc' ? '処方薬を選ぶ' : '選定療養の対象医薬品を選ぶ';
+  document.getElementById('capinput').placeholder =
+    pickMode==='hc' ? '品名か成分名で検索（スペースでAND）' : '薬剤名で検索';
   document.getElementById('capick').classList.add('on');
   document.body.style.overflow='hidden';
   const inp=document.getElementById('capinput');
@@ -2169,6 +2183,7 @@ function closePick(){
 }
 function drawPick(q){
   const terms=norm(q).split(/\s+/).filter(Boolean);
+  if(pickMode==='hc'){ drawPickHc(terms.map(KATA)); return; }
   /* 選定療養の対象品だけを候補にする */
   let hits=[];
   for(let i=0;i<R.length && hits.length<80;i++){
@@ -2194,11 +2209,35 @@ function drawPick(q){
     </div>`;
   }).join('');
 }
+
+/* 変更タブ用：処方薬の候補（品名・成分名で探す。すべての薬が対象） */
+function drawPickHc(terms){
+  const box=document.getElementById('capbody');
+  if(!terms.length){
+    box.innerHTML='<div class="caempty">品名か成分名を入力してください。</div>';
+    return;
+  }
+  const hits=[];
+  for(let i=0;i<R.length && hits.length<80;i++){
+    const r=R[i];
+    if(!get(r,'yj')) continue;
+    const s=get(r,'s'), si=get(r,'si');
+    if(!terms.every(t=>s.includes(t)||si.includes(t))) continue;
+    hits.push(r);
+  }
+  if(!hits.length){ box.innerHTML='<div class="caempty">該当する薬がありません。</div>'; return; }
+  const STL=['通常出荷','限定出荷','供給停止'];
+  box.innerHTML=hits.map(r=>`<div class="capitem" data-yj="${esc(get(r,'yj'))}">
+      <div class="capnm">${pcBadge(r)} ${esc(get(r,'n'))}</div>
+      <div class="capsub">${esc(get(r,'sp'))}｜${esc(dv(r,'m'))}｜${STL[get(r,'sc')|0]||''}${get(r,'price')!=null?'｜'+fmtY(get(r,'price'))+'円':''}</div>
+    </div>`).join('');
+}
 document.getElementById('capinput').addEventListener('input',e=>drawPick(e.target.value));
 document.getElementById('capx').addEventListener('click',closePick);
 document.getElementById('capbody').addEventListener('click',e=>{
   const it=e.target.closest('.capitem'); if(!it) return;
   const yj=it.dataset.yj;
+  if(pickMode==='hc'){ hcSetSrc(yj); closePick(); drawHc(); window.scrollTo({top:0}); return; }
   const row=R.find(x=>get(x,'yj')===yj);
   if(row && caPickTarget!=null){
     const rp=caRps[caPickTarget];
@@ -2214,6 +2253,509 @@ document.getElementById('capbody').addEventListener('click',e=>{
     rp.drugs.push({yj, name:get(row,'n'), qty:null, kind:k});
   }
   closePick(); drawCalc();
+});
+
+/* ---------- 変更タブ（変更調剤の候補） ----------
+   根拠：
+   ・「処方箋に記載された医薬品の後発医薬品への変更について」（厚労省保険局医療課 通知）
+       変更不可の指示がなければ、患者の同意を得て次の変更ができる。
+         - 同じ含量規格・同じ剤形の後発医薬品（薬剤料が上がってもよい）
+         - 含量規格が異なる後発医薬品／類似する別剤形の後発医薬品
+           （変更後の薬剤料が変更前以下の場合に限る。内服薬のみ類似剤形あり）
+       類似する別剤形：ア 錠剤（普通錠・口腔内崩壊錠）・カプセル剤・丸剤
+                       イ 散剤・顆粒剤・細粒剤・末剤・ドライシロップ（散剤として）
+                       ウ 液剤・シロップ剤・ドライシロップ（水剤として）
+   ・平成24年度 疑義解釈その2：一般名処方では、該当する先発品のいずれかの薬剤料と比べてよい
+       （患者が使っている先発品があればその薬剤料）。一般名処方で先発品を調剤するときは
+       規格・剤形を変えられない。
+   ・「現下の医療用医薬品の供給状況における変更調剤の取扱いについて」（令和6年3月15日 事務連絡）
+       当面の間の特例：後発品の銘柄名処方から先発品への変更、薬剤料が上がる変更、
+       アとイの区分間の変更（類似剤形にやむを得ず変えられない場合）を、説明と同意で認める。
+   薬剤料は「点数」で比べる（15円以下1点、15円超は10円で割って五捨五超入。yenToTen）。
+   内服は1剤1日分、頓服は全量（1回量×回数）、外用は総量が所定単位。
+   このページは判断の補助であり、効能効果・用法用量の違いや分割の可否は判定しない。 */
+
+const HC_FLAB={tab:'錠',OD:'OD錠',cap:'カプセル',pill:'丸剤',pow:'散',fine:'細粒',gran:'顆粒',
+  DS:'ドライシロップ',syr:'シロップ',liq:'内用液'};
+const HC_GRP={tab:'ア',OD:'ア',cap:'ア',pill:'ア',pow:'イ',fine:'イ',gran:'イ',syr:'ウ',liq:'ウ'};
+const HC_GNAME={'ア':'錠剤・カプセル','イ':'散剤・顆粒','ウ':'液剤・シロップ'};
+/* 数えられる単位（割り切れないと同じ量にならない） */
+const HC_CNT=new Set(['錠','カプセル','包','丸','個','枚','本','袋','シート','管','瓶','筒','キット']);
+
+/* 剤形の判定。YJコード8桁目（薬価基準の剤形区分）を主に使い、品名で補う。
+   F=錠 G=徐放錠など H=腸溶錠 K=舌下錠など L=丸剤 M=カプセル N=徐放カプセルなど
+   A,B=散 C=細粒 D=顆粒 R=ドライシロップ Q=シロップ S=内用液 */
+const HC_FCACHE=new Map();
+function hcForm(r){
+  const yj=String(get(r,'yj')||'');
+  if(HC_FCACHE.has(yj)) return HC_FCACHE.get(yj);
+  const k=dv(r,'k'), c=yj.charAt(7).toUpperCase();
+  const n=HALF(String(get(r,'n')||''));
+  const S=(key,lab)=>({key,sp:true,lab});
+  const P=(key)=>({key,sp:false,lab:HC_FLAB[key]});
+  let f;
+  if(k!=='内用薬'){
+    const fm=dv(r,'fm')||k;
+    f={key:'X'+c+':'+fm, sp:true, ext:true, lab:fm};
+  }else if(/徐放|腸溶/.test(n) && 'FGHMNR'.includes(c)){
+    const t=n.match(/徐放|腸溶/)[0];
+    f=S(c+':'+t, t+(/カプセル/.test(n)?'カプセル':/ドライシロップ|DS/.test(n)?'ドライシロップ':'錠'));
+  }else{
+    switch(c){
+      case 'F':
+        if(/チュアブル/.test(n)) f=S('chew','チュアブル錠');
+        else if(/舌下|バッカル/.test(n)) f=S('subl','舌下錠');
+        else if(/発泡|分散|溶解/.test(n)) f=S('F:sp','特殊な錠剤');
+        /* 口腔内崩壊錠。「ガスターD錠」「マクサルトRPD錠」「ザイディス錠」「レディタブ錠」のようにODと書かない品名もある */
+        else if(/OD|D錠|口腔内崩壊|ザイディス|レディタブ/.test(n)) f=P('OD');
+        else f=P('tab');
+        break;
+      case 'L': f=P('pill'); break;
+      case 'M': f=P('cap'); break;
+      case 'A': case 'B': f=P('pow'); break;
+      case 'C': f=P('fine'); break;
+      case 'D': f=/発泡|懸濁/.test(n)?S('D:sp','特殊な顆粒'):P('gran'); break;
+      case 'R': f=P('DS'); break;
+      case 'Q': f=/ゼリー/.test(n)?S('jelly','ゼリー剤'):P('syr'); break;
+      case 'S': f=P('liq'); break;
+      case 'G': {
+        const m=n.match(/(徐放OD|CR|LA|SR|TR|XR|ER|L|R|S)?(?=錠|カプセル)/);
+        const t=(m&&m[1])||'';
+        f=S('G:'+t, t ? t+(/カプセル/.test(n)?'カプセル':'錠') : '徐放錠など'); break;
+      }
+      case 'H': f=S('H','腸溶錠'); break;
+      case 'N': f=S('N','徐放カプセルなど'); break;
+      case 'K': f=S('subl','舌下錠など'); break;
+      default:  f=S('?'+c,'特殊な剤形');
+    }
+  }
+  HC_FCACHE.set(yj,f);
+  return f;
+}
+const hcGroup=(f,ds)=>f.sp?null:(f.key==='DS'?(ds==='liq'?'ウ':'イ'):HC_GRP[f.key]);
+
+/* 規格から含量を読む。{per: 1単位あたりの含量, ak: 含量の単位, cu: 数える単位, cnt: 薬価のかかる数}
+   例）10mg1錠 → {10,'mg','錠',1}／1%1g → {10,'mg','g',1}／0.04%10mL → {0.4,'mg','mL',10}
+   規格が「1g」だけのときは、品名の「10%」などから補う。読めなければ null。 */
+const HC_SCACHE=new Map();
+const HC_SP_RE=/^([^\d(]*)(\d+(?:\.\d+)?)(mg|μg|g|%|mL|単位|万単位|mEq|IU|JAU|MBq|KU)(\d+(?:\.\d+)?)?(錠|カプセル|包|g|mL|個|丸|瓶|本|枚|袋|管|筒|キット|シート)$/;
+function hcStr(r){
+  const yj=String(get(r,'yj')||'');
+  if(HC_SCACHE.has(yj)) return HC_SCACHE.get(yj);
+  let s=HALF(String(get(r,'sp')||'')).replace(/[µμ]/g,'μ').replace(/,/g,'').replace(/\s/g,'');
+  s=s.replace(/\([^()]*\)$/,'');
+  let out=null;
+  const m=s.match(HC_SP_RE);
+  if(m){
+    const pre=m[1], amt=+m[2], au=m[3], cnt=m[4]?+m[4]:1, cu=m[5];
+    if(au==='%'){
+      if(cu==='g'||cu==='mL') out={per:amt*10, ak:pre+'mg', cu, cnt};
+    }else{
+      const mul={'μg':0.001,g:1000,'万単位':10000}[au]||1;
+      const ak=pre+({'μg':'mg',g:'mg','万単位':'単位'}[au]||au);
+      out={per:amt*mul/cnt, ak, cu, cnt};
+    }
+  }else{
+    const m2=s.match(/^(\d+(?:\.\d+)?)(g|mL)$/);
+    if(m2){
+      const p=HALF(String(get(r,'n')||'')).match(/(\d+(?:\.\d+)?)%/);
+      if(p) out={per:+p[1]*10, ak:'mg', cu:m2[2], cnt:+m2[1]};
+    }
+  }
+  HC_SCACHE.set(yj,out);
+  return out;
+}
+/* 数える単位と、薬価のかかる数（規格が読めない薬でも単位だけは出す） */
+function hcUnit(r){
+  const s=hcStr(r); if(s) return {cu:s.cu, cnt:s.cnt};
+  const u=priceUnit(r); const m=u.match(/^(\d+(?:\.\d+)?)?(.+)$/);
+  return m ? {cu:m[2], cnt:m[1]?+m[1]:1} : {cu:'', cnt:1};
+}
+/* 変更調剤での立場。kc（変更調剤が認められる基礎的医薬品）は後発品と同じに扱う。
+   変更調剤リストにない基礎的医薬品は「元の先発品」側として扱う。 */
+function hcCat(r){
+  if(get(r,'kc')) return 'gen';
+  const p=dv(r,'pc');
+  if(p==='後発品') return 'gen';
+  if(p==='先発品'||p==='長期収載品'||p==='準先発品') return 'orig';
+  if(get(r,'kb')) return 'orig';
+  return 'other';
+}
+const hcFmtQ=(q)=>String(Math.round(q*1000)/1000);
+const hcKind=(r)=>dv(r,'k')==='内用薬'?'in':'ex';
+
+let hc={yj:null, rt:null, usage:'内服', qty:1, times:1, ds:'solid',
+  fl:{all:false,str:false,form:false}, tk:false, cmp:null, fil:'all',
+  more:{}, open:null, xopen:{}};
+
+/* 同じ成分（YJ上7桁）・同じ区分の薬。処方薬自身は除く */
+function hcCands(s){
+  const y7=String(get(s,'yj')).slice(0,7), k=dv(s,'k'), self=get(s,'yj');
+  return R.filter(r=>{ const y=String(get(r,'yj')||'');
+    return y.slice(0,7)===y7 && y!==self && dv(r,'k')===k; });
+}
+/* 一般名処方で比べる先発品（処方薬と同じ規格・剤形の先発品） */
+function hcOrigs(s){
+  const y9=String(get(s,'yj')).slice(0,9);
+  return R.filter(r=>String(get(r,'yj')||'').slice(0,9)===y9 && hcCat(r)==='orig' && get(r,'price')!=null)
+          .sort((a,b)=>get(b,'price')-get(a,'price'));
+}
+/* 金額と点数。q は数える単位での量 */
+function hcCost(r,q,ctx){
+  const p=get(r,'price'); if(p==null || !(q>0)) return null;
+  const mul=ctx.usage==='頓服'?ctx.times:1;
+  const yen=p/hcUnit(r).cnt*q*mul;
+  return {yen, t:yenToTen(yen)};
+}
+/* 変更前の薬剤料。一般名処方は比べる先発品で計算する */
+function hcBase(s,ctx){
+  let b=s;
+  if(ctx.rt==='gn'){
+    const os=hcOrigs(s);
+    if(!os.length) return null;
+    b=os.find(r=>get(r,'yj')===ctx.cmp)||os[0];
+  }
+  const c=hcCost(b,ctx.qty,ctx);
+  return c?{...c,row:b}:null;
+}
+
+/* 1品目の判定。v: ok=◎ cond=○ tk=△（特例なら可） chk=？（要確認） x=×
+   why: ×のときのまとめ用キー */
+function hcJudge(s,c,ctx,base){
+  const o={r:c, v:'x', rs:'', why:'', q:null, yen:null, t:null, kind:''};
+  const X=(why,rs)=>Object.assign(o,{v:'x',why,rs});
+  const fs=hcForm(s), fc=hcForm(c);
+  const ss=hcStr(s), sc=hcStr(c);
+  const same9=String(get(s,'yj')).slice(0,9)===String(get(c,'yj')).slice(0,9);
+  const cc=hcCat(c), rt=ctx.rt;
+  const ns=HALF(String(get(s,'n'))), nc=HALF(String(get(c,'n')));
+  if(/BS/.test(nc) && !/BS/.test(ns))
+    return X('bs','先行バイオ医薬品の銘柄名処方から、バイオ後続品へは変更できません。');
+
+  /* 先発・後発の関係で決まること */
+  let tkOnly=false;
+  if(rt==='other') return X('src-other','処方薬が先発・後発の区別のない品目のため、銘柄を変えるには疑義照会が必要です。');
+  if(cc==='other' && !(rt==='gn' && same9))
+    return X('other','先発・後発の区別がない品目です（局方品・漢方など）。');
+  if(cc==='orig'){
+    if(rt==='orig') return X('orig', get(c,'kb')&&dv(c,'pc')==='その他医薬品'
+        ? '変更調剤リストにない基礎的医薬品です。' : '先発品から先発品へは変更できません（併売品も同じ）。');
+    if(rt==='gn' && !same9) return X('gn-orig','一般名処方で先発品を調剤するときは、規格・剤形を変えられません。');
+    if(rt==='gen') tkOnly=true;   /* 後発品の銘柄名処方 → 先発品は特例のときだけ */
+  }
+
+  /* 同じ規格・剤形 */
+  if(same9){
+    const cost=hcCost(c,ctx.qty,ctx);
+    Object.assign(o,{q:ctx.qty, yen:cost&&cost.yen, t:cost&&cost.t});
+    if(tkOnly) return Object.assign(o,{v:'tk', kind:'先発医薬品へ変更（同じ規格・剤形）',
+      rs:'後発品の銘柄名処方から先発品への変更です。供給不足の特例のときだけ、説明と同意で変更できます。'});
+    const rs = rt==='gn' ? (cc==='orig'?'同じ一般名（同じ規格・剤形）の先発品です。':'同じ一般名（同じ規格・剤形）です。')
+             : rt==='gen' ? '同じ規格・剤形の別銘柄の後発品です。' : '同じ規格・剤形の後発品です。';
+    return Object.assign(o,{v:'ok', rs, kind: rt==='gn'?'一般名処方に基づく調剤（同じ規格・剤形）':rt==='gen'?'別銘柄の後発医薬品へ変更（同じ規格・剤形）':'後発医薬品へ変更（同じ規格・剤形）'});
+  }
+
+  /* ここからは規格・剤形が変わる変更 */
+  if(fs.ext||fc.ext){
+    if(fs.key===fc.key) return Object.assign(o,{v:'chk', rs:'外用薬・注射薬の規格違いです。薬剤料が同額以下なら変更できますが、数量の換算はこのページでは判定しません。'});
+    return X('ext-form','外用薬・注射薬は、別の剤形へ変更できません。');
+  }
+  const sameStr = !!(ss&&sc&&ss.ak===sc.ak&&Math.abs(ss.per-sc.per)<1e-9);
+  const sameForm = fs.key===fc.key;
+  if(ctx.fl.str && !sameStr) return X('fl-str','処方箋に「含量規格変更不可」の指示があります。');
+  if(ctx.fl.form && !sameForm) return X('fl-form','処方箋に「剤形変更不可」の指示があります。');
+  /* 同じ含量・同じ剤形に見えるのにYJ上9桁が違う＝薬価基準では別の剤形・規格。
+     メトグルコ錠とメトホルミン塩酸塩錠（用法・用量が違う）のような例があるため、判定せずに確認へ回す */
+  if(sameStr && sameForm){
+    const cost=hcCost(c,ctx.qty,ctx);
+    return Object.assign(o,{v:'chk', q:ctx.qty, yen:cost&&cost.yen, t:cost&&cost.t, kind:'後発医薬品へ変更',
+      rs:'同じ含量・剤形に見えますが、薬価基準では別の区分です。用法・用量が違う製剤のことがあるため、添付文書で確認してください。'});
+  }
+  if(fs.sp||fc.sp){
+    if(sameForm) return Object.assign(o,{v:'chk', rs:`${fc.lab}の規格違いです。用法・用量が同じか添付文書で確認してください。`});
+    if(fs.sp && fc.sp) return X('sp-both', `処方薬（${fs.lab}）とは別の剤形（${fc.lab}）です。`);
+    if(fc.sp) return X('sp-c:'+fc.lab, `${fc.lab}は、類似する別剤形に当たりません。`);
+    return X('sp-s', `処方薬が${fs.lab}のため、ほかの剤形へは変更できません。`);
+  }
+  const gs=hcGroup(fs,ctx.ds), gc=hcGroup(fc,ctx.ds);
+  let cross=false;
+  if(gs!==gc){
+    if((gs==='ア'&&gc==='イ')||(gs==='イ'&&gc==='ア')) cross=true;
+    else return X('grp', `剤形の区分が違います（${HC_GNAME[gs]}→${HC_GNAME[gc]}）。`);
+  }
+  /* 数量の換算 */
+  if(!ss||!sc||ss.ak!==sc.ak)
+    return Object.assign(o,{v:'chk', rs:'含量が読み取れないため、数量を換算できません。'});
+  let q=Math.round(ctx.qty*ss.per/sc.per*1000)/1000;
+  const parts=[];
+  if(!sameStr) parts.push(`規格が違う（${hcFmtQ(ss.per)}${ss.ak}→${hcFmtQ(sc.per)}${sc.ak}×${hcFmtQ(q)}${sc.cu}）`);
+  if(!sameForm) parts.push(`${cross?'剤形の区分が違う':'類似する別剤形'}（${fs.lab}→${fc.lab}）`);
+  const what=parts.join('・');
+  let half=false;
+  if(HC_CNT.has(sc.cu) && Math.abs(q-Math.round(q))>1e-6){
+    if(sc.cu==='錠' && Math.abs(q*2-Math.round(q*2))<1e-6) half=true;
+    else return X('qty', `この規格では同じ量になりません（${hcFmtQ(q)}${sc.cu}）。`);
+  }
+  const cost=hcCost(c,q,ctx);
+  Object.assign(o,{q, yen:cost&&cost.yen, t:cost&&cost.t});
+  const kind0 = (!sameStr&&!sameForm)?'含量規格と剤形を変更':(!sameStr?'含量規格を変更':(cross?'剤形を変更':'類似する別剤形へ変更'));
+  const kind = (tkOnly?'先発医薬品へ変更':'後発医薬品へ変更')+'（'+kind0+'）';
+  if(!cost || !base) return Object.assign(o,{v:'chk', kind,
+    rs:what+'。'+(!base&&rt==='gn'?'比べる先発品がないため、薬剤料を比べられません。':'薬価が分からないため判定できません。')});
+  if(half) return Object.assign(o,{v:'chk', kind,
+    rs:what+'。半錠になります。分割してよいか確認してください（薬剤料 '+(cost.t<=base.t?'同額以下':'超過')+'）。'});
+  if(cross) return Object.assign(o,{v:'tk', kind,
+    rs:what+'。特例で、類似する剤形にどうしても変えられない場合に限り変更できます。'});
+  if(tkOnly) return Object.assign(o,{v:'tk', kind,
+    rs:what+'。後発品の銘柄名処方から先発品への変更のため、特例のときだけ変更できます。'});
+  if(cost.t<=base.t) return Object.assign(o,{v:'cond', kind, rs:what+'。'});
+  return Object.assign(o,{v:'tk', kind, rs:what+'。薬剤料が上がるため、特例のときだけ変更できます。'});
+}
+
+/* 判定の一覧（テストからも呼ぶ） */
+function hcRun(s,ctx){
+  const base=hcBase(s,ctx);
+  const list=hcCands(s).map(c=>hcJudge(s,c,ctx,base));
+  const V={ok:0,cond:1,tk:2,chk:3,x:4};
+  list.sort((a,b)=>V[a.v]-V[b.v] || (myHas(b.r)?1:0)-(myHas(a.r)?1:0)
+    || (get(a.r,'sc')|0)-(get(b.r,'sc')|0) || ((a.t??1e9)-(b.t??1e9)) || ((a.yen??1e9)-(b.yen??1e9)));
+  return {base, list};
+}
+function hcCtx(s){
+  const rt = hc.rt || hcAutoRt(s);
+  return {rt, usage: hcKind(s)==='in' ? hc.usage : '外用', qty:hc.qty, times:hc.times,
+          ds:hc.ds, fl:hc.fl, tk:hc.tk, cmp:hc.cmp};
+}
+function hcAutoRt(s){ const c=hcCat(s); return c==='gen'?'gen':c==='orig'?'orig':'other'; }
+function hcSetSrc(yj){
+  const i=YJIDX.get(yj); if(i===undefined) return;
+  const s=R[i];
+  hc.yj=yj; hc.rt=null; hc.cmp=null; hc.more={}; hc.open=null; hc.xopen={};
+  hc.fl={all:false,str:false,form:false};
+  /* 処方ごとに設定を戻す（前の処方の特例や用法を持ち越さない） */
+  hc.usage = hcKind(s)==='in' ? '内服' : '外用';
+  hc.tk=false; hc.fil='all';
+  hc.qty=1; hc.times=1; hc.ds='solid';
+}
+const hcStep=(u)=>u==='錠'?0.5:(u==='g'?0.1:(u==='mL'?0.5:1));
+
+/* 情報提供の文面 */
+function hcInfoText(s,o,ctx){
+  const d=new Date(), ds=`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+  const us=hcUnit(s).cu, uc=hcUnit(o.r).cu;
+  const per = ctx.usage==='内服'?'／日':ctx.usage==='頓服'?`／回（${ctx.times}回分）`:'';
+  const tk = o.v==='tk' ? '\n理由：医薬品の供給不足のため（令和6年3月15日 事務連絡の取扱いによる）' : '';
+  return `【変更調剤のお知らせ】\n調剤日：${ds}\n患者：　　　　　　様\n`+
+    `処方：${HALF(String(get(s,'n')))} ${hcFmtQ(ctx.qty)}${us}${per}\n`+
+    `調剤：${HALF(String(get(o.r,'n')))} ${hcFmtQ(o.q)}${uc}${per}\n`+
+    `内容：${o.kind||'変更調剤'}${tk}\n`+
+    `患者さんの同意を得て調剤しました。`;
+}
+
+const HC_STL=['通常出荷','限定出荷','供給停止'];
+const HC_VL={ok:'◎ そのまま可',cond:'○ 同額以下で可',tk:'△ 特例なら可',chk:'？ 要確認'};
+const HC_GH={
+  ok:['◎ そのまま変更できる','同じ規格・剤形の後発品です。薬剤料が上がっても変更できます。',5],
+  cond:['○ 薬剤料が同額以下なら変更できる','規格が違う・類似する別剤形の後発品のうち、変更前の{B}点以下のものです。',5],
+  tk:['△ 特例なら変更できる','通常は変更できません。供給不足の特例を使えば、説明と同意で変更できます。',3],
+  chk:['？ 確認が必要','このページでは判定しきれない候補です。理由を見て判断してください。',3],
+};
+const HC_GHT={tk:['△ 特例で変更できる（説明・同意が必要）','特例により変更できます。薬剤料が上がるものは、そのことも説明してください。',3]};
+const HC_XLAB={'orig':'先発品','gn-orig':'先発品（規格・剤形が違う）','other':'先発・後発の区別がない品目',
+  'grp':'剤形の区分が違う','sp-both':'剤形が違う','qty':'同じ量にならない規格','sp-s':'処方薬が特殊な剤形','ext-form':'別の剤形',
+  'fl-str':'「含量規格変更不可」の指示','fl-form':'「剤形変更不可」の指示','bs':'バイオ後続品','src-other':'すべての候補'};
+
+function hcCard(o,ctx,base){
+  const r=o.r, v=o.v;
+  const lab=(v==='tk'&&ctx.tk)?'△ 特例で可':HC_VL[v];
+  const sc=get(r,'sc')|0, st=HC_STL[sc]||'';
+  const per = ctx.usage==='内服'?'1日':ctx.usage==='頓服'?'全量':'総量';
+  const u=hcUnit(r).cu;
+  let cmp='';
+  if(o.t!=null){
+    cmp = v==='ok' ? '<span class="cmp free">薬剤料の制限なし</span>'
+        : base ? (o.t<=base.t ? `<span class="cmp le">${o.t}点 ≦ ${base.t}点</span>`
+                              : `<span class="cmp gt">${o.t}点 ＞ ${base.t}点</span>`) : '';
+  }
+  const open=hc.open===get(r,'yj') && v!=='x';
+  return `<div class="card hcc v-${v}${open?' open':''}" data-yj="${esc(get(r,'yj'))}">
+    <div class="tags">${pcBadge(r)}<span class="vbadge ${v}">${lab}</span>
+      <span class="badge b${sc}">${st}</span>${volOf(r)===4?'<span class="vb v4">薬価削除予定</span>':''}${senBadge(r)}</div>
+    <div class="nm">${esc(get(r,'n'))}<span class="nmmy">${myMarks(r)}</span></div>
+    <div class="sub">${esc(get(r,'sp'))}${o.q!=null?` × <span class="hcq">${hcFmtQ(o.q)}${esc(u)}</span>`:''}<span class="sep">|</span>${esc(dv(r,'m'))}</div>
+    ${o.yen!=null?`<div class="hcpt">${per} ${fmtY(Math.round(o.yen*100)/100)}円＝${o.t}点 ${cmp}</div>`:''}
+    <div class="hcrs">${esc(o.rs)}</div>
+    ${open?`<div class="hcsel">
+      <div class="hcselh">処方元への情報提供（文面の例）</div>
+      <div class="hctxt">${esc(hcInfoText(R[YJIDX.get(hc.yj)],o,ctx))}</div>
+      <div class="hcact"><button class="myb pri" data-hc="copy">文面をコピー</button>
+        <button class="myb" data-hc="search">検索で詳しく見る</button></div>
+      <div class="hcchk">${v==='tk'?'特例による変更です。':''}患者さんに説明して同意を得てから調剤し、処方元へ調剤した銘柄（規格・剤形が変わるときはそれも）を伝えてください。情報提供の方法や頻度は、医療機関との事前の合意があればそれに従えます。</div>
+    </div>`:''}
+  </div>`;
+}
+
+function drawHc(){
+  const box=document.getElementById('hcbody');
+  if(!hc.yj || YJIDX.get(hc.yj)===undefined){
+    box.innerHTML=`<button class="hcpickbig" data-hc="pick">＋ 処方薬を選ぶ</button>
+      <div class="caempty">検索タブのカードにある「変更調剤の候補を見る」からも開けます。</div>`;
+    return;
+  }
+  const s=R[YJIDX.get(hc.yj)];
+  const ctx=hcCtx(s), isIn=hcKind(s)==='in';
+  const {base,list}=hcRun(s,ctx);
+  const u=hcUnit(s).cu||'';
+  const ssc=get(s,'sc')|0;
+  const rtB=(k,t)=>`<button class="carb" data-hc="rt" data-v="${k}" aria-pressed="${ctx.rt===k}">${t}</button>`;
+  const usB=(k)=>`<button class="carb" data-hc="us" data-v="${k}" aria-pressed="${ctx.usage===k}">${k}</button>`;
+  const flB=(k,t)=>`<button class="hcfl" data-hc="fl" data-v="${k}" aria-pressed="${!!hc.fl[k]}">${t}</button>`;
+  const hasDS = isIn && [s,...hcCands(s)].some(r=>hcForm(r).key==='DS');
+  const origs = ctx.rt==='gn' ? hcOrigs(s) : [];
+  let h=`<div class="carp">
+    <div class="carph"><span class="carpt">処方薬</span>
+      <button class="hcre" data-hc="pick">選び直す</button></div>
+    <div class="hcsrc"><div class="tags">${pcBadge(s)}<span class="badge b${ssc}">${HC_STL[ssc]||''}</span>
+      <span class="kind">${esc(dv(s,'k')||'')}</span>${kbBadge(s)}${kcBadge(s)}</div>
+      <div class="nm">${esc(get(s,'n'))}</div>
+      <div class="sub">${esc(get(s,'sp'))}<span class="sep">|</span>${esc(dv(s,'m'))}${get(s,'price')!=null?`<span class="sep">|</span>${yenBadge(s)}`:''}</div></div>
+    <div class="hcrow"><span class="hclbl">処方の書き方</span>
+      <div class="hcseg">${rtB(hcAutoRt(s)==='other'?'other':hcAutoRt(s), hcAutoRt(s)==='gen'?'後発の銘柄名':hcAutoRt(s)==='orig'?'先発の銘柄名':'銘柄名')}${rtB('gn','一般名')}</div>
+      <div class="hcauto">${hc.rt?'':'品名から自動で選んでいます。'}一般名で処方されているときは「一般名」を押します。</div>
+      ${ctx.rt==='gn'?(origs.length?`<div class="hccmp"><label>比べる先発品
+          <select data-hc="cmp">${origs.map(r=>`<option value="${esc(get(r,'yj'))}"${get(r,'yj')===(base&&get(base.row,'yj'))?' selected':''}>${esc(get(r,'n'))}（${fmtY(get(r,'price'))}円）</option>`).join('')}</select></label>
+          <div class="hcauto">どの先発品と比べてもよいとされています。患者さんが使っている先発品があれば、それを選んでください。</div></div>`
+        :`<div class="hcauto hcw">この一般名に当たる先発品がないため、規格・剤形を変える候補は判定できません。</div>`):''}
+    </div>
+    <div class="hcrow hcqrow">
+      <div><span class="hclbl">${!isIn?'総量':ctx.usage==='頓服'?'1回量':'1日量'}</span>
+        <div class="hcqty"><button class="hcstep" data-hc="q-" aria-label="減らす">−</button>
+          <input class="hcnum" data-hc="qty" type="number" inputmode="decimal" min="0" step="any" value="${hcFmtQ(hc.qty)}">
+          <button class="hcstep" data-hc="q+" aria-label="増やす">＋</button><span class="hcunit">${esc(u)}</span></div></div>
+      ${isIn?`<div class="hcus"><span class="hclbl">用法</span><div class="hcseg">${usB('内服')}${usB('頓服')}</div></div>`:''}
+      ${isIn&&ctx.usage==='頓服'?`<div><span class="hclbl">回数</span>
+        <div class="hcqty"><button class="hcstep" data-hc="t-" aria-label="減らす">−</button>
+          <input class="hcnum" data-hc="times" type="number" inputmode="numeric" min="1" step="1" value="${hc.times}">
+          <button class="hcstep" data-hc="t+" aria-label="増やす">＋</button><span class="hcunit">回分</span></div></div>`:''}
+    </div>
+    ${hasDS?`<div class="hcrow"><span class="hclbl">ドライシロップの調剤</span>
+      <div class="hcseg"><button class="carb" data-hc="ds" data-v="solid" aria-pressed="${hc.ds==='solid'}">散剤として</button>
+        <button class="carb" data-hc="ds" data-v="liq" aria-pressed="${hc.ds==='liq'}">水剤として</button></div></div>`:''}
+    <div class="hcrow"><span class="hclbl">処方箋の指示</span>
+      <div class="hcflags">${flB('all','変更不可')}${flB('str','含量規格変更不可')}${flB('form','剤形変更不可')}</div></div>
+    <div class="hctk"><div class="hctkt"><b>供給不足の特例を使う</b>
+      <span>令和6年3月15日 事務連絡（当面の間の取扱い）。処方薬や通常の候補が手に入らないときに使います。</span>
+      ${ssc>0&&!hc.tk?`<span class="hctks">処方薬は${ssc===2?'供給停止':'限定出荷'}です。特例を使えます。</span>`:''}</div>
+      <button class="hcsw" data-hc="tk" aria-pressed="${hc.tk}" aria-label="供給不足の特例を使う"></button></div>
+  </div>`;
+
+  if(hc.fl.all){
+    h+=`<div class="hcstop">処方箋で<b>「変更不可」</b>になっています。変更調剤はできません。銘柄を変えるには疑義照会が必要です。</div>`;
+    box.innerHTML=h; return;
+  }
+  if(ctx.rt==='other'){
+    h+=`<div class="hcstop">この薬は<b>先発品・後発品の区別がない品目</b>です。銘柄を変えるには疑義照会が必要です。
+      一般名で処方されている場合は「一般名」を押してください。</div>`;
+    box.innerHTML=h; return;
+  }
+  const n={ok:0,cond:0,tk:0,chk:0,x:0}; list.forEach(o=>n[o.v]++);
+  const perL = ctx.usage==='内服'?'1日':ctx.usage==='頓服'?'全量':'総量';
+  h+=`<div class="hcsum">
+    <div class="hcbase"><span class="k">${ctx.rt==='gn'?'比べる薬剤料（先発品）':'変更前の薬剤料'}</span>
+      <span class="v">${base?`${perL} ${fmtY(Math.round(base.yen*100)/100)}円 ＝ ${base.t}点`:'—'}</span></div>
+    <div class="hcbnote">${ctx.usage==='内服'?'内服薬は「1剤1日分」':ctx.usage==='頓服'?'頓服薬は「全量（1回量×回数）」':'外用薬・注射薬は「総量」'}の点数で比べます（15円以下は1点、15円を超えると10円ごと・五捨五超入）。同じ剤にほかの薬があると、合算してから点数にするため結果が変わることがあります。</div>
+    <div class="hccnt">
+      <div class="hcct ok"><b>${n.ok}</b><span>◎そのまま可</span></div>
+      <div class="hcct cond"><b>${n.cond}</b><span>○同額以下<br>で可</span></div>
+      <div class="hcct tk"><b>${n.tk}</b><span>△${hc.tk?'特例で可':'特例なら可'}</span></div>
+      <div class="hcct x"><b>${n.x}</b><span>×不可</span></div></div>
+    ${n.chk?`<div class="hcchkn">？ 確認が必要な候補 ${n.chk}件</div>`:''}
+    ${hc.tk?`<div class="hcban">特例で判定中です。<b>△の候補も、患者さんへの説明と同意で変更できます。</b>
+      変更したら、処方元へ調剤した銘柄・規格・剤形を伝えてください。</div>`:''}
+  </div>`;
+  const fb=(k,t)=>`<button class="chgs" data-hc="fil" data-v="${k}" aria-pressed="${hc.fil===k}">${t}</button>`;
+  h+=`<div class="chgtabs hcfil">${fb('all','すべて')}${fb('normal','通常出荷のみ')}${MY.stores.length?fb('my','採用薬のみ'):''}</div>`;
+  const pass=(o)=>hc.fil==='all'||(hc.fil==='normal'&&(get(o.r,'sc')|0)===0)||(hc.fil==='my'&&myHas(o.r));
+  for(const v of ['ok','cond','tk','chk']){
+    const all=list.filter(o=>o.v===v);
+    if(!all.length && v==='chk') continue;
+    const g=(hc.tk&&HC_GHT[v])||HC_GH[v];
+    const items=all.filter(pass);
+    const lim=hc.more[v]?1e9:g[2];
+    h+=`<div class="hcg ${v}"><div class="hcgh"><h3>${g[0]}</h3><span class="n">${all.length}件${items.length!==all.length?`（表示 ${items.length}件）`:''}</span></div>
+      <div class="hcgd">${g[1].replace('{B}',base?base.t:'—')}</div></div>`;
+    if(!items.length){ h+=`<div class="hcnone">該当なし</div>`; continue; }
+    h+=items.slice(0,lim).map(o=>hcCard(o,ctx,base)).join('');
+    if(items.length>lim) h+=`<button class="hcmore" data-hc="more" data-v="${v}">残り${items.length-lim}件を表示</button>`;
+  }
+  const xs=list.filter(o=>o.v==='x');
+  if(xs.length){
+    const by=new Map();
+    xs.forEach(o=>{ const k=o.why; if(!by.has(k)) by.set(k,[]); by.get(k).push(o); });
+    h+=`<div class="hcg x"><div class="hcgh"><h3>× 変更できない</h3><span class="n">${xs.length}件</span></div>
+      <div class="hcgd">理由ごとにまとめています。押すと品目が開きます。</div></div><div class="hcx">`;
+    by.forEach((os,k)=>{
+      const lab = HC_XLAB[k] || (k.startsWith('sp-c:') ? k.slice(5) : '');
+      const op=!!hc.xopen[k];
+      h+=`<div class="hcxi" data-hc="xo" data-v="${esc(k)}"><b>${op?'▾':'▸'} ${esc(lab)}（${os.length}件）</b><span>${esc(os[0].rs)}</span>
+        ${op?`<div class="hcxl">${os.map(o=>`<div>${pcBadge(o.r)} ${esc(get(o.r,'n'))}<small>${esc(get(o.r,'sp'))}</small></div>`).join('')}</div>`:''}</div>`;
+    });
+    h+='</div>';
+  }
+  if(!list.length) h+=`<div class="caempty">同じ成分の薬がほかにありません。</div>`;
+  h+=`<div class="hcwarn"><b>このページで判定できないこと</b><br>
+    ・規格や剤形による効能効果・用法用量の違い（添付文書で確認）<br>
+    ・錠剤を割ってよいか（半錠になる組み合わせは「？」で出します）<br>
+    ・同じ剤のほかの薬と合算したときの点数<br>
+    ・医療機関と結んだ疑義照会簡素化プロトコルによる取り決め</div>`;
+  box.innerHTML=h;
+}
+
+document.getElementById('hcbody').addEventListener('click',e=>{
+  const b=e.target.closest('[data-hc]');
+  const card=e.target.closest('.card.hcc');
+  if(!b){
+    if(card){ const y=card.dataset.yj; hc.open = hc.open===y?null:y; drawHc(); }
+    return;
+  }
+  const a=b.dataset.hc, v=b.dataset.v;
+  if(a==='qty'||a==='times'||a==='cmp') return;
+  if(a==='pick'){ openPick('hc'); return; }
+  if(a==='rt'){ hc.rt = v; hc.open=null; }
+  else if(a==='us'){ hc.usage=v; }
+  else if(a==='ds'){ hc.ds=v; }
+  else if(a==='fl'){ hc.fl[v]=!hc.fl[v]; }
+  else if(a==='tk'){ hc.tk=!hc.tk; }
+  else if(a==='fil'){ hc.fil=v; }
+  else if(a==='more'){ hc.more[v]=true; }
+  else if(a==='xo'){ hc.xopen[v]=!hc.xopen[v]; }
+  else if(a==='q-'||a==='q+'){
+    const s=R[YJIDX.get(hc.yj)], st=hcStep(hcUnit(s).cu);
+    hc.qty=Math.max(st, Math.round((hc.qty+(a==='q+'?st:-st))*1000)/1000);
+  }
+  else if(a==='t-'||a==='t+'){ hc.times=Math.max(1,hc.times+(a==='t+'?1:-1)); }
+  else if(a==='copy'){
+    const s=R[YJIDX.get(hc.yj)], ctx=hcCtx(s), {list}=hcRun(s,ctx);
+    const o=list.find(x=>get(x.r,'yj')===hc.open); if(!o) return;
+    const t=hcInfoText(s,o,ctx), btn=b;
+    const ok=()=>{ btn.textContent='コピーしました'; setTimeout(()=>{ btn.textContent='文面をコピー'; },1600); };
+    const fb=()=>{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+      ta.select(); try{ document.execCommand('copy'); ok(); }catch(err){} ta.remove(); };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok,fb); else fb();
+    return;
+  }
+  else if(a==='search'){
+    const i=YJIDX.get(hc.open); if(i!==undefined) toSearchByName(get(R[i],'n'));
+    return;
+  }
+  drawHc();
+});
+document.getElementById('hcbody').addEventListener('change',e=>{
+  const b=e.target.closest('[data-hc]'); if(!b) return;
+  const a=b.dataset.hc;
+  if(a==='qty'){ const v=parseFloat(b.value); if(v>0) hc.qty=v; drawHc(); }
+  else if(a==='times'){ const v=parseInt(b.value,10); if(v>=1) hc.times=v; drawHc(); }
+  else if(a==='cmp'){ hc.cmp=b.value; drawHc(); }
 });
 
 /* ---------- 併売品の一覧（成分名ごとに折りたたむ） ----------
@@ -3971,6 +4513,28 @@ document.getElementById('anak').addEventListener('click',e=>{
       <div class="sc-num"><b>= 7.98円</b>（3割負担の場合、1gあたり）</div>
     </div>
   </div>`;
+
+  h+=S_('変更タブ（変更調剤の候補）');
+  h+=R_('<span class="vbadge ok">◎ そのまま可</span>','同じ規格・剤形の後発品',
+        '薬剤料が上がっても変更できます。一般名処方では先発品も含みます。');
+  h+=R_('<span class="vbadge cond">○ 同額以下で可</span>','規格が違う・類似する別剤形の後発品',
+        '変更後の薬剤料（点数）が変更前以下のときだけ変更できます。');
+  h+=R_('<span class="vbadge tk">△ 特例なら可</span>','供給不足の特例を使うと変更できる',
+        '令和6年3月15日 事務連絡（当面の間の取扱い）。薬剤料が上がる変更、後発品の銘柄名処方から先発品への変更、'+
+        '錠剤・カプセル⇔散剤・顆粒の変更（類似剤形にどうしても変えられない場合）が、説明と同意で認められています。');
+  h+=R_('<span class="vbadge chk">？ 要確認</span>','このページでは判定しきれない',
+        '半錠になる組み合わせ、徐放錠など特殊な剤形の規格違い、含量や薬価が読み取れない薬、外用薬・注射薬の規格違いです。');
+  h+=R_('類似する別剤形','内服薬だけにあります',
+        'ア 錠剤（普通錠・OD錠）・カプセル・丸剤／イ 散剤・顆粒・細粒・末剤・ドライシロップ（散剤として）／'+
+        'ウ 液剤・シロップ・ドライシロップ（水剤として）。チュアブル錠・徐放錠・腸溶錠・舌下錠などは含みません。'+
+        '剤形はYJコード8桁目と品名で判定しています。');
+  h+=R_('薬剤料の比べ方','点数で比べます',
+        '内服薬は1剤1日分、頓服薬は全量（1回量×回数）、外用薬・注射薬は総量。15円以下は1点、15円超は10円で割って五捨五超入。'+
+        '一般名処方では、該当する先発品のどれかの薬剤料と比べます（患者さんが使っている先発品があればそれ）。'+
+        '同じ剤にほかの薬があると、合算してから点数にするため結果が変わることがあります。');
+  h+=R_('判定しないこと','添付文書で確認してください',
+        '規格や剤形による効能効果・用法用量の違い、錠剤を割ってよいか、医療機関との疑義照会簡素化プロトコルの取り決め。'+
+        '最終判断は薬剤師が行ってください。');
 
   h+=S_('販売中止');
   h+=R_(bd('販売中止（一部包装）','bdisc part'),'一部の包装のみ販売中止です',
