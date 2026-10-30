@@ -1471,8 +1471,18 @@ def check_device(browser, p, name, url):
             fails.append("変更タブで薬の選択画面が開かない")
         elif "処方薬" not in pg.locator("#capt").inner_text():
             fails.append("薬の選択画面の見出しが変更タブ用にならない")
+        # 書き方を選ぶまでは一覧を出さない（v54）
+        if not pg.locator("#hcrtp").is_visible():
+            fails.append("処方薬を選ぶ画面に「処方の書き方」が出ない")
         pg.fill("#capinput", "シングレア錠１０")
+        pg.wait_for_timeout(400)
+        if pg.locator(".capitem").count() != 0:
+            fails.append("書き方を選ぶ前に一覧が出ている")
+        pg.locator('#hcrtp [data-rt="orig"]').click()
         pg.wait_for_timeout(500)
+        cats = pg.evaluate("() => [...new Set([...document.querySelectorAll('#capbody .capitem .pcb')].map(e=>e.textContent.replace('局','')))]")
+        if any(c not in ("先", "長期", "準先") for c in cats):
+            fails.append("先発の銘柄名を選んだのに先発品以外が出る（%s）" % cats)
         if pg.locator(".capitem").count() == 0:
             fails.append("変更タブで処方薬の候補が出ない")
         else:
@@ -1496,6 +1506,22 @@ def check_device(browser, p, name, url):
             pg.wait_for_timeout(300)
             if pg.locator('select[data-hc="cmp"]').count() == 0:
                 fails.append("一般名にしても比べる先発品が出ない")
+            # 一般名の一覧から選ぶ（v54）
+            pg.locator('[data-hc="pick"]').first.click()
+            pg.wait_for_timeout(300)
+            pg.locator('#hcrtp [data-rt="gn"]').click()
+            pg.fill("#capinput", "カルボシステイン錠２５０")
+            pg.wait_for_timeout(500)
+            gi = pg.locator("#capbody .capitem[data-gn]")
+            if gi.count() == 0:
+                fails.append("一般名の一覧が出ない")
+            else:
+                gi.first.click()
+                pg.wait_for_timeout(500)
+                if "【般】" not in pg.locator("#hcbody .hcsrc").inner_text():
+                    fails.append("一般名を選んでも処方薬が一般名にならない")
+                if pg.locator('#hcbody .card.hcc.v-ok').count() == 0:
+                    fails.append("一般名の◎候補が出ない")
             if ovf() != 0:
                 fails.append(f"変更ページで横溢れ {ovf()}px")
         # 検索カードからの導線
@@ -1709,7 +1735,7 @@ def check_device(browser, p, name, url):
 
     # タップ領域（Androidは48dp推奨。主要な操作要素を確認）
     small = pg.evaluate(f"""() => {{
-      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort','.chip.cm','.cmitem','.sdq','.sdday','#cmvk .kb2','.gfb','#genk .kb2','#gob','#caadd','.caadddrug','.carb','.hcstep','.hcfl','.hcsw','.hcre','.hcmore','.hcbtn','.hcpickbig'];
+      const sels=['#q','.sm','.chip','#advbtn','.cmpbtn','#logic','.sortb','#ovx','#clrall','#lgbtn','#lgx','#rvbtn','#rvx','#rvk .sortb','#rvq','#rvord','#rvgap .sortb','#ordbtn','.ingbtn','.ptab','.nwt','#nwsort','.chip.cm','.cmitem','.sdq','.sdday','#cmvk .kb2','.gfb','#genk .kb2','#gob','#caadd','.caadddrug','.carb','.hcstep','.hcfl','.hcsw','.hcre','.hcmore','.hcbtn','.hcpickbig','.hctog','#hcrtp .carb'];
       const out=[];
       sels.forEach(s=>document.querySelectorAll(s).forEach(el=>{{
         const r=el.getBoundingClientRect();

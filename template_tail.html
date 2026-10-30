@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-30-v53';
+const TPL_VER='2026-10-31-v54';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2170,8 +2170,9 @@ function openPick(mode){
   pickMode = mode==='hc' ? 'hc' : 'calc';
   document.getElementById('capt').textContent =
     pickMode==='hc' ? '処方薬を選ぶ' : '選定療養の対象医薬品を選ぶ';
-  document.getElementById('capinput').placeholder =
-    pickMode==='hc' ? '品名か成分名で検索（スペースでAND）' : '薬剤名で検索';
+  document.getElementById('capinput').placeholder = '薬剤名で検索';
+  document.getElementById('hcrtp').hidden = pickMode!=='hc';
+  if(pickMode==='hc') hcDrawRtp();
   document.getElementById('capick').classList.add('on');
   document.body.style.overflow='hidden';
   const inp=document.getElementById('capinput');
@@ -2183,7 +2184,7 @@ function closePick(){
 }
 function drawPick(q){
   const terms=norm(q).split(/\s+/).filter(Boolean);
-  if(pickMode==='hc'){ drawPickHc(terms.map(KATA)); return; }
+  if(pickMode==='hc'){ drawPickHc(terms); return; }
   /* 選定療養の対象品だけを候補にする */
   let hits=[];
   for(let i=0;i<R.length && hits.length<80;i++){
@@ -2209,35 +2210,15 @@ function drawPick(q){
     </div>`;
   }).join('');
 }
-
-/* 変更タブ用：処方薬の候補（品名・成分名で探す。すべての薬が対象） */
-function drawPickHc(terms){
-  const box=document.getElementById('capbody');
-  if(!terms.length){
-    box.innerHTML='<div class="caempty">品名か成分名を入力してください。</div>';
-    return;
-  }
-  const hits=[];
-  for(let i=0;i<R.length && hits.length<80;i++){
-    const r=R[i];
-    if(!get(r,'yj')) continue;
-    const s=get(r,'s'), si=get(r,'si');
-    if(!terms.every(t=>s.includes(t)||si.includes(t))) continue;
-    hits.push(r);
-  }
-  if(!hits.length){ box.innerHTML='<div class="caempty">該当する薬がありません。</div>'; return; }
-  const STL=['通常出荷','限定出荷','供給停止'];
-  box.innerHTML=hits.map(r=>`<div class="capitem" data-yj="${esc(get(r,'yj'))}">
-      <div class="capnm">${pcBadge(r)} ${esc(get(r,'n'))}</div>
-      <div class="capsub">${esc(get(r,'sp'))}｜${esc(dv(r,'m'))}｜${STL[get(r,'sc')|0]||''}${get(r,'price')!=null?'｜'+fmtY(get(r,'price'))+'円':''}</div>
-    </div>`).join('');
-}
 document.getElementById('capinput').addEventListener('input',e=>drawPick(e.target.value));
 document.getElementById('capx').addEventListener('click',closePick);
 document.getElementById('capbody').addEventListener('click',e=>{
   const it=e.target.closest('.capitem'); if(!it) return;
   const yj=it.dataset.yj;
-  if(pickMode==='hc'){ hcSetSrc(yj); closePick(); drawHc(); window.scrollTo({top:0}); return; }
+  if(pickMode==='hc'){
+    if(it.dataset.gn!=null) hcSetGen(+it.dataset.gn); else hcSetSrc(yj, hc.pickRt);
+    closePick(); drawHc(); window.scrollTo({top:0}); return;
+  }
   const row=R.find(x=>get(x,'yj')===yj);
   if(row && caPickTarget!=null){
     const rp=caRps[caPickTarget];
@@ -2384,21 +2365,34 @@ function hcCat(r){
 const hcFmtQ=(q)=>String(Math.round(q*1000)/1000);
 const hcKind=(r)=>dv(r,'k')==='内用薬'?'in':'ex';
 
-let hc={yj:null, rt:null, usage:'内服', qty:1, times:1, ds:'solid',
+/* rt … 処方の書き方（orig=先発の銘柄名 gen=後発の銘柄名 gn=一般名 other=その他の銘柄名／null=品名から自動）
+   gi … 一般名のときの一般名の通し番号　brandYj … 銘柄名から一般名に切り替えたときの元の品目
+   pickRt … 選ぶ画面で選んだ書き方（次に開いたときも残す） */
+let hc={yj:null, rt:null, gi:null, brandYj:null, pickRt:null, usage:'内服', qty:1, times:1, ds:'solid',
   fl:{all:false,str:false,form:false}, tk:false, cmp:null, fil:'all',
   more:{}, open:null, xopen:{}};
 
-/* 同じ成分（YJ上7桁）・同じ区分の薬。処方薬自身は除く */
-function hcCands(s){
+/* 同じ成分（YJ上7桁）・同じ区分の薬。銘柄名処方では処方薬自身を除く。
+   一般名処方では、特定の品目が処方されたわけではないので全品目を候補にする */
+function hcCands(s,ctx){
   const y7=String(get(s,'yj')).slice(0,7), k=dv(s,'k'), self=get(s,'yj');
+  const gn=!!(ctx&&ctx.rt==='gn');
   return R.filter(r=>{ const y=String(get(r,'yj')||'');
-    return y.slice(0,7)===y7 && y!==self && dv(r,'k')===k; });
+    return y.slice(0,7)===y7 && (gn || y!==self) && dv(r,'k')===k; });
 }
-/* 一般名処方で比べる先発品（処方薬と同じ規格・剤形の先発品） */
-function hcOrigs(s){
-  const y9=String(get(s,'yj')).slice(0,9);
-  return R.filter(r=>String(get(r,'yj')||'').slice(0,9)===y9 && hcCat(r)==='orig' && get(r,'price')!=null)
-          .sort((a,b)=>get(b,'price')-get(a,'price'));
+/* 「同じ規格・剤形」か。一般名処方では、その一般名に当たる品目か（一般名マスタの対応）で決める。
+   それ以外はYJ上9桁（薬価基準の成分・剤形・規格）が同じか */
+function hcSame(s,c,ctx){
+  if(ctx.rt==='gn' && ctx.gi!=null && ctx.gi>=0) return get(c,'gen')===ctx.gi;
+  return String(get(s,'yj')).slice(0,9)===String(get(c,'yj')).slice(0,9);
+}
+/* 一般名処方で比べる先発品（その一般名に当たる先発品。高い順） */
+function hcOrigs(s,ctx){
+  const rows = (ctx && ctx.rt==='gn' && ctx.gi!=null && ctx.gi>=0)
+    ? (GEN_ROWS.get(ctx.gi)||[]).map(i=>R[i])
+    : R.filter(r=>String(get(r,'yj')||'').slice(0,9)===String(get(s,'yj')).slice(0,9));
+  return rows.filter(r=>hcCat(r)==='orig' && get(r,'price')!=null)
+             .sort((a,b)=>get(b,'price')-get(a,'price'));
 }
 /* 金額と点数。q は数える単位での量 */
 function hcCost(r,q,ctx){
@@ -2411,7 +2405,7 @@ function hcCost(r,q,ctx){
 function hcBase(s,ctx){
   let b=s;
   if(ctx.rt==='gn'){
-    const os=hcOrigs(s);
+    const os=hcOrigs(s,ctx);
     if(!os.length) return null;
     b=os.find(r=>get(r,'yj')===ctx.cmp)||os[0];
   }
@@ -2426,7 +2420,7 @@ function hcJudge(s,c,ctx,base){
   const X=(why,rs)=>Object.assign(o,{v:'x',why,rs});
   const fs=hcForm(s), fc=hcForm(c);
   const ss=hcStr(s), sc=hcStr(c);
-  const same9=String(get(s,'yj')).slice(0,9)===String(get(c,'yj')).slice(0,9);
+  const same9=hcSame(s,c,ctx);
   const cc=hcCat(c), rt=ctx.rt;
   const ns=HALF(String(get(s,'n'))), nc=HALF(String(get(c,'n')));
   if(/BS/.test(nc) && !/BS/.test(ns))
@@ -2515,7 +2509,7 @@ function hcJudge(s,c,ctx,base){
 /* 判定の一覧（テストからも呼ぶ） */
 function hcRun(s,ctx){
   const base=hcBase(s,ctx);
-  const list=hcCands(s).map(c=>hcJudge(s,c,ctx,base));
+  const list=hcCands(s,ctx).map(c=>hcJudge(s,c,ctx,base));
   const V={ok:0,cond:1,tk:2,chk:3,x:4};
   list.sort((a,b)=>V[a.v]-V[b.v] || (myHas(b.r)?1:0)-(myHas(a.r)?1:0)
     || (get(a.r,'sc')|0)-(get(b.r,'sc')|0) || ((a.t??1e9)-(b.t??1e9)) || ((a.yen??1e9)-(b.yen??1e9)));
@@ -2523,20 +2517,32 @@ function hcRun(s,ctx){
 }
 function hcCtx(s){
   const rt = hc.rt || hcAutoRt(s);
-  return {rt, usage: hcKind(s)==='in' ? hc.usage : '外用', qty:hc.qty, times:hc.times,
+  const gi = rt==='gn' ? (hc.gi!=null ? hc.gi : get(s,'gen')) : null;
+  return {rt, gi, usage: hcKind(s)==='in' ? hc.usage : '外用', qty:hc.qty, times:hc.times,
           ds:hc.ds, fl:hc.fl, tk:hc.tk, cmp:hc.cmp};
 }
 function hcAutoRt(s){ const c=hcCat(s); return c==='gen'?'gen':c==='orig'?'orig':'other'; }
-function hcSetSrc(yj){
+function hcSetSrc(yj, rt, gi){
   const i=YJIDX.get(yj); if(i===undefined) return;
   const s=R[i];
-  hc.yj=yj; hc.rt=null; hc.cmp=null; hc.more={}; hc.open=null; hc.xopen={};
+  hc.yj=yj; hc.rt=rt||null; hc.cmp=null; hc.more={}; hc.open=null; hc.xopen={};
+  hc.gi = rt==='gn' ? (gi!=null ? gi : get(s,'gen')) : null;
+  hc.brandYj = rt==='gn' ? null : yj;
   hc.fl={all:false,str:false,form:false};
   /* 処方ごとに設定を戻す（前の処方の特例や用法を持ち越さない） */
   hc.usage = hcKind(s)==='in' ? '内服' : '外用';
   hc.tk=false; hc.fil='all';
   hc.qty=1; hc.times=1; hc.ds='solid';
 }
+/* 一般名から選んだとき。代表の品目（入手しやすく安いもの）を処方薬の代わりに使い、
+   候補はその一般名・同じ成分の全品目にする */
+function hcSetGen(g){
+  const rows=GEN_ROWS.get(g); if(!rows||!rows.length) return;
+  hcSetSrc(get(R[rows[0]],'yj'),'gn',g);
+}
+const HC_RTL={orig:'先発の銘柄名',gen:'後発の銘柄名',gn:'一般名',other:'その他の銘柄名'};
+const HC_RTD={orig:'先発品・長期収載品・準先発品',gen:'後発品・変更可の基礎的医薬品',gn:'【般】の一般名で探します',
+  other:'局方品・漢方など先発・後発の区別がない品目'};
 const hcStep=(u)=>u==='錠'?0.5:(u==='g'?0.1:(u==='mL'?0.5:1));
 
 /* 情報提供の文面 */
@@ -2546,7 +2552,7 @@ function hcInfoText(s,o,ctx){
   const per = ctx.usage==='内服'?'／日':ctx.usage==='頓服'?`／回（${ctx.times}回分）`:'';
   const tk = o.v==='tk' ? '\n理由：医薬品の供給不足のため（令和6年3月15日 事務連絡の取扱いによる）' : '';
   return `【変更調剤のお知らせ】\n調剤日：${ds}\n患者：　　　　　　様\n`+
-    `処方：${HALF(String(get(s,'n')))} ${hcFmtQ(ctx.qty)}${us}${per}\n`+
+    `処方：${ctx.rt==='gn'&&ctx.gi!=null&&GEN[ctx.gi]?HALF(String(GEN[ctx.gi][G.t])):HALF(String(get(s,'n')))} ${hcFmtQ(ctx.qty)}${us}${per}\n`+
     `調剤：${HALF(String(get(o.r,'n')))} ${hcFmtQ(o.q)}${uc}${per}\n`+
     `内容：${o.kind||'変更調剤'}${tk}\n`+
     `患者さんの同意を得て調剤しました。`;
@@ -2599,7 +2605,8 @@ function drawHc(){
   const box=document.getElementById('hcbody');
   if(!hc.yj || YJIDX.get(hc.yj)===undefined){
     box.innerHTML=`<button class="hcpickbig" data-hc="pick">＋ 処方薬を選ぶ</button>
-      <div class="caempty">検索タブのカードにある「変更調剤の候補を見る」からも開けます。</div>`;
+      <div class="caempty">処方の書き方（先発・後発の銘柄名／一般名）を選んでから薬を探します。<br>
+      検索タブのカードにある「変更調剤の候補を見る」からも開けます。</div>`;
     return;
   }
   const s=R[YJIDX.get(hc.yj)];
@@ -2607,21 +2614,36 @@ function drawHc(){
   const {base,list}=hcRun(s,ctx);
   const u=hcUnit(s).cu||'';
   const ssc=get(s,'sc')|0;
-  const rtB=(k,t)=>`<button class="carb" data-hc="rt" data-v="${k}" aria-pressed="${ctx.rt===k}">${t}</button>`;
   const usB=(k)=>`<button class="carb" data-hc="us" data-v="${k}" aria-pressed="${ctx.usage===k}">${k}</button>`;
   const flB=(k,t)=>`<button class="hcfl" data-hc="fl" data-v="${k}" aria-pressed="${!!hc.fl[k]}">${t}</button>`;
-  const hasDS = isIn && [s,...hcCands(s)].some(r=>hcForm(r).key==='DS');
-  const origs = ctx.rt==='gn' ? hcOrigs(s) : [];
+  const hasDS = isIn && [s,...hcCands(s,ctx)].some(r=>hcForm(r).key==='DS');
+  const origs = ctx.rt==='gn' ? hcOrigs(s,ctx) : [];
+  const gd = (ctx.rt==='gn' && ctx.gi!=null && ctx.gi>=0) ? GEN[ctx.gi] : null;
+  let srcH;
+  if(gd){
+    const st=gStat(ctx.gi);
+    srcH=`<div class="tags"><span class="kind">${esc(GKIND[gd[G.k]]||'')}</span>${gd[G.o]?'<span class="hcold">旧版</span>':''}</div>
+      <div class="nm">${esc(gd[G.t])}</div>
+      <div class="sub">該当 ${st[3]}品目（通常 ${st[0]}・限定 ${st[1]}・停止 ${st[2]}）${gd[G.p]!=null?`<span class="sep">|</span>最低薬価 ${fmtY(gd[G.p])}円`:''}</div>`;
+  }else{
+    srcH=`<div class="tags">${pcBadge(s)}<span class="badge b${ssc}">${HC_STL[ssc]||''}</span>
+      <span class="kind">${esc(dv(s,'k')||'')}</span>${kbBadge(s)}${kcBadge(s)}</div>
+      <div class="nm">${esc(get(s,'n'))}<span class="nmmy">${myMarks(s)}</span></div>
+      <div class="sub">${esc(get(s,'sp'))}<span class="sep">|</span>${esc(dv(s,'m'))}${get(s,'price')!=null?`<span class="sep">|</span>${yenBadge(s)}`:''}</div>`;
+  }
+  /* 銘柄名と一般名の切り替え（検索タブから来たときなど、選び直さずに変えられるように） */
+  let tog='';
+  if(ctx.rt!=='gn' && get(s,'gen')>=0)
+    tog=`<button class="hctog" data-hc="rt" data-v="gn">一般名で処方されているときはこちら</button>`;
+  else if(ctx.rt==='gn' && hc.brandYj)
+    tog=`<button class="hctog" data-hc="rt" data-v="brand">銘柄名の処方に戻す</button>`;
   let h=`<div class="carp">
     <div class="carph"><span class="carpt">処方薬</span>
       <button class="hcre" data-hc="pick">選び直す</button></div>
-    <div class="hcsrc"><div class="tags">${pcBadge(s)}<span class="badge b${ssc}">${HC_STL[ssc]||''}</span>
-      <span class="kind">${esc(dv(s,'k')||'')}</span>${kbBadge(s)}${kcBadge(s)}</div>
-      <div class="nm">${esc(get(s,'n'))}</div>
-      <div class="sub">${esc(get(s,'sp'))}<span class="sep">|</span>${esc(dv(s,'m'))}${get(s,'price')!=null?`<span class="sep">|</span>${yenBadge(s)}`:''}</div></div>
+    <div class="hcsrc">${srcH}</div>
     <div class="hcrow"><span class="hclbl">処方の書き方</span>
-      <div class="hcseg">${rtB(hcAutoRt(s)==='other'?'other':hcAutoRt(s), hcAutoRt(s)==='gen'?'後発の銘柄名':hcAutoRt(s)==='orig'?'先発の銘柄名':'銘柄名')}${rtB('gn','一般名')}</div>
-      <div class="hcauto">${hc.rt?'':'品名から自動で選んでいます。'}一般名で処方されているときは「一般名」を押します。</div>
+      <div class="hcrtv"><b>${HC_RTL[ctx.rt]||''}</b>${hc.rt?'':'<small>（品名から判定）</small>'}</div>
+      ${tog}
       ${ctx.rt==='gn'?(origs.length?`<div class="hccmp"><label>比べる先発品
           <select data-hc="cmp">${origs.map(r=>`<option value="${esc(get(r,'yj'))}"${get(r,'yj')===(base&&get(base.row,'yj'))?' selected':''}>${esc(get(r,'n'))}（${fmtY(get(r,'price'))}円）</option>`).join('')}</select></label>
           <div class="hcauto">どの先発品と比べてもよいとされています。患者さんが使っている先発品があれば、それを選んでください。</div></div>`
@@ -2721,7 +2743,12 @@ document.getElementById('hcbody').addEventListener('click',e=>{
   const a=b.dataset.hc, v=b.dataset.v;
   if(a==='qty'||a==='times'||a==='cmp') return;
   if(a==='pick'){ openPick('hc'); return; }
-  if(a==='rt'){ hc.rt = v; hc.open=null; }
+  if(a==='rt'){
+    const s=R[YJIDX.get(hc.yj)];
+    if(v==='gn'){ hc.rt='gn'; hc.gi=get(s,'gen'); }
+    else if(v==='brand' && hc.brandYj){ hc.yj=hc.brandYj; hc.rt=null; hc.gi=null; }
+    hc.open=null; hc.cmp=null; hc.more={};
+  }
   else if(a==='us'){ hc.usage=v; }
   else if(a==='ds'){ hc.ds=v; }
   else if(a==='fl'){ hc.fl[v]=!hc.fl[v]; }
@@ -2757,6 +2784,62 @@ document.getElementById('hcbody').addEventListener('change',e=>{
   else if(a==='times'){ const v=parseInt(b.value,10); if(v>=1) hc.times=v; drawHc(); }
   else if(a==='cmp'){ hc.cmp=b.value; drawHc(); }
 });
+
+/* ---- 処方薬を選ぶ画面（計算タブと共用の画面を、変更タブ用に描き分ける） ----
+   先に処方の書き方を選び、それに合う薬だけを出す。
+   ・先発／後発／その他の銘柄名 … その区分の品目
+   ・一般名 … 一般名処方マスタの【般】の記載（その一般名に当たる品目がある記載だけ）
+   マイ薬局の店舗マークを付け、採用薬を上に並べる。 */
+function hcDrawRtp(){
+  const el=document.getElementById('hcrtp'); if(!el) return;
+  const b=(k)=>`<button class="carb" data-rt="${k}" aria-pressed="${hc.pickRt===k}">${HC_RTL[k]}</button>`;
+  el.innerHTML=`<div class="hcrtph">処方の書き方</div>
+    <div class="hcrtg">${b('orig')}${b('gen')}${b('gn')}${b('other')}</div>
+    <div class="hcrtpd">${hc.pickRt?esc(HC_RTD[hc.pickRt]):'まず処方箋の書き方を選んでください。'}</div>`;
+  const inp=document.getElementById('capinput');
+  inp.placeholder = !hc.pickRt ? '書き方を選ぶと検索できます'
+    : hc.pickRt==='gn' ? '一般名か成分名で検索（例：カルボシステイン錠）' : '品名か成分名で検索（スペースでAND）';
+}
+document.getElementById('hcrtp').addEventListener('click',e=>{
+  const b=e.target.closest('[data-rt]'); if(!b) return;
+  hc.pickRt=b.dataset.rt; hcDrawRtp();
+  const inp=document.getElementById('capinput');
+  drawPick(inp.value); inp.focus();
+});
+function drawPickHc(terms){
+  const box=document.getElementById('capbody'), rt=hc.pickRt;
+  const none='<div class="caempty">該当する薬がありません。</div>';
+  if(!rt){ box.innerHTML='<div class="caempty">上で<b>処方の書き方</b>を選んでください。<br>選んだ書き方に合う薬だけを一覧に出します。</div>'; return; }
+  if(!terms.length){ box.innerHTML=`<div class="caempty">${rt==='gn'?'一般名か成分名':'品名か成分名'}を入力してください。</div>`; return; }
+  if(rt==='gn'){
+    const rows=[];
+    for(let g=0; g<GEN.length; g++){
+      if(!GEN_ROWS.has(g) || !genHit(g,terms)) continue;
+      const ks=new Set(); GEN_ROWS.get(g).forEach(i=>myIn(R[i]).forEach(k=>ks.add(k)));
+      rows.push({g, ks:[...ks].sort((a,b)=>a-b)});
+    }
+    rows.sort((a,b)=>(b.ks.length?1:0)-(a.ks.length?1:0) || (GEN[a.g][G.o]?1:0)-(GEN[b.g][G.o]?1:0));
+    box.innerHTML = rows.slice(0,80).map(({g,ks})=>{
+      const gd=GEN[g], st=gStat(g);
+      return `<div class="capitem" data-gn="${g}">
+        <div class="capnm">${esc(gd[G.t])}${ks.length?`<span class="myms">${ks.map(myMark).join('')}</span>`:''}${gd[G.o]?'<span class="hcold">旧版</span>':''}</div>
+        <div class="capsub">${esc(GKIND[gd[G.k]]||'')}｜該当 ${st[3]}品目（通常 ${st[0]}・限定 ${st[1]}・停止 ${st[2]}）${gd[G.p]!=null?'｜最低薬価 '+fmtY(gd[G.p])+'円':''}</div>
+      </div>`; }).join('') || none;
+    return;
+  }
+  const kt=terms.map(KATA), hits=[];
+  for(const r of R){
+    if(!get(r,'yj') || hcCat(r)!==rt) continue;
+    const s=get(r,'s'), si=get(r,'si');
+    if(!kt.every(t=>s.includes(t)||si.includes(t))) continue;
+    hits.push(r);
+  }
+  hits.sort((a,b)=>(myHas(b)?1:0)-(myHas(a)?1:0));
+  box.innerHTML = hits.slice(0,80).map(r=>`<div class="capitem" data-yj="${esc(get(r,'yj'))}">
+      <div class="capnm">${pcBadge(r)} ${esc(get(r,'n'))}${myMarks(r)}</div>
+      <div class="capsub">${esc(get(r,'sp'))}｜${esc(dv(r,'m'))}｜${HC_STL[get(r,'sc')|0]||''}${get(r,'price')!=null?'｜'+fmtY(get(r,'price'))+'円':''}</div>
+    </div>`).join('') || none;
+}
 
 /* ---------- 併売品の一覧（成分名ごとに折りたたむ） ----------
    カード内の表示が「今この薬の代わりを探す」用なのに対し、
@@ -4524,6 +4607,10 @@ document.getElementById('anak').addEventListener('click',e=>{
         '錠剤・カプセル⇔散剤・顆粒の変更（類似剤形にどうしても変えられない場合）が、説明と同意で認められています。');
   h+=R_('<span class="vbadge chk">？ 要確認</span>','このページでは判定しきれない',
         '半錠になる組み合わせ、徐放錠など特殊な剤形の規格違い、含量や薬価が読み取れない薬、外用薬・注射薬の規格違いです。');
+  h+=R_('処方薬の選び方','先に処方の書き方を選びます',
+        '先発の銘柄名・後発の銘柄名・その他の銘柄名はその区分の品目だけ、一般名は【般】の記載から選びます。'+
+        '一般名を選ぶと、その一般名に当たる全品目が候補になります。'+
+        'マイ薬局を設定していれば店舗マークが付き、採用薬が上に並びます。');
   h+=R_('類似する別剤形','内服薬だけにあります',
         'ア 錠剤（普通錠・OD錠）・カプセル・丸剤／イ 散剤・顆粒・細粒・末剤・ドライシロップ（散剤として）／'+
         'ウ 液剤・シロップ・ドライシロップ（水剤として）。チュアブル錠・徐放錠・腸溶錠・舌下錠などは含みません。'+

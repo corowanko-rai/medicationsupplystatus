@@ -181,6 +181,19 @@ header{
    固定した上部が画面のほぼ全部を覆い、検索結果や並び替えボタンが押せなくなる。
    絞り込みを開いている間だけ、上部を固定せずに一緒にスクロールさせる。 */
 @media (max-height:760px){ header:has(#adv.on){position:relative} }
+/* 処方薬を選ぶ画面：書き方 */
+.hcrtp{margin-bottom:9px}
+.hcrtph{font-size:12px;font-weight:800;color:var(--ink2);margin-bottom:5px}
+.hcrtg{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.hcrtg .carb{font-size:12.5px;min-height:40px;padding:0 4px}
+.hcrtpd{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.5}
+.capnm .myms{margin-left:5px}
+.hcold{font-size:10.5px;font-weight:700;color:var(--ink3);background:var(--surface2);border-radius:5px;padding:1px 6px;margin-left:5px}
+/* 変更タブ：書き方の表示と切り替え */
+.hcrtv{font-size:14px;color:var(--ink)}
+.hcrtv small{font-size:11px;color:var(--ink3);margin-left:4px}
+.hctog{display:block;margin-top:6px;min-height:40px;padding:0 2px;border:none;background:none;
+  color:var(--accent);font-size:12.5px;font-weight:700;text-decoration:underline;cursor:pointer;font-family:inherit}
 /* ---- マイ薬局 ---- */
 /* 店舗の印。色だけに頼らず、店舗名の頭文字を必ず入れる
    （色の見分けにくい組み合わせがあっても店舗を取り違えないため）。 */
@@ -1621,6 +1634,7 @@ mark{background:#ffeaa0;color:#4a3600;border-radius:2px;padding:0 1px}
     <button id="capx" aria-label="閉じる">×</button>
   </div>
   <div class="capq">
+    <div class="hcrtp" id="hcrtp" hidden></div>
     <input type="search" id="capinput" placeholder="薬剤名で検索" autocomplete="off">
   </div>
   <div class="capbody" id="capbody"></div>
