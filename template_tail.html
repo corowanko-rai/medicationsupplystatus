@@ -23,7 +23,7 @@ window.addEventListener('error', function(e){
 /* ---------- Decode ---------- */
 const D=DATA.d, R=DATA.r;
 /* このテンプレートの版数。差し替えが反映されたかを画面で確認するための目印。 */
-const TPL_VER='2026-10-31-v54';
+const TPL_VER='2026-10-31-v55';
 const F={n:0,i:1,m:2,sp:3,yj:4,k:5,cls:6,st:7,sc:8,vol:9,rsn:10,out:11,note:12,upd:13,new:14,s:15,si:16,pc:17,chg:18,price:19,kb:20,kc:21,disc:22,fm:23,exp:24,jp:25,sen:26,cm:27,gen:28,osc:29,vc:30,vimp:31,vd:32,reg:33};
 const get=(r,f)=>r[F[f]];
 const dv=(r,f)=>D[f][r[F[f]]];
@@ -2406,7 +2406,17 @@ function hcBase(s,ctx){
   let b=s;
   if(ctx.rt==='gn'){
     const os=hcOrigs(s,ctx);
-    if(!os.length) return null;
+    if(!os.length){
+      /* 一般名に当たる先発品がない（元の先発品が「その他医薬品」に区分されている等）。
+         何と比べるかは通知・疑義解釈に定めがないため、該当品目のうち最も安いものと比べ、
+         それでも同額以下のものだけを「○」にする（どの品目と比べても同額以下になるため）。
+         最も安いものより高くなる候補は判定せず「？」にする。 */
+      const rows=((ctx.gi!=null&&ctx.gi>=0)?(GEN_ROWS.get(ctx.gi)||[]).map(i=>R[i])
+        :R.filter(r=>String(get(r,'yj')||'').slice(0,9)===String(get(s,'yj')).slice(0,9)));
+      let best=null;
+      rows.forEach(r=>{ const c=hcCost(r,ctx.qty,ctx); if(c && (!best||c.yen<best.yen)) best={...c,row:r}; });
+      return best ? {...best, minRef:true} : null;
+    }
     b=os.find(r=>get(r,'yj')===ctx.cmp)||os[0];
   }
   const c=hcCost(b,ctx.qty,ctx);
@@ -2502,6 +2512,12 @@ function hcJudge(s,c,ctx,base){
     rs:what+'。特例で、類似する剤形にどうしても変えられない場合に限り変更できます。'});
   if(tkOnly) return Object.assign(o,{v:'tk', kind,
     rs:what+'。後発品の銘柄名処方から先発品への変更のため、特例のときだけ変更できます。'});
+  if(base.minRef){
+    if(cost.t<=base.t) return Object.assign(o,{v:'cond', kind,
+      rs:what+'。先発品がないため、該当品目のうち最も安いものと比べて同額以下です。'});
+    return Object.assign(o,{v:'chk', kind,
+      rs:what+'。先発品がなく、該当品目のうち最も安いものより薬剤料が上がるため判定できません（特例を使う場合は薬剤料の上限はありません）。'});
+  }
   if(cost.t<=base.t) return Object.assign(o,{v:'cond', kind, rs:what+'。'});
   return Object.assign(o,{v:'tk', kind, rs:what+'。薬剤料が上がるため、特例のときだけ変更できます。'});
 }
@@ -2647,7 +2663,8 @@ function drawHc(){
       ${ctx.rt==='gn'?(origs.length?`<div class="hccmp"><label>比べる先発品
           <select data-hc="cmp">${origs.map(r=>`<option value="${esc(get(r,'yj'))}"${get(r,'yj')===(base&&get(base.row,'yj'))?' selected':''}>${esc(get(r,'n'))}（${fmtY(get(r,'price'))}円）</option>`).join('')}</select></label>
           <div class="hcauto">どの先発品と比べてもよいとされています。患者さんが使っている先発品があれば、それを選んでください。</div></div>`
-        :`<div class="hcauto hcw">この一般名に当たる先発品がないため、規格・剤形を変える候補は判定できません。</div>`):''}
+        :`<div class="hcauto hcw">この一般名に当たる先発品がありません（元の先発品が「その他医薬品」に区分されている場合など）。
+          該当品目のうち最も安いもの${base&&base.row?`（${esc(get(base.row,'n'))}）`:''}と比べ、それでも同額以下の候補だけを「○」にしています。</div>`):''}
     </div>
     <div class="hcrow hcqrow">
       <div><span class="hclbl">${!isIn?'総量':ctx.usage==='頓服'?'1回量':'1日量'}</span>
@@ -2683,7 +2700,7 @@ function drawHc(){
   const n={ok:0,cond:0,tk:0,chk:0,x:0}; list.forEach(o=>n[o.v]++);
   const perL = ctx.usage==='内服'?'1日':ctx.usage==='頓服'?'全量':'総量';
   h+=`<div class="hcsum">
-    <div class="hcbase"><span class="k">${ctx.rt==='gn'?'比べる薬剤料（先発品）':'変更前の薬剤料'}</span>
+    <div class="hcbase"><span class="k">${ctx.rt==='gn'?(base&&base.minRef?'比べる薬剤料（該当品目で最も安いもの）':'比べる薬剤料（先発品）'):'変更前の薬剤料'}</span>
       <span class="v">${base?`${perL} ${fmtY(Math.round(base.yen*100)/100)}円 ＝ ${base.t}点`:'—'}</span></div>
     <div class="hcbnote">${ctx.usage==='内服'?'内服薬は「1剤1日分」':ctx.usage==='頓服'?'頓服薬は「全量（1回量×回数）」':'外用薬・注射薬は「総量」'}の点数で比べます（15円以下は1点、15円を超えると10円ごと・五捨五超入）。同じ剤にほかの薬があると、合算してから点数にするため結果が変わることがあります。</div>
     <div class="hccnt">
@@ -4618,6 +4635,7 @@ document.getElementById('anak').addEventListener('click',e=>{
   h+=R_('薬剤料の比べ方','点数で比べます',
         '内服薬は1剤1日分、頓服薬は全量（1回量×回数）、外用薬・注射薬は総量。15円以下は1点、15円超は10円で割って五捨五超入。'+
         '一般名処方では、該当する先発品のどれかの薬剤料と比べます（患者さんが使っている先発品があればそれ）。'+
+        '先発品がない一般名では、該当品目のうち最も安いものと比べて同額以下の候補だけを「○」にし、それ以外は「？」にします。'+
         '同じ剤にほかの薬があると、合算してから点数にするため結果が変わることがあります。');
   h+=R_('判定しないこと','添付文書で確認してください',
         '規格や剤形による効能効果・用法用量の違い、錠剤を割ってよいか、医療機関との疑義照会簡素化プロトコルの取り決め。'+
