@@ -224,6 +224,10 @@ def main():
             b = http_get(excels[seq][1])
             blobs[seq] = b
             digest.update(hashlib.sha256(b).digest())
+            # 外用薬のExcelは、軟膏混合チェック用の一覧（make_kongo_list.py）でも使うので残す
+            if seq == "03":
+                with open(os.path.join(HERE, "gaiyo_latest.xlsx"), "wb") as f:
+                    f.write(b)
         h = digest.hexdigest()
         log(f"取得完了。統合ハッシュ={h[:16]}…")
 
