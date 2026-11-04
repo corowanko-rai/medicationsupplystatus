@@ -199,6 +199,19 @@ jobs:
           mkdir -p public
           cp 医薬品供給状況_検索.html public/index.html
 
+      # 軟膏混合チェック（別のアプリ）が読みに行く製品一覧を作る。
+      # 取得済みのExcelから作るだけで、厚労省へはアクセスしない。失敗しても続行する。
+      - name: 軟膏混合チェック用の製品一覧を作る
+        if: steps.run.outputs.code == '0'
+        continue-on-error: true
+        run: |
+          set +e
+          python make_kongo_list.py
+          code=$?
+          set -e
+          if [ $code -eq 1 ]; then echo "::warning::製品一覧を更新できませんでした。前の一覧を残します。"; fi
+          exit 0
+
       - name: 状態ファイルとスナップショットをコミット
         if: steps.run.outputs.code == '0'
         run: |
@@ -209,6 +222,7 @@ jobs:
           # あるものだけを対象にする。
           for f in state.json snapshot.json prices.json kiso.json \
                    sentei.json ippanmei.json latest.xlsx \
+                   gaiyo_latest.xlsx kongo-list.json kongo-list-version.json \
                    データの成り立ち_値入り.html; do
             [ -f "$f" ] && git add "$f"
           done
