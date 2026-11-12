@@ -1,14 +1,14 @@
 {
-  "url": "https://www.mhlw.go.jp/content/10800000/261111iyakuhinkyoukyu.xlsx",
-  "sha256": "7e5e33982ff2d59492ba33129df13ab6c646fb58181b2946881d00d176d62346",
-  "label": "医療用医薬品供給状況（令和８年11月11日現在）",
+  "url": "https://www.mhlw.go.jp/content/10800000/261112iyakuhinkyoukyu.xlsx",
+  "sha256": "934520bd9cf3fd5a4f2d78e085752a86a1df9ead2fab0ffebf70d2dc2e69fdfe",
+  "label": "医療用医薬品供給状況（令和８年11月12日現在）",
   "sig": {
-    "etag": "\"17d7e1-65ffd6c8cedf6\"",
-    "last_modified": "Wed, 11 Nov 2026 10:11:52 GMT",
-    "size": "1562593"
+    "etag": "\"17d792-660119441327a\"",
+    "last_modified": "Thu, 12 Nov 2026 10:14:38 GMT",
+    "size": "1562514"
   },
-  "as_of": "2026-11-11",
+  "as_of": "2026-11-12",
   "items": 16426,
-  "updated_at": "2026-11-12T16:00:17+09:00",
-  "last_checked": "2026-11-12T16:00:17+09:00"
+  "updated_at": "2026-11-13T01:12:23+09:00",
+  "last_checked": "2026-11-13T01:12:23+09:00"
 }
